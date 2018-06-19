@@ -3,14 +3,339 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
+
+struct hostname_ctx {
+  int len;
+  int truncated;
+  char hostname[256];
+};
+
+void hostname_ctx_init(struct hostname_ctx *nam)
+{
+  nam->len = 0;
+  nam->truncated = 0;
+  nam->hostname[0] = '\0';
+}
+
+struct http_ctx {
+  int request_method_seen;
+  int request_method_len;
+  int uri_seen;
+  int uri_len;
+  int verdict;
+  int chars_httpslash_seen;
+  int major_digits_seen;
+  int period_seen;
+  int minor_digits_seen;
+  int lf_seen;
+  int host_num_seen;
+  int hostname_seen;
+  //int hostname_truncated;
+  //char hostname[256];
+  int crlfcrlf_lfcnt;
+};
+
+void http_ctx_init(struct http_ctx *ctx)
+{
+  ctx->request_method_seen = 0;
+  ctx->request_method_len = 0;
+  ctx->uri_seen = 0;
+  ctx->uri_len = 0;
+  ctx->verdict = -EAGAIN;
+  ctx->chars_httpslash_seen = 0;
+  ctx->major_digits_seen = 0;
+  ctx->period_seen = 0;
+  ctx->minor_digits_seen = 0;
+  ctx->lf_seen = 0;
+  ctx->host_num_seen = 0;
+  ctx->hostname_seen = 0;
+  //ctx->hostname[0] = '\0';
+  //ctx->hostname_truncated = 0;
+  ctx->crlfcrlf_lfcnt = 0;
+}
+
+static inline int istoken(char ch)
+{
+  return ch == '!' || ch == '#' || ch == '$' || ch == '%' || ch == '&' ||
+         ch == '\'' || ch == '*' || ch == '+' || ch == '-' || ch == '.' ||
+         ch == '^' || ch == '_' || ch == '`' || ch == '|' || ch == '~' ||
+         isdigit(ch) || isalpha(ch);
+}
+
+static inline int isurichar(char ch)
+{
+  return ch == '!' || ch == '#' || ch == '$' || ch == '%' || ch == '&' ||
+         ch == '\'' || ch == '*' || ch == '+' || ch == '-' || ch == '.' ||
+         ch == '^' || ch == '_' || ch == '`' || ch == '|' || ch == '~' ||
+         isdigit(ch) || isalpha(ch) || ch == '/';
+}
+
+int http_ctx_feed(struct http_ctx *ctx, const void *data, size_t sz,
+                  struct hostname_ctx *nam)
+{
+  const unsigned char *udata = data;
+  if (sz == 0 || ctx->verdict != -EAGAIN)
+  {
+    return ctx->verdict;
+  }
+  while (!ctx->request_method_seen)
+  {
+    unsigned char uch;
+    if (sz == 0)
+    {
+      return ctx->verdict;
+    }
+    uch = udata[0];
+    if (istoken(uch))
+    {
+      ctx->request_method_len++;
+      sz--;
+      udata++;
+    }
+    else if (uch != ' ')
+    {
+      ctx->verdict = -ENOTSUP;
+      return ctx->verdict;
+    }
+    else
+    {
+      ctx->request_method_seen = 1;
+      if (ctx->request_method_len == 0)
+      {
+        ctx->verdict = -ENOTSUP;
+        return ctx->verdict;
+      }
+      sz--;
+      udata++;
+    }
+  }
+  while (!ctx->uri_seen)
+  {
+    unsigned char uch;
+    if (sz == 0)
+    {
+      return ctx->verdict;
+    }
+    uch = udata[0];
+    if (isurichar(uch))
+    {
+      ctx->uri_len++;
+      sz--;
+      udata++;
+    }
+    else if (uch != ' ')
+    {
+      ctx->verdict = -ENOTSUP;
+      return ctx->verdict;
+    }
+    else
+    {
+      ctx->uri_seen = 1;
+      if (ctx->uri_len == 0)
+      {
+        ctx->verdict = -ENOTSUP;
+        return ctx->verdict;
+      }
+      sz--;
+      udata++;
+    }
+  }
+  while (ctx->chars_httpslash_seen < 5)
+  {
+    unsigned char uch;
+    if (sz == 0)
+    {
+      return ctx->verdict;
+    }
+    uch = udata[0];
+    if (uch == "HTTP/"[ctx->chars_httpslash_seen])
+    {
+      ctx->chars_httpslash_seen++;
+      sz--;
+      udata++;
+    }
+    else
+    {
+      ctx->verdict = -ENOTSUP;
+      return ctx->verdict;
+    }
+  }
+  while (!ctx->period_seen)
+  {
+    unsigned char uch;
+    if (sz == 0)
+    {
+      return ctx->verdict;
+    }
+    uch = udata[0];
+    if (uch == '.')
+    {
+      ctx->period_seen = 1;
+      sz--;
+      udata++;
+      if (ctx->major_digits_seen == 0)
+      {
+        ctx->verdict = -ENOTSUP;
+        return ctx->verdict;
+      }
+    }
+    else if (isdigit(uch))
+    {
+      ctx->major_digits_seen++;
+      sz--;
+      udata++;
+    }
+    else
+    {
+      ctx->verdict = -ENOTSUP;
+      return ctx->verdict;
+    }
+  }
+  while (!ctx->lf_seen)
+  {
+    unsigned char uch;
+    if (sz == 0)
+    {
+      return ctx->verdict;
+    }
+    uch = udata[0];
+    if (uch == '\r')
+    {
+      sz--;
+      udata++;
+    }
+    else if (uch == '\n')
+    {
+      if (ctx->minor_digits_seen == 0)
+      {
+        ctx->verdict = -ENOTSUP;
+        return ctx->verdict;
+      }
+      ctx->lf_seen = 1;
+      sz--;
+      udata++;
+    }
+    else if (isdigit(uch))
+    {
+      ctx->minor_digits_seen++;
+      sz--;
+      udata++;
+    }
+    else
+    {
+      ctx->verdict = -ENOTSUP;
+      return ctx->verdict;
+    }
+  }
+  while (ctx->crlfcrlf_lfcnt < 2)
+  {
+    while (ctx->host_num_seen < 5)
+    {
+      unsigned char uch;
+      if (sz == 0)
+      {
+        return ctx->verdict;
+      }
+      uch = udata[0];
+      if (ctx->host_num_seen == -1)
+      {
+        if (uch == '\n')
+        {
+          ctx->host_num_seen = 0;
+          ctx->crlfcrlf_lfcnt++;
+        }
+        sz--;
+        udata++;
+      }
+      else if (uch == "HOST:"[ctx->host_num_seen] ||
+               uch == "host:"[ctx->host_num_seen])
+      {
+        ctx->crlfcrlf_lfcnt = 0;
+        ctx->host_num_seen++;
+        sz--;
+        udata++;
+      }
+      else if (!istoken(uch))
+      {
+        ctx->verdict = -ENOTSUP;
+        return ctx->verdict;
+      }
+      else
+      {
+        if (uch != '\r' && uch != '\n')
+        {
+          ctx->crlfcrlf_lfcnt = 0;
+        }
+        ctx->host_num_seen = -1;
+        sz--;
+        udata++;
+      }
+    }
+    // RFE could flag whitespace in middle of hostname as error
+    for (;;)
+    {
+      unsigned char uch;
+      if (sz == 0)
+      {
+        return ctx->verdict;
+      }
+      uch = udata[0];
+      if (uch == ' ' || uch == '\t')
+      {
+        sz--;
+        udata++;
+      }
+      else if (ctx->hostname_seen >= sizeof(nam->hostname) - 1 && uch != '\r' && uch != '\n')
+      {
+        sz--;
+        udata++;
+        ctx->hostname_seen++;
+        nam->truncated = 1;
+        nam->hostname[sizeof(nam->hostname)-1] = '\0';
+      }
+      else if (uch != '\r' && uch != '\n')
+      {
+        nam->hostname[ctx->hostname_seen] = uch;
+        ctx->hostname_seen++;
+        sz--;
+        udata++;
+        ctx->crlfcrlf_lfcnt = 0;
+      }
+      else if (uch == '\r')
+      {
+        sz--;
+        udata++;
+      }
+      else if (uch == '\n')
+      {
+        ctx->host_num_seen = 0;
+        ctx->verdict = 0;
+        ctx->crlfcrlf_lfcnt++;
+        nam->len = ctx->hostname_seen;
+        if (ctx->hostname_seen < sizeof(nam->hostname) - 1)
+        {
+          nam->hostname[ctx->hostname_seen] = '\0';
+        }
+        else
+        {
+          nam->hostname[sizeof(nam->hostname)-1] = '\0';
+        }
+        return ctx->verdict;
+      }
+    }
+  }
+  ctx->verdict = -ENOTSUP;
+  return ctx->verdict;
+}
 
 struct ssl_name_ctx {
   uint8_t type;
   uint16_t name_len;
   uint16_t processed;
-  uint16_t real_name_len;
-  char nam[256];
-  int truncated;
+  //uint16_t real_name_len;
+  //char nam[256];
+  //int truncated;
 };
 
 struct ssl_ext_ctx {
@@ -26,17 +351,18 @@ void ssl_name_ctx_reinit(struct ssl_name_ctx *ctx)
   ctx->type = 0;
   ctx->name_len = 0;
   ctx->processed = 0;
-  ctx->truncated = 0;
+  //ctx->truncated = 0;
 }
 
 void ssl_name_ctx_init(struct ssl_name_ctx *ctx)
 {
   ssl_name_ctx_reinit(ctx);
-  ctx->real_name_len = 0;
+  //ctx->real_name_len = 0;
 }
 
 // Return: # of bytes processed
-ssize_t ssl_name_ctx_feed(struct ssl_name_ctx *ctx, const void *data, size_t sz)
+ssize_t ssl_name_ctx_feed(struct ssl_name_ctx *ctx, const void *data, size_t sz,
+                          struct hostname_ctx *nam)
 {
   size_t orig_sz = sz;
   const unsigned char *udata = data;
@@ -80,41 +406,41 @@ ssize_t ssl_name_ctx_feed(struct ssl_name_ctx *ctx, const void *data, size_t sz)
   }
   if (ctx->processed - 3 + sz >= ctx->name_len)
   {
-    if (ctx->name_len < sizeof(ctx->nam))
+    if (ctx->name_len < sizeof(nam->hostname))
     {
       uint32_t tocopy = ctx->name_len - (ctx->processed-3);
-      memcpy(&ctx->nam[ctx->processed - 3], udata, tocopy);
-      ctx->nam[ctx->processed - 3 + tocopy] = '\0';
-      ctx->truncated = 0;
-      ctx->real_name_len = ctx->name_len;
+      memcpy(&nam->hostname[ctx->processed - 3], udata, tocopy);
+      nam->hostname[ctx->processed - 3 + tocopy] = '\0';
+      nam->truncated = 0;
+      nam->len = ctx->name_len;
     }
-    else if (sizeof(ctx->nam)-1 > (ctx->processed-3))
+    else if (sizeof(nam->hostname)-1 > (ctx->processed-3))
     {
-      memcpy(&ctx->nam[ctx->processed - 3], udata,
-             sizeof(ctx->nam)-1-(ctx->processed-3));
-      ctx->nam[sizeof(ctx->nam)-1] = '\0';
-      ctx->truncated = 1;
-      ctx->real_name_len = ctx->name_len;
+      memcpy(&nam->hostname[ctx->processed - 3], udata,
+             sizeof(nam->hostname)-1-(ctx->processed-3));
+      nam->hostname[sizeof(nam->hostname)-1] = '\0';
+      nam->truncated = 1;
+      nam->len = ctx->name_len;
     }
     else
     {
-      ctx->nam[sizeof(ctx->nam)-1] = '\0';
-      ctx->truncated = 1;
-      ctx->real_name_len = ctx->name_len;
+      nam->hostname[sizeof(nam->hostname)-1] = '\0';
+      nam->truncated = 1;
+      nam->len = ctx->name_len;
     }
     ctx->processed += ctx->name_len;
     sz -= ctx->name_len;
     udata += ctx->name_len;
     return orig_sz - sz;
   }
-  if (ctx->processed - 3 + sz < sizeof(ctx->nam))
+  if (ctx->processed - 3 + sz < sizeof(nam->hostname))
   {
-    memcpy(&ctx->nam[ctx->processed - 3], udata, sz);
+    memcpy(&nam->hostname[ctx->processed - 3], udata, sz);
   }
-  else if (sizeof(ctx->nam)-1 > (ctx->processed-3))
+  else if (sizeof(nam->hostname)-1 > (ctx->processed-3))
   {
-    memcpy(&ctx->nam[ctx->processed - 3], udata,
-           sizeof(ctx->nam)-1-(ctx->processed-3));
+    memcpy(&nam->hostname[ctx->processed - 3], udata,
+           sizeof(nam->hostname)-1-(ctx->processed-3));
   }
   ctx->processed += sz;
   udata += sz;
@@ -141,7 +467,8 @@ void ssl_ext_ctx_reinit(struct ssl_ext_ctx *ctx)
 }
 
 // Return: # of bytes processed
-ssize_t ssl_ext_ctx_feed(struct ssl_ext_ctx *ctx, const void *data, size_t sz)
+ssize_t ssl_ext_ctx_feed(struct ssl_ext_ctx *ctx, const void *data, size_t sz,
+                         struct hostname_ctx *nam)
 {
   size_t orig_sz = sz;
   const unsigned char *udata = data;
@@ -210,7 +537,7 @@ ssize_t ssl_ext_ctx_feed(struct ssl_ext_ctx *ctx, const void *data, size_t sz)
     {
       thismax = toprocess - ctx->processed;
     }
-    ret = ssl_name_ctx_feed(&ctx->nam, udata, thismax);
+    ret = ssl_name_ctx_feed(&ctx->nam, udata, thismax, nam);
     sz -= ret;
     udata += ret;
     ctx->processed += ret;
@@ -276,7 +603,7 @@ void ssl_fragment_ctx_reset(struct ssl_fragment_ctx *ctx)
 }
 
 int ssl_ctx_feed(struct ssl_ctx *ctx, uint16_t exp_vers,
-                 const void *data, size_t sz)
+                 const void *data, size_t sz, struct hostname_ctx *nam)
 {
   const unsigned char *udata = data;
   if (sz == 0 || ctx->verdict != -EAGAIN)
@@ -497,7 +824,8 @@ int ssl_ctx_feed(struct ssl_ctx *ctx, uint16_t exp_vers,
         return ctx->verdict;
       }
     }
-    ret = ssl_ext_ctx_feed(&ctx->ext, udata, tofeed);
+    nam->len = 0;
+    ret = ssl_ext_ctx_feed(&ctx->ext, udata, tofeed, nam);
     ctx->bytesFed += ret;
     sz -= ret;
     udata += ret;
@@ -506,7 +834,7 @@ int ssl_ctx_feed(struct ssl_ctx *ctx, uint16_t exp_vers,
       ssl_ext_ctx_reinit(&ctx->ext);
     }
 #if 1
-    if (ctx->ext.nam.real_name_len > 0)
+    if (nam->len > 0)
     {
       ctx->verdict = 0;
       return ctx->verdict;
@@ -531,7 +859,8 @@ int ssl_ctx_feed(struct ssl_ctx *ctx, uint16_t exp_vers,
 
 
 int ssl_fragment_ctx_feed(struct ssl_fragment_ctx *ctx,
-                          const void *data, size_t sz)
+                          const void *data, size_t sz,
+                          struct hostname_ctx *nam)
 {
   const unsigned char *udata = data;
   int hello_verdict;
@@ -605,7 +934,7 @@ int ssl_fragment_ctx_feed(struct ssl_fragment_ctx *ctx,
     hello_verdict = ssl_ctx_feed(&ctx->hello, ctx->last_version, udata,
                                  sz <= ctx->fragsiz
                                  ? sz
-                                 : ctx->fragsiz);
+                                 : ctx->fragsiz, nam);
     if (hello_verdict != -EAGAIN)
     {
       ctx->verdict = hello_verdict;
@@ -631,6 +960,71 @@ void gen_1b_fragment(const void *hldata, int i, char fragment[6])
   fragment[3] = 0;
   fragment[4] = 1;
   fragment[5] = hludata[i];
+}
+
+void http_test(void)
+{
+  struct http_ctx ctx = {};
+  struct hostname_ctx nam = {};
+  char *str1 = "GET / HTTP/1.1\r\nHost: www.google.fi\r\n\r\n";
+  char *str2 = "GET / HTTP/1.1\r\nA: B\r\nHost: www.google.fi\r\n\r\n";
+  char *str3 = "GET / HTTP/1.1\r\nA: B\r\n\r\nHost: www.google.fi\r\n\r\n";
+  size_t i;
+  int ret;
+
+  http_ctx_init(&ctx);
+  hostname_ctx_init(&nam);
+  printf("1: %d\n", http_ctx_feed(&ctx, str1, strlen(str1), &nam));
+  printf("%s\n", nam.hostname);
+
+  http_ctx_init(&ctx);
+  hostname_ctx_init(&nam);
+  printf("2: %d\n", http_ctx_feed(&ctx, str2, strlen(str2), &nam));
+  printf("%s\n", nam.hostname);
+
+  http_ctx_init(&ctx);
+  hostname_ctx_init(&nam);
+  printf("3: %d\n", http_ctx_feed(&ctx, str3, strlen(str3), &nam));
+  printf("%s\n", nam.hostname);
+
+  http_ctx_init(&ctx);
+  hostname_ctx_init(&nam);
+  for (i = 0; i < strlen(str1); i++)
+  {
+    ret = http_ctx_feed(&ctx, &str1[i], 1, &nam);
+    if (ret != -EAGAIN)
+    {
+      printf("1: %d\n", ret);
+      printf("%s\n", nam.hostname);
+      break;
+    }
+  }
+
+  http_ctx_init(&ctx);
+  hostname_ctx_init(&nam);
+  for (i = 0; i < strlen(str2); i++)
+  {
+    ret = http_ctx_feed(&ctx, &str2[i], 1, &nam);
+    if (ret != -EAGAIN)
+    {
+      printf("2: %d\n", ret);
+      printf("%s\n", nam.hostname);
+      break;
+    }
+  }
+
+  http_ctx_init(&ctx);
+  hostname_ctx_init(&nam);
+  for (i = 0; i < strlen(str3); i++)
+  {
+    ret = http_ctx_feed(&ctx, &str3[i], 1, &nam);
+    if (ret != -EAGAIN)
+    {
+      printf("3: %d\n", ret);
+      printf("%s\n", nam.hostname);
+      break;
+    }
+  }
 }
 
 int main(int argc, char **argv)
@@ -716,30 +1110,31 @@ int main(int argc, char **argv)
   };
   struct ssl_fragment_ctx fragctx;
   size_t i;
+  struct hostname_ctx nam;
 
   ssl_fragment_ctx_init(&fragctx);
-  fragctx.hello.ext.nam.nam[0] = '\0';
+  hostname_ctx_init(&nam);
 
-  printf("%d\n", ssl_fragment_ctx_feed(&fragctx, withsni, sizeof(withsni)));
-  printf("%s\n", fragctx.hello.ext.nam.nam);
+  printf("%d\n", ssl_fragment_ctx_feed(&fragctx, withsni, sizeof(withsni), &nam));
+  printf("%s\n", nam.hostname);
 
   ssl_fragment_ctx_init(&fragctx);
-  fragctx.hello.ext.nam.nam[0] = '\0';
+  hostname_ctx_init(&nam);
 
-  printf("%d\n", ssl_fragment_ctx_feed(&fragctx, nosni, sizeof(nosni)));
-  printf("%s\n", fragctx.hello.ext.nam.nam);
+  printf("%d\n", ssl_fragment_ctx_feed(&fragctx, nosni, sizeof(nosni), &nam));
+  printf("%s\n", nam.hostname);
 
   printf("---\n");
   ssl_fragment_ctx_init(&fragctx);
-  fragctx.hello.ext.nam.nam[0] = '\0';
+  hostname_ctx_init(&nam);
   for (i = 0; i < sizeof(withsnihl); i++)
   {
     gen_1b_fragment(withsnihl, i, fragment);
-    int ret = ssl_fragment_ctx_feed(&fragctx, fragment, sizeof(fragment));
+    int ret = ssl_fragment_ctx_feed(&fragctx, fragment, sizeof(fragment), &nam);
     if (ret != -EAGAIN)
     {
       printf("%d\n", ret);
-      printf("%s\n", fragctx.hello.ext.nam.nam);
+      printf("%s\n", nam.hostname);
       break;
     }
     ssl_fragment_ctx_reset(&fragctx);
@@ -747,19 +1142,23 @@ int main(int argc, char **argv)
 
   printf("===\n");
   ssl_fragment_ctx_init(&fragctx);
-  fragctx.hello.ext.nam.nam[0] = '\0';
+  hostname_ctx_init(&nam);
   for (i = 0; i < sizeof(nosnihl); i++)
   {
     gen_1b_fragment(nosnihl, i, fragment);
-    int ret = ssl_fragment_ctx_feed(&fragctx, fragment, sizeof(fragment));
+    int ret = ssl_fragment_ctx_feed(&fragctx, fragment, sizeof(fragment), &nam);
     if (ret != -EAGAIN)
     {
       printf("%d\n", ret);
-      printf("%s\n", fragctx.hello.ext.nam.nam);
+      printf("%s\n", nam.hostname);
       break;
     }
     ssl_fragment_ctx_reset(&fragctx);
   }
+
+  printf("HTTP\n");
+
+  http_test();
 
   return 0;
 }
