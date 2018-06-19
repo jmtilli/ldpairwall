@@ -1,0 +1,11 @@
+a.out
+*.a
+*.o
+*.d
+*.s
+*.so
+*.swp
+*.log
+perf.data
+perf.data.old
+/opts.mk
