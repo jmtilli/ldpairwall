@@ -1,6 +1,7 @@
 [CLI] -> {SYN}     -> [NAT]                 [SRV]
 [CLI] <- {SYN+ACK} <- [NAT]                 [SRV]
 [CLI] -> {ACK}     -> [NAT]                 [SRV]
+[CLI] <- {ACK wup} <- [NAT]                 [SRV]
 [CLI] -> {data1}   -> [NAT]                 [SRV]
 [CLI] -> {data2}   -> [NAT]                 [SRV]
 [CLI]                 [NAT] -> {SYN}     -> [SRV]
