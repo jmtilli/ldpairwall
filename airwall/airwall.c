@@ -2209,15 +2209,12 @@ int uplink(
       memcpy(ether_src(etherarp), airwall->dl_mac, 6);
       memcpy(ether_dst(etherarp), arp_const_sha(arp), 6);
       ether_set_type(etherarp, ETHER_TYPE_ARP);
-      hdr_set16n(&arp2[0], 1);
-      hdr_set16n(&arp2[2], 0x0800);
-      arp2[4] = 6;
-      arp2[5] = 4;
-      hdr_set16n(&arp2[6], 2);
+      arp_set_ether(arp2);
+      arp_set_resp(arp2);
       memcpy(arp_sha(arp2), airwall->dl_mac, 6);
       memcpy(arp_tha(arp2), arp_const_sha(arp), 6);
-      hdr_set32n(&arp2[14], airwall->dl_addr);
-      hdr_set32n(&arp2[24], arp_spa(arp));
+      arp_set_spa(&arp2[14], airwall->dl_addr);
+      arp_set_tpa(&arp2[24], arp_spa(arp));
 
       struct packet *pktstruct = ll_alloc_st(st, packet_size(sizeof(etherarp)));
       pktstruct->data = packet_calc_data(pktstruct);

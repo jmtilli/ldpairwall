@@ -6,6 +6,13 @@
 #include "linkcommon.h"
 #include "time64.h"
 #include "packet.h"
+#include "airwall.h"
+#include "ports.h"
+#include "ldpports.h"
+#include "mypcapng.h"
+
+#define POOL_SIZE 48
+#define BLOCK_SIZE 65664
 
 uint32_t ext_ip = (10<<24)|(2<<8)|15;
 
@@ -20,11 +27,104 @@ struct ldp_out_queue *uloutq[MAX_RX_TX];
 
 atomic_int exit_threads = 0;
 
+struct rx_args {
+  struct airwall *airwall;
+  struct worker_local *local;
+  int idx;
+};
+
+struct periodic_userdata {
+  struct rx_args *args;
+  uint64_t dlbytes, ulbytes;
+  uint64_t dlpkts, ulpkts;
+  uint64_t last_dlbytes, last_ulbytes;
+  uint64_t last_dlpkts, last_ulpkts;
+  uint64_t last_time64;
+  uint64_t next_time64;
+};
+
+static void periodic_fn(
+  struct periodic_userdata *ud)
+{
+  uint64_t time64 = gettime64();
+  double diff = (time64 - ud->last_time64)/1000.0/1000.0;
+  uint64_t ulbdiff = ud->ulbytes - ud->last_ulbytes;
+  uint64_t dlbdiff = ud->dlbytes - ud->last_dlbytes;
+  uint64_t ulpdiff = ud->ulpkts - ud->last_ulpkts;
+  uint64_t dlpdiff = ud->dlpkts - ud->last_dlpkts;
+  ud->last_ulbytes = ud->ulbytes;
+  ud->last_dlbytes = ud->dlbytes;
+  ud->last_ulpkts = ud->ulpkts;
+  ud->last_dlpkts = ud->dlpkts;
+  worker_local_rdlock(ud->args->local);
+  log_log(LOG_LEVEL_INFO, "LDPAIRWALL",
+         "worker/%d %g MPPS %g Gbps ul %g MPPS %g Gbps dl"
+         " %u conns synproxied %u conns not",
+         ud->args->idx,
+         ulpdiff/diff/1e6, 8*ulbdiff/diff/1e9,
+         dlpdiff/diff/1e6, 8*dlbdiff/diff/1e9,
+         ud->args->local->synproxied_connections,
+         ud->args->local->direct_connections);
+  worker_local_rdunlock(ud->args->local);
+  ud->last_time64 = time64;
+  ud->next_time64 += 2*1000*1000;
+}
+
+int in = 0;
+struct pcapng_out_ctx inctx;
+int out = 0;
+struct pcapng_out_ctx outctx;
+int lan = 0;
+struct pcapng_out_ctx lanctx;
+int wan = 0;
+struct pcapng_out_ctx wanctx;
+
 int main(int argc, char **argv)
 {
   int idx = 0;
   int i;
   struct pollfd pfds[2];
+  uint64_t expiry, time64;
+  int timeout;
+  int try;
+  struct airwall sairwall = {};
+  struct airwall *airwall = &sairwall;
+  struct worker_local slocal = {};
+  struct worker_local *local = &slocal;
+  struct rx_args args = {};
+  struct periodic_userdata periodic = {};
+  int j;
+  const int numpkts = 0;
+  unsigned long long pktnum = 0;
+  struct ll_alloc_st st;
+  struct allocif intf = {.ops = &ll_allocif_ops_st, .userdata = &st};
+  struct port outport;
+  struct ldpfunc2_userdata ud;
+
+  ud.intf = &intf;
+  ud.dloutq = dloutq[idx];
+  ud.uloutq = uloutq[idx];
+  ud.lan = lan;
+  ud.wan = wan;
+  ud.out = out;
+  ud.lanctx = &lanctx;
+  ud.wanctx = &wanctx;
+  ud.outctx = &outctx;
+  outport.portfunc = ldpfunc2;
+  outport.userdata = &ud;
+
+  if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
+  {
+    abort();
+  }
+
+  args.idx = 0;
+  args.airwall = airwall;
+  args.local = local;
+
+  periodic.last_time64 = gettime64();
+  periodic.next_time64 = periodic.last_time64 + 2*1000*1000;
+  periodic.args = &args;
 
   ulintf = ldp_interface_open("veth1", NUM_THR, NUM_THR);
   if (ulintf == NULL)
@@ -102,6 +202,8 @@ int main(int argc, char **argv)
     struct ldp_packet pkts2[1000];
     int num;
 
+    num = ldp_in_nextpkts(dlinq[idx], pkts, sizeof(pkts)/sizeof(*pkts));
+
     j = 0;
     for (i = 0; i < num; i++)
     {
@@ -132,7 +234,7 @@ int main(int argc, char **argv)
       {
         if (pcapng_out_ctx_write(&inctx, pkts[i].data, pkts[i].sz, gettime64(), "out"))
         {
-          log_log(LOG_LEVEL_CRIT, "LDPPROXY", "can't record packet");
+          log_log(LOG_LEVEL_CRIT, "LDPAIRWALL", "can't record packet");
           exit(1);
         }
       }
@@ -140,7 +242,7 @@ int main(int argc, char **argv)
       {
         if (pcapng_out_ctx_write(&lanctx, pkts[i].data, pkts[i].sz, gettime64(), "in"))
         {
-          log_log(LOG_LEVEL_CRIT, "LDPPROXY", "can't record packet");
+          log_log(LOG_LEVEL_CRIT, "LDPAIRWALL", "can't record packet");
           exit(1);
         }
       }
@@ -181,7 +283,7 @@ int main(int argc, char **argv)
       {
         if (pcapng_out_ctx_write(&inctx, pkts[i].data, pkts[i].sz, gettime64(), "in"))
         {
-          log_log(LOG_LEVEL_CRIT, "LDPPROXY", "can't record packet");
+          log_log(LOG_LEVEL_CRIT, "LDPAIRWALL", "can't record packet");
           exit(1);
         }
       }
@@ -189,7 +291,7 @@ int main(int argc, char **argv)
       {
         if (pcapng_out_ctx_write(&wanctx, pkts[i].data, pkts[i].sz, gettime64(), "in"))
         {
-          log_log(LOG_LEVEL_CRIT, "LDPPROXY", "can't record packet");
+          log_log(LOG_LEVEL_CRIT, "LDPAIRWALL", "can't record packet");
           exit(1);
         }
       }
