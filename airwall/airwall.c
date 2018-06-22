@@ -4,6 +4,7 @@
 #include <sys/time.h>
 #include <arpa/inet.h>
 #include "time64.h"
+#include "detect.h"
 
 #define MAX_FRAG 65535
 #define INITIAL_WINDOW (1<<14)
@@ -52,6 +53,15 @@ static size_t airwall_state_to_str(
       already = 1;
     }
     off += snprintf(str + off, bufsiz - off, "UPLINK_SYN_RCVD");
+  }
+  if (e->flag_state & FLAG_STATE_WINDOW_UPDATE_SENT)
+  {
+    if (already)
+    {
+      off += snprintf(str + off, bufsiz - off, ",");
+      already = 1;
+    }
+    off += snprintf(str + off, bufsiz - off, "WINDOW_UPDATE_SENT");
   }
   if (e->flag_state & FLAG_STATE_DOWNLINK_SYN_SENT)
   {
@@ -345,6 +355,28 @@ static inline int rst_is_valid(uint32_t rst_seq, uint32_t ref_seq)
   return diff >= -3;
 }
 
+static inline int resend_request_is_valid_win(uint32_t seq, uint32_t ref_seq,
+                                              uint32_t window)
+{
+  int32_t diff = seq - ref_seq;
+  if (diff >= 0)
+  {
+    if (diff > 512*1024*1024)
+    {
+      log_log(LOG_LEVEL_EMERG, "WORKER",
+        "TOO GREAT SEQUENCE NUMBER DIFFERENCE %u %u", seq, ref_seq);
+    }
+    return ((uint32_t)diff) <= window + 3;
+  }
+  if (diff < -512*1024*1024)
+  {
+    log_log(LOG_LEVEL_EMERG, "WORKER",
+      "TOO GREAT SEQUENCE NUMBER DIFFERENCE %u %u", seq, ref_seq);
+  }
+  return diff >= -3;
+}
+
+
 static inline int resend_request_is_valid(uint32_t seq, uint32_t ref_seq)
 {
   int32_t diff = seq - ref_seq;
@@ -373,7 +405,10 @@ static void airwall_expiry_fn(
   struct worker_local *local = ud;
   struct airwall_hash_entry *e;
   e = CONTAINER_OF(timer, struct airwall_hash_entry, timer);
-  hash_table_delete(&local->local_hash, &e->local_node, airwall_hash_local(e));
+  if (e->local_port != 0)
+  {
+    hash_table_delete(&local->local_hash, &e->local_node, airwall_hash_local(e));
+  }
   hash_table_delete(&local->nat_hash, &e->nat_node, airwall_hash_nat(e));
   worker_local_wrlock(local);
   if (e->was_synproxied)
@@ -443,9 +478,12 @@ struct airwall_hash_entry *airwall_hash_put(
 {
   struct airwall_hash_entry *e;
   struct airwall_hash_ctx ctx;
-  if (airwall_hash_get_local(local, version, local_ip, local_port, remote_ip, remote_port, &ctx))
+  if (local_ip != 0 && local_port != 0)
   {
-    return NULL;
+    if (airwall_hash_get_local(local, version, local_ip, local_port, remote_ip, remote_port, &ctx))
+    {
+      return NULL;
+    }
   }
   if (airwall_hash_get_nat(local, version, nat_ip, nat_port, remote_ip, remote_port, &ctx))
   {
@@ -458,9 +496,13 @@ struct airwall_hash_entry *airwall_hash_put(
   }
   memset(e, 0, sizeof(*e));
   e->version = version;
-  memcpy(&e->local_ip, local_ip, (version == 4) ? 4 : 16);
+  if (local_ip != NULL)
+  {
+    memcpy(&e->local_ip, local_ip, (version == 4) ? 4 : 16);
+  }
   memcpy(&e->nat_ip, nat_ip, (version == 4) ? 4 : 16);
   memcpy(&e->remote_ip, remote_ip, (version == 4) ? 4 : 16);
+  e->detect = NULL;
   e->local_port = local_port;
   e->nat_port = nat_port;
   e->remote_port = remote_port;
@@ -470,8 +512,11 @@ struct airwall_hash_entry *airwall_hash_put(
   e->timer.userdata = local;
   worker_local_wrlock(local);
   timer_linkheap_add(&local->timers, &e->timer);
-  hash_table_add_nogrow_already_bucket_locked(
-    &local->local_hash, &e->local_node, airwall_hash_local(e));
+  if (local_port != 0)
+  {
+    hash_table_add_nogrow_already_bucket_locked(
+      &local->local_hash, &e->local_node, airwall_hash_local(e));
+  }
   hash_table_add_nogrow_already_bucket_locked(
     &local->nat_hash, &e->nat_node, airwall_hash_nat(e));
   if (was_synproxied)
@@ -515,7 +560,10 @@ static void delete_closing_already_bucket_locked(
   log_log(LOG_LEVEL_NOTICE, "SYNPROXY",
           "deleting closing connection to make room for new");
   timer_linkheap_remove(&local->timers, &entry->timer);
-  hash_table_delete_already_bucket_locked(&local->local_hash, &entry->local_node);
+  if (entry->local_port != 0)
+  {
+    hash_table_delete_already_bucket_locked(&local->local_hash, &entry->local_node);
+  }
   hash_table_delete_already_bucket_locked(&local->nat_hash, &entry->nat_node);
   worker_local_wrlock(local);
   if (entry->was_synproxied)
@@ -531,6 +579,13 @@ static void delete_closing_already_bucket_locked(
   entry = NULL;
 }
 
+static void send_syn(
+  void *orig, struct worker_local *local, struct port *port,
+  struct ll_alloc_st *st,
+  uint16_t mss, uint8_t wscale, uint8_t sack_permitted,
+  struct airwall_hash_entry *entry,
+  uint64_t time64, int was_keepalive);
+
 static __attribute__((unused)) void process_data(
   void *orig, struct worker_local *local, struct airwall *airwall,
   struct port *port, struct ll_alloc_st *st, uint64_t time64,
@@ -541,8 +596,7 @@ static __attribute__((unused)) void process_data(
   char *tcppay;
   uint16_t tcppay_len;
   uint32_t seqdiff;
-  uint32_t tocopy;
-  uint32_t i;
+  int res;
 
   if (entry->flag_state != FLAG_STATE_WINDOW_UPDATE_SENT)
   {
@@ -562,39 +616,40 @@ static __attribute__((unused)) void process_data(
     return;
   }
 #endif
-  if (seqdiff > entry->init_data_sz)
+  res = proto_detect_feed(entry->detect, tcppay, seqdiff, tcppay_len);
+  if (res == -EAGAIN)
   {
-    log_log(LOG_LEVEL_NOTICE, "AIRWALL", "entire segment past init data size");
     return;
   }
-  // FIXME the loops could be improved a lot
-  for (i = 0; i < tcppay_len; i++)
+  else if (res == -ENOTSUP)
   {
-    uint32_t off = seqdiff + i;
-    if (off > entry->init_data_sz)
+    log_log(LOG_LEVEL_ERR, "AIRWALL", "can't detect protocol and host");
+    // FIXME send RST
+    entry->timer.time64 = time64 + 45ULL*1000ULL*1000ULL;
+    entry->flag_state = FLAG_STATE_RESETED;
+    timer_linkheap_modify(&local->timers, &entry->timer);
+  }
+  else if (res == 0)
+  {
+    log_log(LOG_LEVEL_NOTICE, "AIRWALL", "TCP payload %s", tcppay);
+    log_log(LOG_LEVEL_NOTICE, "AIRWALL", "detected protocol and host %s",
+            entry->detect->hostctx.hostname);
+    if (entry->local_port != 0)
     {
-      break;
+      abort();
     }
-    if (entry->init_bitmask[off/8] & (1<<(off%8)))
-    {
-      if (entry->init_data[off] != tcppay[off])
-      {
-        log_log(LOG_LEVEL_ERR, "AIRWALL", "content conflict");
-        return;
-      }
-    }
+    // FIXME select correct local_ip
+    entry->local_port = entry->nat_port;
+    memcpy(&entry->local_ip, &entry->nat_ip, sizeof(entry->local_ip));
+    send_syn(
+      orig, local, port, st, // FIXME verify send_syn doesn't handle orig wrong
+      entry->state_data.downlink_half_open.mss,
+      entry->state_data.downlink_half_open.wscale,
+      entry->state_data.downlink_half_open.sack_permitted, entry, time64, 0);
+    // FIXME send SYN
   }
-  tocopy = tcppay_len;
-  if (tocopy > entry->init_data_sz - seqdiff)
-  {
-    tocopy = entry->init_data_sz - seqdiff;
-  }
-  memcpy(&entry->init_data[seqdiff], tcppay, tcppay_len);
-  for (i = 0; i < tocopy; i++)
-  {
-    uint32_t off = seqdiff + i;
-    entry->init_bitmask[off/8] |= (1<<(off%8));
-  }
+  
+  
   // FIXME detect protocol
 }
 
@@ -900,7 +955,10 @@ static void send_synack(
       timer_linkheap_remove(&local->timers, &e->timer);
       //if (ctx.hashval == hashval)
       {
-        hash_table_delete_already_bucket_locked(&local->local_hash, &e->local_node);
+        if (e->local_port != 0)
+        {
+          hash_table_delete_already_bucket_locked(&local->local_hash, &e->local_node);
+        }
         hash_table_delete_already_bucket_locked(&local->nat_hash, &e->nat_node);
       }
 #if 0
@@ -990,12 +1048,20 @@ static void send_or_resend_syn(
   ip46_set_id(ip, 0); // XXX
   ip46_set_ttl(ip, 64);
   ip46_set_proto(ip, 6);
-  ip46_set_src(ip, ip46_src(origip));
-  ip46_set_dst(ip, ip46_dst(origip));
+  if (version == 6)
+  {
+    ip46_set_src(ip, entry->local_ip.ipv6);
+    ip46_set_dst(ip, entry->remote_ip.ipv6);
+  }
+  else
+  {
+    ip_set_src(ip, entry->local_ip.ipv4);
+    ip_set_dst(ip, entry->remote_ip.ipv4);
+  }
   ip46_set_hdr_cksum_calc(ip);
   tcp = ip46_payload(ip);
-  tcp_set_src_port(tcp, tcp_src_port(origtcp));
-  tcp_set_dst_port(tcp, tcp_dst_port(origtcp));
+  tcp_set_src_port(tcp, entry->remote_port);
+  tcp_set_dst_port(tcp, entry->local_port);
   tcp_set_syn_on(tcp);
   tcp_set_data_offset(tcp, sizeof(syn) - 14 - 40);
   tcp_set_seq_number(tcp, entry->state_data.downlink_syn_sent.remote_isn);
@@ -1117,66 +1183,19 @@ static void send_syn(
   struct airwall_hash_entry *entry,
   uint64_t time64, int was_keepalive)
 {
-  void *origip;
-  void *origtcp;
-  struct tcp_information info;
-  int version;
+  //void *origip;
+  //void *origtcp;
+  //struct tcp_information info;
 
-  origip = ether_payload(orig);
-  version = ip_version(origip);
-  origtcp = ip46_payload(origip);
-  tcp_parse_options(origtcp, &info);
-
-  if (entry == NULL)
+  if (entry == NULL || entry->flag_state != FLAG_STATE_WINDOW_UPDATE_SENT)
   {
-#if 0
-    entry = airwall_hash_put(
-      local, version, ip46_dst(origip), tcp_dst_port(origtcp),
-      ip46_src(origip), tcp_src_port(origtcp),
-      1, time64);
-#endif // FIXME fix this
-    if (entry->version == 6)
-    {
-      entry->ulflowlabel = gen_flowlabel_entry(entry);
-    }
-    if (entry == NULL)
-    {
-      log_log(LOG_LEVEL_ERR, "WORKER", "not enough memory or already existing");
-      return;
-    }
-  }
-  if (version == 6)
-  {
-    entry->dlflowlabel = ipv6_flow_label(origip);
+    abort();
   }
 
-  entry->state_data.downlink_syn_sent.mss = mss;
-  entry->state_data.downlink_syn_sent.sack_permitted = sack_permitted;
-  entry->state_data.downlink_syn_sent.timestamp_present = info.ts_present;
-  if (info.ts_present)
-  {
-    entry->state_data.downlink_syn_sent.local_timestamp = info.tsecho;
-    entry->state_data.downlink_syn_sent.remote_timestamp = info.ts;
-  }
+  //origip = ether_payload(orig);
+  //origtcp = ip46_payload(origip);
+  //tcp_parse_options(origtcp, &info);
 
-  entry->wan_wscale = wscale;
-  entry->wan_sent = tcp_seq_number(origtcp) + (!!was_keepalive);
-  entry->wan_acked = tcp_ack_number(origtcp);
-  entry->wan_max =
-    tcp_ack_number(origtcp) + (tcp_window(origtcp) << entry->wan_wscale);
-
-  entry->wan_max_window_unscaled = tcp_window(origtcp);
-  if (entry->wan_max_window_unscaled == 0)
-  {
-    entry->wan_max_window_unscaled = 1;
-  }
-
-  entry->init_data_sz = 2048;
-  entry->init_data = malloc(entry->init_data_sz);
-  entry->init_bitmask = malloc((entry->init_data_sz+7)/8);
-
-  entry->state_data.downlink_syn_sent.local_isn = tcp_ack_number(origtcp) - 1;
-  entry->state_data.downlink_syn_sent.remote_isn = tcp_seq_number(origtcp) - 1 + (!!was_keepalive);
   entry->flag_state = FLAG_STATE_DOWNLINK_SYN_SENT;
   entry->timer.time64 = time64 + 120ULL*1000ULL*1000ULL;
   timer_linkheap_modify(&local->timers, &entry->timer);
@@ -1256,24 +1275,84 @@ static void send_ack_only(
   port->portfunc(pktstruct, port->userdata);
 }
 
-static __attribute__((unused)) void send_window_update(
-  void *triggerpkt, struct airwall_hash_entry *entry, struct port *port,
-  struct airwall *airwall, struct ll_alloc_st *st)
+static void send_window_update(
+  void *triggerpkt, struct worker_local *local,
+  struct airwall_hash_entry *entry, struct port *port,
+  struct airwall *airwall, struct ll_alloc_st *st, uint32_t mss,
+  int sack_permitted, uint32_t wscale, int was_keepalive, uint64_t time64)
 {
   char windowupdate[14+40+20+12] = {0};
   void *ip, *origip;
   void *tcp, *origtcp;
   struct packet *pktstruct;
-  struct tcp_information tcpinfo;
   unsigned char *tcpopts;
   int version;
   size_t sz;
 
+  struct tcp_information info;
+
   origip = ether_payload(triggerpkt);
+  version = ip_version(origip);
+  origtcp = ip46_payload(origip);
+  tcp_parse_options(origtcp, &info);
+
+  if (entry == NULL)
+  {
+    entry = airwall_hash_put(
+      local, version,
+      NULL, 0,
+      ip46_dst(origip), tcp_dst_port(origtcp),
+      ip46_src(origip), tcp_src_port(origtcp),
+      1, time64);
+    if (entry->version == 6)
+    {
+      entry->ulflowlabel = gen_flowlabel_entry(entry);
+    }
+    if (entry == NULL)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKER", "not enough memory or already existing");
+      return;
+    }
+  }
+  if (version == 6)
+  {
+    entry->dlflowlabel = ipv6_flow_label(origip);
+  }
+
+  entry->state_data.downlink_syn_sent.mss = mss;
+  entry->state_data.downlink_syn_sent.sack_permitted = sack_permitted;
+  entry->state_data.downlink_syn_sent.timestamp_present = info.ts_present;
+  if (info.ts_present)
+  {
+    entry->state_data.downlink_syn_sent.local_timestamp = info.tsecho;
+    entry->state_data.downlink_syn_sent.remote_timestamp = info.ts;
+  }
+
+  entry->wan_wscale = wscale;
+  entry->wan_sent = tcp_seq_number(origtcp) + (!!was_keepalive);
+  entry->wan_acked = tcp_ack_number(origtcp);
+  entry->wan_max =
+    tcp_ack_number(origtcp) + (tcp_window(origtcp) << entry->wan_wscale);
+  entry->lan_max = tcp_seq_number(origtcp) + INITIAL_WINDOW;
+  entry->lan_sent = tcp_ack_number(origtcp);
+
+  entry->wan_max_window_unscaled = tcp_window(origtcp);
+  if (entry->wan_max_window_unscaled == 0)
+  {
+    entry->wan_max_window_unscaled = 1;
+  }
+
+  entry->detect = malloc(sizeof(*entry->detect));
+  proto_detect_ctx_init(entry->detect);
+
+  entry->state_data.downlink_syn_sent.local_isn = tcp_ack_number(origtcp) - 1;
+  entry->state_data.downlink_syn_sent.remote_isn = tcp_seq_number(origtcp) - 1 + (!!was_keepalive);
+  entry->flag_state = FLAG_STATE_WINDOW_UPDATE_SENT;
+  entry->timer.time64 = time64 + 120ULL*1000ULL*1000ULL;
+  timer_linkheap_modify(&local->timers, &entry->timer);
+
   version = entry->version;
   sz = (version == 4) ? (sizeof(windowupdate) - 20) : sizeof(windowupdate);
-  origtcp = ip46_payload(origip);
-  tcp_parse_options(origtcp, &tcpinfo);
 
   memcpy(ether_src(windowupdate), ether_dst(triggerpkt), 6);
   memcpy(ether_dst(windowupdate), ether_src(triggerpkt), 6);
@@ -1308,14 +1387,14 @@ static __attribute__((unused)) void send_window_update(
   tcp_set_ack_number(tcp, tcp_ack_number(origtcp)); // FIXME
   tcp_set_window(tcp, INITIAL_WINDOW>>airwall->conf->own_wscale);
   tcpopts = &((unsigned char*)tcp)[20];
-  if (tcpinfo.options_valid && tcpinfo.ts_present) // FIXME
+  if (info.options_valid && info.ts_present) // FIXME
   {
     tcpopts[0] = 1;
     tcpopts[1] = 1;
     tcpopts[2] = 8;
     tcpopts[3] = 10;
-    hdr_set32n(&tcpopts[4], tcpinfo.tsecho); // FIXME
-    hdr_set32n(&tcpopts[8], tcpinfo.ts);
+    hdr_set32n(&tcpopts[4], info.tsecho); // FIXME
+    hdr_set32n(&tcpopts[8], info.ts);
   }
   else
   {
@@ -1776,7 +1855,7 @@ int downlink(
           ipv6_src(ip), airwall->conf->ratehash.network_prefix6, &local->ratelimit);
       }
       log_log(
-        LOG_LEVEL_NOTICE, "WORKERDOWNLINK", "SYN proxy sending SYN, found");
+        LOG_LEVEL_NOTICE, "WORKERDOWNLINK", "SYN proxy sending WINUPD, found");
       linked_list_delete(&entry->state_data.downlink_half_open.listnode);
       if (local->half_open_connections <= 0)
       {
@@ -1784,11 +1863,11 @@ int downlink(
       }
       local->half_open_connections--;
       worker_local_wrunlock(local);
-      send_syn(
-        ether, local, port, st,
+      send_window_update(
+        ether, local, entry, port, airwall, st,
         entry->state_data.downlink_half_open.mss,
-        entry->state_data.downlink_half_open.wscale,
-        entry->state_data.downlink_half_open.sack_permitted, entry, time64, 0);
+        entry->state_data.downlink_half_open.sack_permitted,
+        entry->state_data.downlink_half_open.wscale, 0, time64);
       //airwall_hash_unlock(local, &ctx);
       return 1;
     }
@@ -1980,14 +2059,15 @@ int downlink(
       worker_local_wrunlock(local);
       airwall_packet_to_str(packetbuf, sizeof(packetbuf), ether);
       log_log(
-        LOG_LEVEL_NOTICE, "WORKERDOWNLINK", "SYN proxy sending SYN, packet: %s",
+        LOG_LEVEL_NOTICE, "WORKERDOWNLINK", "SYN proxy sending WINUPD, packet: %s",
         packetbuf);
       if (entry != NULL)
       {
         delete_closing_already_bucket_locked(airwall, local, entry);
         entry = NULL;
       }
-      send_syn(ether, local, port, st, mss, wscale, sack_permitted, NULL, time64, was_keepalive);
+      send_window_update(ether, local, entry, port, airwall, st, mss,
+                         !!sack_permitted, wscale, was_keepalive, time64);
       //airwall_hash_unlock(local, &ctx);
       return 1;
     }
@@ -2069,7 +2149,8 @@ int downlink(
   }
   if (   tcp_ack(ippay)
       && entry->flag_state == FLAG_STATE_DOWNLINK_SYN_SENT
-      && resend_request_is_valid(tcp_seq_number(ippay), entry->wan_sent)
+      && resend_request_is_valid_win(tcp_seq_number(ippay), entry->wan_sent,
+                                     INITIAL_WINDOW)
       && resend_request_is_valid(tcp_ack_number(ippay), entry->wan_acked))
   {
     log_log(LOG_LEVEL_NOTICE, "WORKERDOWNLINK", "resending SYN");
@@ -2079,7 +2160,7 @@ int downlink(
     //airwall_hash_unlock(local, &ctx);
     return 1;
   }
-  if (!airwall_is_connected(entry) && entry->flag_state != FLAG_STATE_RESETED)
+  if (!airwall_is_connected(entry) && entry->flag_state != FLAG_STATE_RESETED && entry->flag_state != FLAG_STATE_WINDOW_UPDATE_SENT)
   {
     airwall_entry_to_str(statebuf, sizeof(statebuf), entry);
     airwall_packet_to_str(packetbuf, sizeof(packetbuf), ether);
@@ -2135,6 +2216,7 @@ int downlink(
   }
   wan_min =
     entry->wan_sent - (entry->lan_max_window_unscaled<<entry->lan_wscale);
+  printf("11111111111111 %u %u %u\n", wan_min, first_seq, entry->lan_max+1);
   if (
     !between(
       wan_min, first_seq, entry->lan_max+1)
@@ -2149,6 +2231,7 @@ int downlink(
     //airwall_hash_unlock(local, &ctx);
     return 1;
   }
+  printf("22222222222222\n");
   if (unlikely(tcp_fin(ippay)) && entry->flag_state != FLAG_STATE_RESETED)
   {
     if (version == 4 && ip_more_frags(ip)) // FIXME for IPv6 also
@@ -2217,7 +2300,12 @@ int downlink(
     }
   }
   uint64_t next64;
-  if (entry->flag_state == FLAG_STATE_RESETED)
+  int omit = 0;
+  if (entry->flag_state == FLAG_STATE_WINDOW_UPDATE_SENT)
+  {
+    omit = 1;
+  }
+  else if (entry->flag_state == FLAG_STATE_RESETED)
   {
     next64 = time64 + 45ULL*1000ULL*1000ULL;
   }
@@ -2234,12 +2322,18 @@ int downlink(
   {
     next64 = time64 + 86400ULL*1000ULL*1000ULL;
   }
-  if (abs(next64 - entry->timer.time64) >= 1000*1000)
+  if (!omit && abs(next64 - entry->timer.time64) >= 1000*1000)
   {
     worker_local_wrlock(local);
     entry->timer.time64 = next64;
     timer_linkheap_modify(&local->timers, &entry->timer);
     worker_local_wrunlock(local);
+  }
+  if (entry->flag_state == FLAG_STATE_WINDOW_UPDATE_SENT)
+  {
+    log_log(LOG_LEVEL_NOTICE, "WORKERDOWNLINK", "processing protodetect data");
+    process_data(ether, local, airwall, port, st, time64, entry);
+    return 1;
   }
   tcp_find_sack_ts_headers(ippay, &hdrs);
   if (tcp_ack(ippay))
@@ -2525,10 +2619,8 @@ int uplink(
           return 1;
         }
       }
-#if 0
       entry = airwall_hash_put(
-        local, version, lan_ip, lan_port, remote_ip, remote_port, 0, time64);
-#endif // FIXME fix this
+        local, version, lan_ip, lan_port, lan_ip, lan_port, remote_ip, remote_port, 0, time64); // FIXME perform NAT
       if (version == 6)
       {
         entry->ulflowlabel = ipv6_flow_label(ip);

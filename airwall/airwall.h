@@ -20,6 +20,7 @@
 #endif
 #include "conf.h"
 #include "arp.h"
+#include "detect.h"
 
 struct airwall {
   struct conf *conf;
@@ -104,10 +105,7 @@ struct airwall_hash_entry {
       uint32_t local_isn;
     } downlink_half_open;
   } state_data;
-  uint32_t init_data_sz;
-  char *init_data;
-  uint8_t *init_bitmask;
-  uint32_t init_data_fed;
+  struct proto_detect_ctx *detect;
 };
 
 enum flag_state {
