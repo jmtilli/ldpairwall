@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
+#include <stdlib.h>
 #include "detect.h"
 
 void hostname_ctx_init(struct hostname_ctx *nam)
@@ -889,4 +890,139 @@ int ssl_fragment_ctx_feed(struct ssl_fragment_ctx *ctx,
     //printf("calling ssl_fragment_ctx_reset\n");
     ssl_fragment_ctx_reset(ctx);
   }
+}
+
+static inline void set_bit_range(uint64_t *bitmask, size_t start, size_t end)
+{
+  // FIXME this needs to be validtaed
+  size_t i;
+  size_t start2, end2;
+  start2 = ((start+63)/64)*64;
+  if (start2 > end)
+  {
+    start2 = end;
+  }
+  end2 = (end/64)*64;
+  if (end2 < start)
+  {
+    end2 = start;
+  }
+#if 0
+  for (i = start; i < start2; i++)
+  {
+    bitmask[i/64] |= (1<<(i%64));
+  }
+#endif
+  bitmask[start/64] |= (1<<(start2%64)) - (1<<(start%64));
+  for (i = start2/64; i < end2/64; i++)
+  {
+    bitmask[i] = 0xFFFFFFFFFFFFFFFFLLU;
+  }
+#if 0
+  for (i = end2; i < end; i++)
+  {
+    bitmask[i/64] |= (1<<(i%64));
+  }
+#endif
+  bitmask[end2/64] |= (1<<(end%64)) - (1<<(end2%64));
+}
+
+int proto_detect_feed(struct proto_detect_ctx *ctx,
+                      const void *data, size_t start_off, size_t sz)
+{
+  const char *tcppay = data;
+  size_t tocopy;
+  size_t toprocess;
+  size_t procstart;
+  int ret1, ret2;
+  size_t i;
+  if (start_off > sizeof(ctx->init_data))
+  {
+    return -EAGAIN;
+  }
+  for (i = 0; i < sz; i++)
+  {
+    uint32_t off = start_off + i;
+    if (off > ctx->max_bitmask)
+    {
+      break;
+    }
+    if (off > sizeof(ctx->init_data))
+    {
+      break; // FIXME is this required at all?
+    }
+    if (ctx->init_bitmask[off/64] & (1<<(off%64)))
+    {
+      if (ctx->init_data[off] != tcppay[off])
+      {
+        return -EBADMSG;
+      }
+    }
+  }
+  tocopy = sz;
+  if (tocopy > sizeof(ctx->init_data) - start_off)
+  {
+    tocopy = sizeof(ctx->init_data) - start_off;
+  }
+  memcpy(&ctx->init_data[start_off], tcppay, sz);
+  set_bit_range(ctx->init_bitmask, start_off, start_off + tocopy);
+#if 0
+  for (i = 0; i < tocopy; i++)
+  {
+    uint32_t off = start_off + i;
+    ctx->init_bitmask[off/64] |= (1<<(off%64));
+  }
+#endif
+  if (ctx->max_bitmask < start_off + tocopy)
+  {
+    ctx->max_bitmask = start_off + tocopy;
+  }
+  if (start_off > ctx->init_data_fed)
+  {
+    return -EAGAIN;
+  }
+  procstart = start_off;
+  toprocess = tocopy;
+  if (start_off < ctx->init_data_fed)
+  {
+    procstart = ctx->init_data_fed;
+    toprocess = tocopy - (ctx->init_data_fed - start_off);
+  }
+  if (procstart != ctx->init_data_fed)
+  {
+    abort();
+  }
+  for (i = procstart + toprocess; i < sizeof(ctx->init_data); i++)
+  {
+    if (i > ctx->max_bitmask)
+    {
+      break;
+    }
+    else if (ctx->init_bitmask[i/64] & (1<<(i%64)))
+    {
+      toprocess++;
+    }
+    else
+    {
+      break;
+    }
+  }
+  ctx->init_data_fed += toprocess;
+  ret1 = ssl_fragment_ctx_feed(&ctx->fragctx, &ctx->init_data[procstart],
+                               toprocess, &ctx->hostctx);
+  if (ret1 == 0)
+  {
+    return 0;
+  }
+  ret2 = http_ctx_feed(&ctx->httpctx, &ctx->init_data[procstart],
+                       toprocess, &ctx->hostctx);
+  if (ret2 == 0)
+  {
+    return 0;
+  }
+  if (ret1 != -EAGAIN && ret2 != -EAGAIN)
+  {
+    return -ENOTSUP;
+  }
+  return -EAGAIN;
 }

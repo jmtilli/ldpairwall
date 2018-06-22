@@ -110,12 +110,28 @@ int ssl_fragment_ctx_feed(struct ssl_fragment_ctx *ctx,
 
 struct proto_detect_ctx {
   uint32_t init_data_sz;
-  char init_data[2048];
-  uint64_t init_bitmask[2048/64];
+  char init_data[4096];
+  uint32_t max_bitmask;
+  uint64_t init_bitmask[4096/64];
   uint32_t init_data_fed;
   struct hostname_ctx hostctx;
   struct ssl_fragment_ctx fragctx;
   struct http_ctx httpctx;
 };
+
+static inline void proto_detect_ctx_init(struct proto_detect_ctx *ctx)
+{
+  ctx->init_data_sz = sizeof(ctx->init_data);
+  memset(ctx->init_bitmask, 0, sizeof(ctx->init_bitmask));
+  ctx->max_bitmask = 0;
+  ctx->init_data_fed = 0;
+  ctx->max_bitmask = 0;
+  hostname_ctx_init(&ctx->hostctx);
+  ssl_fragment_ctx_init(&ctx->fragctx);
+  http_ctx_init(&ctx->httpctx);
+}
+
+int proto_detect_feed(struct proto_detect_ctx *ctx,
+                      const void *data, size_t start_off, size_t sz);
 
 #endif

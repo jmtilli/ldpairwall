@@ -81,6 +81,76 @@ static void http_test(void)
   printf("simple: %g us\n", (tv2.tv_usec-tv1.tv_usec)/1e6 + (tv2.tv_sec-tv1.tv_sec));
 }
 
+static void http_proto_test(void)
+{
+  struct proto_detect_ctx ctx = {};
+  char strsimple[] =
+    "GET /foo/bar/baz/barf/quux.html HTTP/1.1\r\n"
+    "Host: www.google.fi\r\n"
+    "User-Agent: Mozilla/5.0 (Linux; Android 7.0; SM-G930VC Build/NRD90M; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/58.0.3029.83 Mobile Safari/537.36\r\n"
+    "Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,image/jpeg,image/gif;q=0.2,*/*;q=0.1\r\n"
+    "Accept-Language: en-us,en;q=0.5\r\n"
+    "Accept-Encoding: gzip,deflate\r\n"
+    "Accept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.7\r\n"
+    "Keep-Alive: 300\r\n"
+    "Connection: keep-alive\r\n"
+    "Referer: http://www.google.fi/quux/barf/baz/bar/foo.html\r\n"
+    "Cookie: PHPSESSID=298zf09hf012fh2; csrftoken=u32t4o3tb3gg43; _gat=1;\r\n"
+    "\r\n";
+  char str[] =
+    "GET /foo/bar/baz/barf/quux.html HTTP/1.1\r\n"
+    "User-Agent: Mozilla/5.0 (Linux; Android 7.0; SM-G930VC Build/NRD90M; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/58.0.3029.83 Mobile Safari/537.36\r\n"
+    "Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,image/jpeg,image/gif;q=0.2,*/*;q=0.1\r\n"
+    "Accept-Language: en-us,en;q=0.5\r\n"
+    "Accept-Encoding: gzip,deflate\r\n"
+    "Accept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.7\r\n"
+    "Keep-Alive: 300\r\n"
+    "Connection: keep-alive\r\n"
+    "Referer: http://www.google.fi/quux/barf/baz/bar/foo.html\r\n"
+    "Cookie: PHPSESSID=298zf09hf012fh2; csrftoken=u32t4o3tb3gg43; _gat=1;\r\n"
+    "Host: www.google.fi\r\n"
+    "\r\n";
+  size_t i;
+  int ret;
+  struct timeval tv1, tv2;
+
+  printf("size %zu\n", sizeof(str)-1);
+
+  gettimeofday(&tv1, NULL);
+  for (i = 0; i < 1000*1000; i++)
+  {
+    proto_detect_ctx_init(&ctx);
+    ret = proto_detect_feed(&ctx, str, 0, sizeof(str)-1);
+    if (ret != 0)
+    {
+      abort();
+    }
+    if (strcmp(ctx.hostctx.hostname, "www.google.fi") != 0)
+    {
+      abort();
+    }
+  }
+  gettimeofday(&tv2, NULL);
+  printf("proto: %g us\n", (tv2.tv_usec-tv1.tv_usec)/1e6 + (tv2.tv_sec-tv1.tv_sec));
+
+  gettimeofday(&tv1, NULL);
+  for (i = 0; i < 1000*1000; i++)
+  {
+    proto_detect_ctx_init(&ctx);
+    ret = proto_detect_feed(&ctx, strsimple, 0, sizeof(strsimple)-1);
+    if (ret != 0)
+    {
+      abort();
+    }
+    if (strcmp(ctx.hostctx.hostname, "www.google.fi") != 0)
+    {
+      abort();
+    }
+  }
+  gettimeofday(&tv2, NULL);
+  printf("protosimple: %g us\n", (tv2.tv_usec-tv1.tv_usec)/1e6 + (tv2.tv_sec-tv1.tv_sec));
+}
+
 int main(int argc, char **argv)
 {
   char withsni[] = {
@@ -98,6 +168,7 @@ int main(int argc, char **argv)
 ,0x04,0x01,0x04,0x02,0x04,0x03,0x03,0x01,0x03,0x02,0x03,0x03,0x02,0x01,0x02,0x02
 ,0x02,0x03
   };
+  struct proto_detect_ctx ctx = {};
   struct ssl_fragment_ctx fragctx;
   size_t i;
   struct timeval tv1, tv2;
@@ -125,9 +196,31 @@ int main(int argc, char **argv)
   gettimeofday(&tv2, NULL);
   printf("SSL: %g us\n", (tv2.tv_usec-tv1.tv_usec)/1e6 + (tv2.tv_sec-tv1.tv_sec));
 
+  gettimeofday(&tv1, NULL);
+  for (i = 0; i < 1000*1000; i++)
+  {
+    proto_detect_ctx_init(&ctx);
+
+    ret = proto_detect_feed(&ctx, withsni, 0, sizeof(withsni));
+    if (ret != 0)
+    {
+      abort();
+    }
+    if (strcmp(nam.hostname, "localhost") != 0)
+    {
+      abort();
+    }
+  }
+  gettimeofday(&tv2, NULL);
+  printf("SSL proto: %g us\n", (tv2.tv_usec-tv1.tv_usec)/1e6 + (tv2.tv_sec-tv1.tv_sec));
+
   printf("HTTP\n");
 
   http_test();
+
+  printf("HTTP proto\n");
+
+  http_proto_test();
 
   return 0;
 }
