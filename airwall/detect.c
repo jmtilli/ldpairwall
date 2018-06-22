@@ -42,10 +42,11 @@ static inline int istoken(char ch)
 
 static inline int isurichar(char ch)
 {
-  return ch == '!' || ch == '#' || ch == '$' || ch == '%' || ch == '&' ||
-         ch == '\'' || ch == '*' || ch == '+' || ch == '-' || ch == '.' ||
-         ch == '^' || ch == '_' || ch == '`' || ch == '|' || ch == '~' ||
-         isdigit(ch) || isalpha(ch) || ch == '/';
+  return ch == ':' || ch == '/' || ch == '?' || ch == '#' || ch == '[' ||
+         ch == ']' || ch == '@' || ch == '!' || ch == '$' || ch == '&' ||
+         ch == '\'' || ch == '(' || ch == ')' || ch == '*' || ch == '+' ||
+         ch == ',' || ch == ';' || ch == '=' || isdigit(ch) || isalpha(ch) ||
+         ch == '-' || ch == '.' || ch == '_' || ch == '~';
 }
 
 int http_ctx_feed(struct http_ctx *ctx, const void *data, size_t sz,
