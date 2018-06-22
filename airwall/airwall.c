@@ -2414,6 +2414,12 @@ int uplink(
   }
   if (ether_type(ether) == ETHER_TYPE_ARP)
   {
+    log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "ARP packet bypass");
+    return 0;
+  }
+#if 0
+  if (ether_type(ether) == ETHER_TYPE_ARP)
+  {
     const void *arp = ether_payload(ether);
     if (ether_len < ETHER_HDR_LEN + 28 || !arp_is_valid_reqresp(arp))
     {
@@ -2462,6 +2468,7 @@ int uplink(
       return 1;
     }
   }
+#endif
   if (ether_type(ether) != ETHER_TYPE_IP && ether_type(ether) != ETHER_TYPE_IPV6)
   {
     log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "pkt is neither IPv4 nor IPv6");

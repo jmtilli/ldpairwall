@@ -101,6 +101,8 @@ int main(int argc, char **argv)
   struct port outport;
   struct ldpfunc2_userdata ud;
 
+  hash_seed_init();
+
   ud.intf = &intf;
   ud.dloutq = dloutq[idx];
   ud.uloutq = uloutq[idx];
