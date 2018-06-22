@@ -6,6 +6,7 @@
 #include "time64.h"
 
 #define MAX_FRAG 65535
+#define INITIAL_WINDOW (1<<14)
 #define IPV6_FRAG_CUTOFF 512
 
 static inline uint32_t gen_flowlabel(const void *local_ip, uint16_t local_port,
@@ -530,6 +531,72 @@ static void delete_closing_already_bucket_locked(
   entry = NULL;
 }
 
+static __attribute__((unused)) void process_data(
+  void *orig, struct worker_local *local, struct airwall *airwall,
+  struct port *port, struct ll_alloc_st *st, uint64_t time64,
+  struct airwall_hash_entry *entry)
+{
+  //int version;
+  char *origip, *origtcp;
+  char *tcppay;
+  uint16_t tcppay_len;
+  uint32_t seqdiff;
+  uint32_t tocopy;
+  uint32_t i;
+
+  if (entry->flag_state != FLAG_STATE_WINDOW_UPDATE_SENT)
+  {
+    abort();
+  }
+
+  origip = ether_payload(orig);
+  //version = ip_version(origip);
+  origtcp = ip46_payload(origip);
+  tcppay = origtcp + tcp_data_offset(origtcp);
+  tcppay_len = ip46_payload_len(origip) - tcp_data_offset(origtcp);
+  seqdiff = tcp_seq_number(origtcp) - entry->state_data.downlink_syn_sent.remote_isn - 1;
+#if 0
+  if (seqdiff < 0)
+  {
+    log_log(LOG_LEVEL_ERR, "AIRWALL", "seqdiff < 0");
+    return;
+  }
+#endif
+  if (seqdiff > entry->init_data_sz)
+  {
+    log_log(LOG_LEVEL_NOTICE, "AIRWALL", "entire segment past init data size");
+    return;
+  }
+  // FIXME the loops could be improved a lot
+  for (i = 0; i < tcppay_len; i++)
+  {
+    uint32_t off = seqdiff + i;
+    if (off > entry->init_data_sz)
+    {
+      break;
+    }
+    if (entry->init_bitmask[off/8] & (1<<(off%8)))
+    {
+      if (entry->init_data[off] != tcppay[off])
+      {
+        log_log(LOG_LEVEL_ERR, "AIRWALL", "content conflict");
+        return;
+      }
+    }
+  }
+  tocopy = tcppay_len;
+  if (tocopy > entry->init_data_sz - seqdiff)
+  {
+    tocopy = entry->init_data_sz - seqdiff;
+  }
+  memcpy(&entry->init_data[seqdiff], tcppay, tcppay_len);
+  for (i = 0; i < tocopy; i++)
+  {
+    uint32_t off = seqdiff + i;
+    entry->init_bitmask[off/8] |= (1<<(off%8));
+  }
+  // FIXME detect protocol
+}
 
 // Caller must hold worker_local mutex lock
 static void send_synack(
@@ -1062,10 +1129,12 @@ static void send_syn(
 
   if (entry == NULL)
   {
+#if 0
     entry = airwall_hash_put(
       local, version, ip46_dst(origip), tcp_dst_port(origtcp),
       ip46_src(origip), tcp_src_port(origtcp),
       1, time64);
+#endif // FIXME fix this
     if (entry->version == 6)
     {
       entry->ulflowlabel = gen_flowlabel_entry(entry);
@@ -1101,6 +1170,11 @@ static void send_syn(
   {
     entry->wan_max_window_unscaled = 1;
   }
+
+  entry->init_data_sz = 2048;
+  entry->init_data = malloc(entry->init_data_sz);
+  entry->init_bitmask = malloc((entry->init_data_sz+7)/8);
+
   entry->state_data.downlink_syn_sent.local_isn = tcp_ack_number(origtcp) - 1;
   entry->state_data.downlink_syn_sent.remote_isn = tcp_seq_number(origtcp) - 1 + (!!was_keepalive);
   entry->flag_state = FLAG_STATE_DOWNLINK_SYN_SENT;
@@ -1179,6 +1253,81 @@ static void send_ack_only(
   pktstruct->direction = PACKET_DIRECTION_DOWNLINK;
   pktstruct->sz = sz;
   memcpy(pktstruct->data, ack, sz);
+  port->portfunc(pktstruct, port->userdata);
+}
+
+static __attribute__((unused)) void send_window_update(
+  void *triggerpkt, struct airwall_hash_entry *entry, struct port *port,
+  struct airwall *airwall, struct ll_alloc_st *st)
+{
+  char windowupdate[14+40+20+12] = {0};
+  void *ip, *origip;
+  void *tcp, *origtcp;
+  struct packet *pktstruct;
+  struct tcp_information tcpinfo;
+  unsigned char *tcpopts;
+  int version;
+  size_t sz;
+
+  origip = ether_payload(triggerpkt);
+  version = entry->version;
+  sz = (version == 4) ? (sizeof(windowupdate) - 20) : sizeof(windowupdate);
+  origtcp = ip46_payload(origip);
+  tcp_parse_options(origtcp, &tcpinfo);
+
+  memcpy(ether_src(windowupdate), ether_dst(triggerpkt), 6);
+  memcpy(ether_dst(windowupdate), ether_src(triggerpkt), 6);
+  ether_set_type(windowupdate, (version == 4) ? ETHER_TYPE_IP : ETHER_TYPE_IPV6);
+  ip = ether_payload(windowupdate);
+  ip_set_version(ip, version);
+#if 0 // FIXME this needs to be thought carefully
+  if (version == 6)
+  {
+    ipv6_set_flow_label(ip, entry->ulflowlabel);
+  }
+#endif
+  ip46_set_min_hdr_len(ip);
+  ip46_set_payload_len(ip, sizeof(windowupdate) - 14 - 40);
+  ip46_set_dont_frag(ip, 1);
+  ip46_set_id(ip, 0); // XXX
+  ip46_set_ttl(ip, 64);
+  ip46_set_proto(ip, 6);
+  ip46_set_src(ip, ip46_dst(origip));
+  ip46_set_dst(ip, ip46_src(origip));
+  ip46_set_hdr_cksum_calc(ip);
+  tcp = ip46_payload(ip);
+  tcp_set_src_port(tcp, tcp_dst_port(origtcp));
+  tcp_set_dst_port(tcp, tcp_src_port(origtcp));
+  tcp_set_ack_on(tcp);
+  tcp_set_data_offset(tcp, sizeof(windowupdate) - 14 - 40);
+#if 0
+  tcp_set_seq_number(tcp, tcp_ack_number(origtcp)); // FIXME looks suspicious
+  tcp_set_ack_number(tcp, tcp_seq_number(origtcp)+1); // FIXME the same
+#endif
+  tcp_set_seq_number(tcp, tcp_seq_number(origtcp)+1+entry->seqoffset); // FIXME
+  tcp_set_ack_number(tcp, tcp_ack_number(origtcp)); // FIXME
+  tcp_set_window(tcp, INITIAL_WINDOW>>airwall->conf->own_wscale);
+  tcpopts = &((unsigned char*)tcp)[20];
+  if (tcpinfo.options_valid && tcpinfo.ts_present) // FIXME
+  {
+    tcpopts[0] = 1;
+    tcpopts[1] = 1;
+    tcpopts[2] = 8;
+    tcpopts[3] = 10;
+    hdr_set32n(&tcpopts[4], tcpinfo.tsecho); // FIXME
+    hdr_set32n(&tcpopts[8], tcpinfo.ts);
+  }
+  else
+  {
+    memset(&tcpopts[0], 0, 12);
+  }
+  tcp46_set_cksum_calc(ip);
+
+  pktstruct = ll_alloc_st(st, packet_size(sz));
+  pktstruct->data = packet_calc_data(pktstruct);
+  pktstruct->direction = PACKET_DIRECTION_UPLINK;
+  pktstruct->sz = sz;
+  memcpy(pktstruct->data, windowupdate, sz);
   port->portfunc(pktstruct, port->userdata);
 }
 
@@ -1333,14 +1482,9 @@ int downlink(
       //port->portfunc(pkt, port->userdata);
       return 0;
     }
-    if (ip_frag_off(ip) >= 60)
+    if (ip_frag_off(ip) != 0 || ip_more_frags(ip))
     {
-      //port->portfunc(pkt, port->userdata);
-      return 0;
-    }
-    else if (ip_frag_off(ip) != 0)
-    {
-      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "fragment has partial header");
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "fragment");
       return 1;
     }
     if (ip_len < ip_total_len(ip))
@@ -1374,14 +1518,9 @@ int downlink(
       log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "pkt without ext hdr chain");
       return 1;
     }
-    if (is_frag && proto_off_from_frag + 60 > IPV6_FRAG_CUTOFF)
+    if (is_frag)
     {
-      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "IPv6 proto hdr too deep in hdr chain");
-      return 1;
-    }
-    if (protocol == 44 && ipv6_frag_off(ippay) < IPV6_FRAG_CUTOFF)
-    {
-      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "IPv6 subsequent frag too low frag off");
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "IPv6 fragment");
       return 1;
     }
     if (protocol != 6)
@@ -2213,8 +2352,8 @@ int uplink(
       arp_set_resp(arp2);
       memcpy(arp_sha(arp2), airwall->dl_mac, 6);
       memcpy(arp_tha(arp2), arp_const_sha(arp), 6);
-      arp_set_spa(&arp2[14], airwall->dl_addr);
-      arp_set_tpa(&arp2[24], arp_spa(arp));
+      arp_set_spa(arp2, airwall->dl_addr);
+      arp_set_tpa(arp2, arp_spa(arp));
 
       struct packet *pktstruct = ll_alloc_st(st, packet_size(sizeof(etherarp)));
       pktstruct->data = packet_calc_data(pktstruct);
@@ -2265,14 +2404,9 @@ int uplink(
       //port->portfunc(pkt, port->userdata);
       return 0;
     }
-    if (ip_frag_off(ip) >= 60)
+    if (ip_frag_off(ip) != 0 || ip_more_frags(ip))
     {
-      //port->portfunc(pkt, port->userdata);
-      return 0;
-    }
-    else if (ip_frag_off(ip) != 0)
-    {
-      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "fragment has partial header");
+      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "fragment");
       return 1;
     }
     if (ip_len < ip_total_len(ip))
@@ -2307,14 +2441,9 @@ int uplink(
       log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "pkt without ext hdr chain");
       return 1;
     }
-    if (is_frag && proto_off_from_frag + 60 > IPV6_FRAG_CUTOFF)
+    if (is_frag)
     {
-      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "IPv6 proto hdr too deep in hdr chain");
-      return 1;
-    }
-    if (protocol == 44 && ipv6_frag_off(ippay) < IPV6_FRAG_CUTOFF)
-    {
-      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "IPv6 subsequent frag too low frag off");
+      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "IPv6 fragment");
       return 1;
     }
     if (protocol != 6)
@@ -2396,8 +2525,10 @@ int uplink(
           return 1;
         }
       }
+#if 0
       entry = airwall_hash_put(
         local, version, lan_ip, lan_port, remote_ip, remote_port, 0, time64);
+#endif // FIXME fix this
       if (version == 6)
       {
         entry->ulflowlabel = ipv6_flow_label(ip);

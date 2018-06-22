@@ -1,5 +1,5 @@
-AIRWALL_SRC_LIB := airwall.c secret.c
-AIRWALL_SRC := $(AIRWALL_SRC_LIB) ldpairwall.c
+AIRWALL_SRC_LIB := airwall.c secret.c detect.c
+AIRWALL_SRC := $(AIRWALL_SRC_LIB) ldpairwall.c detecttest.c
 
 AIRWALL_LEX_LIB := conf.l
 AIRWALL_LEX := $(AIRWALL_LEX_LIB)
@@ -42,7 +42,8 @@ CFLAGS_AIRWALL := -I$(DIRPACKET) -I$(DIRLINKEDLIST) -I$(DIRIPHDR) -I$(DIRMISC) -
 MAKEFILES_AIRWALL := $(DIRAIRWALL)/module.mk
 
 #LIBS_AIRWALL := $(DIRSACKHASH)/libsackhash.a $(DIRIPHASH)/libiphash.a $(DIRDYNARR)/libdynarr.a $(DIRALLOC)/liballoc.a $(DIRIPHDR)/libiphdr.a $(DIRHASHTABLE)/libhashtable.a $(DIRHASHLIST)/libhashlist.a $(DIRTIMERLINKHEAP)/libtimerlinkheap.a $(DIRMISC)/libmisc.a $(DIRTHREETUPLE)/libthreetuple.a $(DIRDATABUF)/libdatabuf.a $(DIRNETMAP)/libnetmap.a $(DIRLOG)/liblog.a $(DIRLDP)/libldp.a $(DIRPORTS)/libports.a $(DIRMYPCAP)/libmypcap.a
-LIBS_AIRWALL := $(DIRSACKHASH)/libsackhash.a $(DIRTHREETUPLE)/libthreetuple.a $(DIRLIBPPTK)/libpptk.a
+#LIBS_AIRWALL := $(DIRSACKHASH)/libsackhash.a $(DIRTHREETUPLE)/libthreetuple.a $(DIRLIBPPTK)/libpptk.a
+LIBS_AIRWALL := $(DIRLIBPPTK)/libpptk.a
 
 .PHONY: AIRWALL clean_AIRWALL distclean_AIRWALL unit_AIRWALL $(LCAIRWALL) clean_$(LCAIRWALL) distclean_$(LCAIRWALL) unit_$(LCAIRWALL)
 
@@ -60,16 +61,17 @@ ifeq ($(WITH_ODP),yes)
 CFLAGS_AIRWALL += -I$(ODP_DIR)/include
 LIBS_AIRWALL_ODP := $(ODP_DIR)/lib/libodp-linux.a $(LIBS_ODPDEP)
 endif
-AIRWALL: $(DIRAIRWALL)/ldpairwall
+AIRWALL: $(DIRAIRWALL)/ldpairwall $(DIRAIRWALL)/detecttest
 
-unit_AIRWALL: $(DIRAIRWALL)/workeronlyperf $(DIRAIRWALL)/secrettest $(DIRAIRWALL)/unittest
-	$(DIRAIRWALL)/workeronlyperf
-	$(DIRAIRWALL)/secrettest
-	$(DIRAIRWALL)/unittest
+unit_AIRWALL: $(DIRAIRWALL)/detecttest
+	$(DIRAIRWALL)/detecttest
 
 $(DIRAIRWALL)/libairwall.a: $(AIRWALL_OBJ_LIB) $(AIRWALL_OBJGEN_LIB) $(MAKEFILES_COMMON) $(MAKEFILES_AIRWALL)
 	rm -f $@
 	ar rvs $@ $(filter %.o,$^)
+
+$(DIRAIRWALL)/detecttest: $(DIRAIRWALL)/detecttest.o $(DIRAIRWALL)/libairwall.a $(LIBS_AIRWALL) $(MAKEFILES_COMMON) $(MAKEFILES_AIRWALL)
+	$(CC) $(CFLAGS) -o $@ $(filter %.o,$^) $(filter %.a,$^) $(CFLAGS_AIRWALL) $(LDFLAGS_LDP) -lpthread -ldl
 
 $(DIRAIRWALL)/ldpairwall: $(DIRAIRWALL)/ldpairwall.o $(DIRAIRWALL)/libairwall.a $(LIBS_AIRWALL) $(MAKEFILES_COMMON) $(MAKEFILES_AIRWALL)
 	$(CC) $(CFLAGS) -o $@ $(filter %.o,$^) $(filter %.a,$^) $(CFLAGS_AIRWALL) $(LDFLAGS_LDP) -lpthread -ldl

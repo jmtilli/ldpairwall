@@ -104,20 +104,25 @@ struct airwall_hash_entry {
       uint32_t local_isn;
     } downlink_half_open;
   } state_data;
+  uint32_t init_data_sz;
+  char *init_data;
+  uint8_t *init_bitmask;
+  uint32_t init_data_fed;
 };
 
 enum flag_state {
   FLAG_STATE_UPLINK_SYN_SENT = 1, // may not have other bits
   FLAG_STATE_UPLINK_SYN_RCVD = 2, // may not have other bits
-  FLAG_STATE_DOWNLINK_SYN_SENT = 4, // may not have other bits
-  FLAG_STATE_ESTABLISHED = 8, // may have also FIN bits
-  FLAG_STATE_UPLINK_FIN = 16, // always with ESTABLISHED
-  FLAG_STATE_UPLINK_FIN_ACK = 32, // always with UPLINK_FIN|ESTABLISHED
-  FLAG_STATE_DOWNLINK_FIN = 64, // always with ESTABLISHED
-  FLAG_STATE_DOWNLINK_FIN_ACK = 128, // always with DOWNLINK_FIN|ESTABLSIHED
-  FLAG_STATE_TIME_WAIT = 256, // may not have other bits
-  FLAG_STATE_DOWNLINK_HALF_OPEN = 512, // may not have other bits
-  FLAG_STATE_RESETED = 1024, // may not have other bits
+  FLAG_STATE_WINDOW_UPDATE_SENT = 4, // may not have other bits
+  FLAG_STATE_DOWNLINK_SYN_SENT = 8, // may not have other bits
+  FLAG_STATE_ESTABLISHED = 16, // may have also FIN bits
+  FLAG_STATE_UPLINK_FIN = 32, // always with ESTABLISHED
+  FLAG_STATE_UPLINK_FIN_ACK = 64, // always with UPLINK_FIN|ESTABLISHED
+  FLAG_STATE_DOWNLINK_FIN = 128, // always with ESTABLISHED
+  FLAG_STATE_DOWNLINK_FIN_ACK = 256, // always with DOWNLINK_FIN|ESTABLSIHED
+  FLAG_STATE_TIME_WAIT = 512, // may not have other bits
+  FLAG_STATE_DOWNLINK_HALF_OPEN = 1024, // may not have other bits
+  FLAG_STATE_RESETED = 2048, // may not have other bits
 };
 
 static inline int airwall_is_connected(struct airwall_hash_entry *e)
