@@ -631,7 +631,6 @@ static __attribute__((unused)) void process_data(
   }
   else if (res == 0)
   {
-    log_log(LOG_LEVEL_NOTICE, "AIRWALL", "TCP payload %s", tcppay);
     log_log(LOG_LEVEL_NOTICE, "AIRWALL", "detected protocol and host %s",
             entry->detect->hostctx.hostname);
     if (entry->local_port != 0)
@@ -1048,16 +1047,8 @@ static void send_or_resend_syn(
   ip46_set_id(ip, 0); // XXX
   ip46_set_ttl(ip, 64);
   ip46_set_proto(ip, 6);
-  if (version == 6)
-  {
-    ip46_set_src(ip, entry->local_ip.ipv6);
-    ip46_set_dst(ip, entry->remote_ip.ipv6);
-  }
-  else
-  {
-    ip_set_src(ip, entry->local_ip.ipv4);
-    ip_set_dst(ip, entry->remote_ip.ipv4);
-  }
+  ip46_set_src(ip, &entry->remote_ip);
+  ip46_set_dst(ip, &entry->local_ip);
   ip46_set_hdr_cksum_calc(ip);
   tcp = ip46_payload(ip);
   tcp_set_src_port(tcp, entry->remote_port);
@@ -1186,11 +1177,17 @@ static void send_syn(
   //void *origip;
   //void *origtcp;
   //struct tcp_information info;
+  char packetbuf[8192];
 
   if (entry == NULL || entry->flag_state != FLAG_STATE_WINDOW_UPDATE_SENT)
   {
     abort();
   }
+
+  airwall_packet_to_str(packetbuf, sizeof(packetbuf), orig);
+  log_log(
+    LOG_LEVEL_NOTICE, "WORKERDOWNLINK", "SYN proxy sending SYN, packet: %s",
+    packetbuf);
 
   //origip = ether_payload(orig);
   //origtcp = ip46_payload(origip);
@@ -2216,7 +2213,6 @@ int downlink(
   }
   wan_min =
     entry->wan_sent - (entry->lan_max_window_unscaled<<entry->lan_wscale);
-  printf("11111111111111 %u %u %u\n", wan_min, first_seq, entry->lan_max+1);
   if (
     !between(
       wan_min, first_seq, entry->lan_max+1)
@@ -2231,7 +2227,6 @@ int downlink(
     //airwall_hash_unlock(local, &ctx);
     return 1;
   }
-  printf("22222222222222\n");
   if (unlikely(tcp_fin(ippay)) && entry->flag_state != FLAG_STATE_RESETED)
   {
     if (version == 4 && ip_more_frags(ip)) // FIXME for IPv6 also

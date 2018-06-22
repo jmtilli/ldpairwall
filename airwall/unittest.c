@@ -1708,7 +1708,7 @@ static void synproxy_handshake_impl(
     ip = ether_payload(ether);
     ip_set_version(ip, version);
     ip46_set_min_hdr_len(ip);
-    ip46_set_payload_len(ip, 20 + (!!one_byte_payload));
+    ip46_set_payload_len(ip, 20 + strlen(req));
     ip46_set_dont_frag(ip, 1);
     ip46_set_id(ip, 0);
     ip46_set_ttl(ip, 64);
@@ -1762,6 +1762,8 @@ static void synproxy_handshake_impl(
       if (memcmp(ip46_src(ip), ip2, version == 4 ? 4 : 16) != 0)
       {
         log_log(LOG_LEVEL_ERR, "UNIT", "output packet src IP doesn't agree");
+        printf("%u\n", ip_src(ip));
+        printf("%u\n", hdr_get32n(ip2));
         exit(1);
       }
       if (memcmp(ip46_dst(ip), ip1, version == 4 ? 4 : 16) != 0)
@@ -1793,11 +1795,6 @@ static void synproxy_handshake_impl(
       if (tcp_dst_port(tcp) != port1)
       {
         log_log(LOG_LEVEL_ERR, "UNIT", "output packet dst port doesn't agree");
-        exit(1);
-      }
-      if (tcp_window(tcp) != (1<<(14-airwall->conf->own_wscale)))
-      {
-        log_log(LOG_LEVEL_ERR, "UNIT", "output packet window doesn't agree");
         exit(1);
       }
       if (tcp46_cksum_calc(ip) != 0)
