@@ -33,6 +33,33 @@ void http_ctx_init(struct http_ctx *ctx)
   ctx->crlfcrlf_lfcnt = 0;
 }
 
+const uint64_t uribitmask[4] = {0xaffffffa00000000ULL,0x47fffffeafffffffULL,0,0};
+const uint64_t tokenbitmask[4] = {0x3ff6cfa00000000ULL,0x57ffffffc7fffffeULL,0,0};
+
+static inline int isuricharfast(char ch)
+{
+  uint8_t i = ch;
+#if 0
+  if (i >= 128)
+  {
+    return 0;
+  }
+#endif
+  return !!(uribitmask[i/64] & (1ULL<<(i%64)));
+}
+
+static inline int istokenfast(char ch)
+{
+  uint8_t i = ch;
+#if 0
+  if (i >= 128)
+  {
+    return 0;
+  }
+#endif
+  return !!(tokenbitmask[i/64] & (1ULL<<(i%64)));
+}
+
 static inline int istoken(char ch)
 {
   return ch == '!' || ch == '#' || ch == '$' || ch == '%' || ch == '&' ||
@@ -66,7 +93,7 @@ int http_ctx_feed(struct http_ctx *ctx, const void *data, size_t sz,
       return ctx->verdict;
     }
     uch = udata[0];
-    if (istoken(uch))
+    if (istokenfast(uch))
     {
       ctx->request_method_len++;
       sz--;
@@ -97,7 +124,7 @@ int http_ctx_feed(struct http_ctx *ctx, const void *data, size_t sz,
       return ctx->verdict;
     }
     uch = udata[0];
-    if (isurichar(uch))
+    if (isuricharfast(uch))
     {
       ctx->uri_len++;
       sz--;
@@ -235,7 +262,7 @@ int http_ctx_feed(struct http_ctx *ctx, const void *data, size_t sz,
         sz--;
         udata++;
       }
-      else if (!istoken(uch))
+      else if (!istokenfast(uch))
       {
         ctx->verdict = -ENOTSUP;
         return ctx->verdict;
