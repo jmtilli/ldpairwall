@@ -10,6 +10,7 @@
 #include "ports.h"
 #include "ldpports.h"
 #include "mypcapng.h"
+#include "yyutils.h"
 
 #define POOL_SIZE 48
 #define BLOCK_SIZE 65664
@@ -100,20 +101,13 @@ int main(int argc, char **argv)
   struct allocif intf = {.ops = &ll_allocif_ops_st, .userdata = &st};
   struct port outport;
   struct ldpfunc2_userdata ud;
+  struct conf conf = {};
+
+  confyydirparse(argv[0], "conf.txt", &conf, 0);
+  airwall_init(airwall, &conf);
+  worker_local_init(local, airwall, 1, 0); // FIXME change to non-deterministic
 
   hash_seed_init();
-
-  ud.intf = &intf;
-  ud.dloutq = dloutq[idx];
-  ud.uloutq = uloutq[idx];
-  ud.lan = lan;
-  ud.wan = wan;
-  ud.out = out;
-  ud.lanctx = &lanctx;
-  ud.wanctx = &wanctx;
-  ud.outctx = &outctx;
-  outport.portfunc = ldpfunc2;
-  outport.userdata = &ud;
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
   {
@@ -145,6 +139,19 @@ int main(int argc, char **argv)
     dloutq[i] = dlintf->outq[i];
     uloutq[i] = ulintf->outq[i];
   }
+
+  ud.intf = &intf;
+  ud.dloutq = dloutq[idx];
+  ud.uloutq = uloutq[idx];
+  ud.lan = lan;
+  ud.wan = wan;
+  ud.out = out;
+  ud.lanctx = &lanctx;
+  ud.wanctx = &wanctx;
+  ud.outctx = &outctx;
+  outport.portfunc = ldpfunc2;
+  outport.userdata = &ud;
+
   while (!atomic_load(&exit_threads))
   {
     if (ldp_in_eof(dlinq[idx]) && ldp_in_eof(ulinq[idx]))

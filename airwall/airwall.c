@@ -640,6 +640,8 @@ static __attribute__((unused)) void process_data(
     // FIXME select correct local_ip
     entry->local_port = entry->nat_port;
     memcpy(&entry->local_ip, &entry->nat_ip, sizeof(entry->local_ip));
+    hash_table_add_nogrow_already_bucket_locked(
+      &local->local_hash, &entry->local_node, airwall_hash_local(entry));
     send_syn(
       orig, local, port, st, // FIXME verify send_syn doesn't handle orig wrong
       entry->state_data.downlink_half_open.mss,
@@ -1327,6 +1329,7 @@ static void send_window_update(
 
   entry->wan_wscale = wscale;
   entry->wan_sent = tcp_seq_number(origtcp) + (!!was_keepalive);
+  entry->lan_max_window_unscaled = INITIAL_WINDOW >> entry->lan_wscale;
   entry->wan_acked = tcp_ack_number(origtcp);
   entry->wan_max =
     tcp_ack_number(origtcp) + (tcp_window(origtcp) << entry->wan_wscale);
@@ -1380,17 +1383,17 @@ static void send_window_update(
   tcp_set_seq_number(tcp, tcp_ack_number(origtcp)); // FIXME looks suspicious
   tcp_set_ack_number(tcp, tcp_seq_number(origtcp)+1); // FIXME the same
 #endif
-  tcp_set_seq_number(tcp, tcp_seq_number(origtcp)+1+entry->seqoffset); // FIXME
-  tcp_set_ack_number(tcp, tcp_ack_number(origtcp)); // FIXME
+  tcp_set_seq_number(tcp, tcp_ack_number(origtcp));
+  tcp_set_ack_number(tcp, tcp_seq_number(origtcp));
   tcp_set_window(tcp, INITIAL_WINDOW>>airwall->conf->own_wscale);
   tcpopts = &((unsigned char*)tcp)[20];
-  if (info.options_valid && info.ts_present) // FIXME
+  if (info.options_valid && info.ts_present)
   {
     tcpopts[0] = 1;
     tcpopts[1] = 1;
     tcpopts[2] = 8;
     tcpopts[3] = 10;
-    hdr_set32n(&tcpopts[4], info.tsecho); // FIXME
+    hdr_set32n(&tcpopts[4], info.tsecho);
     hdr_set32n(&tcpopts[8], info.ts);
   }
   else
