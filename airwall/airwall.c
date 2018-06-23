@@ -6,8 +6,6 @@
 #include "time64.h"
 #include "detect.h"
 
-#define ENABLE_ACK 0
-
 #define MAX_FRAG 65535
 #define INITIAL_WINDOW (1<<14)
 #define IPV6_FRAG_CUTOFF 512
@@ -588,8 +586,6 @@ static void send_syn(
   struct airwall_hash_entry *entry,
   uint64_t time64, int was_keepalive);
 
-#if ENABLE_ACK
-
 static void ack_data(
   void *orig, struct worker_local *local, struct airwall *airwall,
   struct port *port, struct ll_alloc_st *st, uint64_t time64,
@@ -670,8 +666,6 @@ static void ack_data(
   port->portfunc(pktstruct, port->userdata);
 }
 
-#endif
-
 static void process_data(
   void *orig, struct worker_local *local, struct airwall *airwall,
   struct port *port, struct ll_alloc_st *st, uint64_t time64,
@@ -706,9 +700,10 @@ static void process_data(
   res = proto_detect_feed(entry->detect, tcppay, seqdiff, tcppay_len, &acked);
   if (res == -EAGAIN)
   {
-#if ENABLE_ACK
-    ack_data(orig, local, airwall, port, st, time64, entry, acked);
-#endif
+    if (airwall->conf->enable_ack)
+    {
+      ack_data(orig, local, airwall, port, st, time64, entry, acked);
+    }
     return;
   }
   else if (res == -ENOTSUP)
@@ -1299,8 +1294,6 @@ static void send_syn(
   send_or_resend_syn(orig, local, port, st, entry);
 }
 
-#if ENABLE_ACK
-
 static void send_data_only(
   void *orig, struct airwall_hash_entry *entry, struct port *port,
   struct ll_alloc_st *st)
@@ -1400,8 +1393,6 @@ static void send_data_only(
     curstart += curpay;
   }
 }
-
-#endif
 
 static void send_ack_only(
   void *orig, struct airwall_hash_entry *entry, struct port *port,
@@ -1613,7 +1604,7 @@ static void send_window_update(
 
 static void send_ack_and_window_update(
   void *orig, struct airwall_hash_entry *entry, struct port *port,
-  struct ll_alloc_st *st)
+  struct ll_alloc_st *st, struct airwall *airwall)
 {
   char windowupdate[14+40+20+12] = {0};
   void *ip, *origip;
@@ -1623,11 +1614,9 @@ static void send_ack_and_window_update(
   unsigned char *tcpopts;
   int version;
   size_t sz;
-#if ENABLE_ACK
   uint32_t acked_seq;
 
   acked_seq = entry->detect->acked + 1 + entry->remote_isn; // FIXME correct?
-#endif
 
   origip = ether_payload(orig);
   version = ip_version(origip);
@@ -1637,9 +1626,10 @@ static void send_ack_and_window_update(
 
   send_ack_only(orig, entry, port, st); // XXX send_ack_only reparses opts
 
-#if ENABLE_ACK
-  send_data_only(orig, entry, port, st); // XXX send_data_only reparses opts
-#endif
+  if (airwall->conf->enable_ack)
+  {
+    send_data_only(orig, entry, port, st); // XXX send_data_only reparses opts
+  }
 
   memcpy(ether_src(windowupdate), ether_src(orig), 6);
   memcpy(ether_dst(windowupdate), ether_dst(orig), 6);
@@ -1669,18 +1659,21 @@ static void send_ack_and_window_update(
   tcp_set_ack_number(tcp, tcp_seq_number(origtcp)+1); // FIXME the same
 #endif
   tcp_set_seq_number(tcp, tcp_seq_number(origtcp)+1+entry->seqoffset);
-#if ENABLE_ACK
-  if (seq_cmp(tcp_ack_number(origtcp), acked_seq) < 0)
+  if (airwall->conf->enable_ack)
   {
-    tcp_set_ack_number(tcp, acked_seq);
+    if (seq_cmp(tcp_ack_number(origtcp), acked_seq) < 0)
+    {
+      tcp_set_ack_number(tcp, acked_seq);
+    }
+    else
+    {
+      tcp_set_ack_number(tcp, tcp_ack_number(origtcp));
+    }
   }
   else
   {
     tcp_set_ack_number(tcp, tcp_ack_number(origtcp));
   }
-#else
-  tcp_set_ack_number(tcp, tcp_ack_number(origtcp));
-#endif
   if (entry->wscalediff >= 0)
   {
     tcp_set_window(tcp, tcp_window(origtcp)>>entry->wscalediff);
@@ -3038,7 +3031,7 @@ int uplink(
       entry->timer.time64 = time64 + 86400ULL*1000ULL*1000ULL;
       timer_linkheap_modify(&local->timers, &entry->timer);
       worker_local_wrunlock(local);
-      send_ack_and_window_update(ether, entry, port, st);
+      send_ack_and_window_update(ether, entry, port, st, airwall);
       //airwall_hash_unlock(local, &ctx);
       return 1;
     }
@@ -3364,10 +3357,11 @@ int uplink(
       }
       else
       {
-#if ENABLE_ACK
-        send_data_only(ether, entry, port, st);
-        tcp_set_ack_number_cksum_update(ippay, tcp_len, acked_seq);
-#endif
+        if (airwall->conf->enable_ack)
+        {
+          send_data_only(ether, entry, port, st);
+          tcp_set_ack_number_cksum_update(ippay, tcp_len, acked_seq);
+        }
       }
     }
   }

@@ -67,6 +67,7 @@ struct conf {
   int test_connections;
   uint16_t port;
   struct host_hash hosts;
+  int enable_ack;
 };
 
 static inline void conf_init(struct conf *conf)
@@ -100,6 +101,7 @@ static inline void conf_init(struct conf *conf)
   conf->test_connections = 0;
   conf->port = 12345;
   host_hash_init(&conf->hosts);
+  conf->enable_ack = 0;
 }
 
 static inline void conf_free(struct conf *conf)

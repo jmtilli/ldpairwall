@@ -65,6 +65,7 @@ user         return USER;
 group        return GROUP;
 port         return PORT;
 hosts        return HOSTS;
+enable_ack   return ENABLE_ACK;
 \"([^\\\"]|\\.)*\"  yylval->s=yy_escape_string(yytext); return STRING_LITERAL;
 
 [0-9]+       {

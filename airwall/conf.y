@@ -61,6 +61,7 @@ int confyywrap(yyscan_t scanner)
 %token TEST_CONNECTIONS
 %token PORT
 %token HOSTS
+%token ENABLE_ACK
 
 
 %type<i> sackhashval
@@ -297,6 +298,10 @@ conflist_entry:
 TEST_CONNECTIONS SEMICOLON
     {
   conf->test_connections = 1;
+}
+| ENABLE_ACK SEMICOLON
+    {
+  conf->enable_ack = 1;
 }
 | PORT EQUALS INT_LITERAL SEMICOLON
 {
