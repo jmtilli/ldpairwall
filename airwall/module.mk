@@ -1,4 +1,4 @@
-AIRWALL_SRC_LIB := airwall.c secret.c detect.c yyutils.c
+AIRWALL_SRC_LIB := airwall.c secret.c detect.c yyutils.c hosthash.c
 AIRWALL_SRC := $(AIRWALL_SRC_LIB) ldpairwall.c detecttest.c detectperf.c genchartbl.c unittest.c
 
 AIRWALL_LEX_LIB := conf.l
