@@ -3003,8 +3003,26 @@ int uplink(
           return 1;
         }
       }
+#ifdef ENABLE_ARP
+      char ipv4[4];
+      uint16_t tcp_port;
+      if (version == 4)
+      {
+        uint32_t loc = airwall->conf->ul_addr;
+        hdr_set32n(ipv4, loc);
+        // FIXME select a free port:
+        tcp_port = lan_port;
+      }
+      else
+      {
+        abort();
+      }
       entry = airwall_hash_put(
-        local, version, lan_ip, lan_port, lan_ip, lan_port, remote_ip, remote_port, 0, time64); // FIXME perform NAT
+        local, version, lan_ip, lan_port, ipv4, tcp_port, remote_ip, remote_port, 0, time64);
+#else
+      entry = airwall_hash_put(
+        local, version, lan_ip, lan_port, lan_ip, lan_port, remote_ip, remote_port, 0, time64);
+#endif
       if (version == 6)
       {
         entry->ulflowlabel = ipv6_flow_label(ip);
