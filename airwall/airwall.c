@@ -1734,6 +1734,8 @@ static void send_ack_and_window_update(
   port->portfunc(pktstruct, port->userdata);
 }
 
+const unsigned char bcast_mac[6] = {0xff,0xff,0xff,0xff,0xff,0xff};
+
 int downlink(
   struct airwall *airwall, struct worker_local *local, struct packet *pkt,
   struct port *port, uint64_t time64, struct ll_alloc_st *st)
@@ -1772,6 +1774,14 @@ int downlink(
     log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "IPv6 not supported yet");
     return 1;
   }
+#ifdef ENABLE_ARP
+  if (memcmp(ether_src(ether), airwall->ul_mac, 6) != 0 &&
+      memcmp(ether_src(ether), bcast_mac, 6) != 0)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "MAC not to airwall");
+    return 1;
+  }
+#endif
 #ifdef ENABLE_ARP
   if (ether_type(ether) == ETHER_TYPE_ARP)
   {
@@ -2739,6 +2749,14 @@ int uplink(
     log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "IPv6 not supported yet");
     return 1;
   }
+#ifdef ENABLE_ARP
+  if (memcmp(ether_src(ether), airwall->dl_mac, 6) != 0 &&
+      memcmp(ether_src(ether), bcast_mac, 6) != 0)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "MAC not to airwall");
+    return 1;
+  }
+#endif
 #ifdef ENABLE_ARP
   if (ether_type(ether) == ETHER_TYPE_ARP)
   {
