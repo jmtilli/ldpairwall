@@ -103,11 +103,13 @@ int main(int argc, char **argv)
   struct ldpfunc2_userdata ud;
   struct conf conf = {};
 
+  hash_seed_init();
+
+  conf_init(&conf);
   confyydirparse(argv[0], "conf.txt", &conf, 0);
   airwall_init(airwall, &conf);
   worker_local_init(local, airwall, 1, 0); // FIXME change to non-deterministic
 
-  hash_seed_init();
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
   {

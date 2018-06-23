@@ -18,6 +18,7 @@ typedef void *yyscan_t;
 #include "yyutils.h"
 #include "conf.tab.h"
 #include "conf.lex.h"
+#include <arpa/inet.h>
 
 void confyyerror(YYLTYPE *yylloc, yyscan_t scanner, struct conf *conf, const char *str)
 {
@@ -59,6 +60,7 @@ int confyywrap(yyscan_t scanner)
 %token USER GROUP
 %token TEST_CONNECTIONS
 %token PORT
+%token HOSTS
 
 
 %type<i> sackhashval
@@ -166,6 +168,11 @@ ratehashlist:
 | ratehashlist ratehash_entry
 ;
 
+hostslist:
+hostslist_entry
+| hostslist COMMA hostslist_entry
+;
+
 conflist:
 | conflist conflist_entry
 ;
@@ -266,6 +273,10 @@ tswscalelist_entry
 | tswscalelist COMMA tswscalelist_entry
 ;
 
+hostslist_maybe:
+| hostslist maybe_comma
+;
+
 msslist_maybe:
 | msslist maybe_comma
 ;
@@ -284,7 +295,7 @@ tswscalelist_maybe:
 
 conflist_entry:
 TEST_CONNECTIONS SEMICOLON
-{
+    {
   conf->test_connections = 1;
 }
 | PORT EQUALS INT_LITERAL SEMICOLON
@@ -621,6 +632,27 @@ TEST_CONNECTIONS SEMICOLON
   conf->halfopen_cache_max = $3;
 }
 | RATEHASH EQUALS OPENBRACE ratehashlist CLOSEBRACE SEMICOLON
+| HOSTS EQUALS OPENBRACE hostslist_maybe CLOSEBRACE SEMICOLON
+;
+
+hostslist_entry:
+OPENBRACE STRING_LITERAL COMMA STRING_LITERAL CLOSEBRACE
+{
+  struct in_addr addr;
+  if (inet_aton($4, &addr) == 0)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER", "invalid address: %s", $4);
+    YYABORT;
+  }
+  host_hash_add(&conf->hosts, $2, ntohl(addr.s_addr));
+#if 0
+  printf("%s is at %d.%d.%d.%d\n", $2,
+    (ntohl(addr.s_addr)>>24)&0xFF,
+    (ntohl(addr.s_addr)>>16)&0xFF,
+    (ntohl(addr.s_addr)>>8)&0xFF,
+    (ntohl(addr.s_addr)>>0)&0xFF);
+#endif
+}
 ;
 
 ratehash_entry:

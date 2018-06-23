@@ -25,4 +25,8 @@ synproxyconf = {
     network_prefix = 24;
     network_prefix6 = 64;
   };
+  hosts = {
+    {"www1.example.com", "10.0.0.1"},
+    {"www2.example.com", "10.0.0.2"},
+  };
 };

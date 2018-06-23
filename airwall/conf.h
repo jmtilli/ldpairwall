@@ -6,6 +6,7 @@
 #include <errno.h>
 #include "dynarr.h"
 #include "log.h"
+#include "hosthash.h"
 
 enum sackmode {
   SACKMODE_ENABLE,
@@ -65,39 +66,40 @@ struct conf {
   gid_t gid;
   int test_connections;
   uint16_t port;
+  struct host_hash hosts;
 };
 
-#define CONF_INITIALIZER { \
-  .sackmode = SACKMODE_HASHIP, \
-  .sackconflict = SACKCONFLICT_RETAIN, \
-  .mssmode = HASHMODE_HASHIP, \
-  .learnhashsize = 131072, \
-  .conntablesize = 131072, \
-  .ratehash = { \
-    .size = 131072, \
-    .timer_period_usec = (1000*1000), \
-    .timer_add = 400, \
-    .initial_tokens = 2000, \
-    .network_prefix = 24, \
-    .network_prefix6 = 64, \
-  }, \
-  .msslist = DYNARR_INITER, \
-  .wscalelist = DYNARR_INITER, \
-  .tsmsslist = DYNARR_INITER, \
-  .tswscalelist = DYNARR_INITER, \
-  .msslist_present = 0, \
-  .wscalelist_present = 0, \
-  .own_mss = 1460, \
-  .own_wscale = 7, \
-  .mss_clamp_enabled = 0, \
-  .mss_clamp = 1460, \
-  .ts_bits = 5, \
-  .halfopen_cache_max = 0, \
-  .threadcount = 1, \
-  .uid = 0, \
-  .gid = 0, \
-  .test_connections = 0, \
-  .port = 12345, \
+static inline void conf_init(struct conf *conf)
+{
+  conf->sackmode = SACKMODE_HASHIP;
+  conf->sackconflict = SACKCONFLICT_RETAIN;
+  conf->mssmode = HASHMODE_HASHIP;
+  conf->learnhashsize = 131072;
+  conf->conntablesize = 131072;
+  conf->ratehash.size = 131072;
+  conf->ratehash.timer_period_usec = (1000*1000);
+  conf->ratehash.timer_add = 400;
+  conf->ratehash.initial_tokens = 2000;
+  conf->ratehash.network_prefix = 24;
+  conf->ratehash.network_prefix6 = 64;
+  DYNARR_INIT(&conf->msslist);
+  DYNARR_INIT(&conf->wscalelist);
+  DYNARR_INIT(&conf->tsmsslist);
+  DYNARR_INIT(&conf->tswscalelist);
+  conf->msslist_present = 0;
+  conf->wscalelist_present = 0;
+  conf->own_mss = 1460;
+  conf->own_wscale = 7;
+  conf->mss_clamp_enabled = 0;
+  conf->mss_clamp = 1460;
+  conf->ts_bits = 5;
+  conf->halfopen_cache_max = 0;
+  conf->threadcount = 1;
+  conf->uid = 0;
+  conf->gid = 0;
+  conf->test_connections = 0;
+  conf->port = 12345;
+  host_hash_init(&conf->hosts);
 }
 
 static inline void conf_free(struct conf *conf)
@@ -106,6 +108,7 @@ static inline void conf_free(struct conf *conf)
   DYNARR_FREE(&conf->wscalelist);
   DYNARR_FREE(&conf->tsmsslist);
   DYNARR_FREE(&conf->tswscalelist);
+  host_hash_free(&conf->hosts);
 }
 
 static inline int conf_postprocess(struct conf *conf)

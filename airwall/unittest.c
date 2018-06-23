@@ -958,7 +958,7 @@ static void closed_port(int version)
   struct ll_alloc_st st;
   struct worker_local local;
   struct airwall_hash_entry *e;
-  struct conf conf = CONF_INITIALIZER;
+  struct conf conf = {};
   uint32_t src4 = htonl((10<<24)|8);
   uint32_t dst4 = htonl((11<<24)|7);
   char src6[16] = {0xfd,0x80,0x00,0x00,0x00,0x00,0x00,0x00,
@@ -976,6 +976,7 @@ static void closed_port(int version)
     src = src6;
     dst = dst6;
   }
+  conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
   airwall_init(&airwall, &conf);
@@ -2360,7 +2361,7 @@ static void three_way_handshake_four_way_fin(int version)
   struct airwall airwall;
   struct ll_alloc_st st;
   struct worker_local local;
-  struct conf conf = CONF_INITIALIZER;
+  struct conf conf = {};
   uint32_t src4 = htonl((10<<24)|8);
   uint32_t dst4 = htonl((11<<24)|7);
   char src6[16] = {0xfd,0x80,0x00,0x00,0x00,0x00,0x00,0x00,
@@ -2378,6 +2379,7 @@ static void three_way_handshake_four_way_fin(int version)
     src = src6;
     dst = dst6;
   }
+  conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
   airwall_init(&airwall, &conf);
@@ -2417,7 +2419,7 @@ static void established_rst_uplink(int version)
   struct ll_alloc_st st;
   struct worker_local local;
   struct airwall_hash_entry *e;
-  struct conf conf = CONF_INITIALIZER;
+  struct conf conf = {};
   uint32_t src4 = htonl((10<<24)|8);
   uint32_t dst4 = htonl((11<<24)|7);
   char src6[16] = {0xfd,0x80,0x00,0x00,0x00,0x00,0x00,0x00,
@@ -2436,6 +2438,7 @@ static void established_rst_uplink(int version)
     src = src6;
     dst = dst6;
   }
+  conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
   airwall_init(&airwall, &conf);
@@ -2565,7 +2568,7 @@ static void established_rst_downlink(int version)
   struct ll_alloc_st st;
   struct worker_local local;
   struct airwall_hash_entry *e;
-  struct conf conf = CONF_INITIALIZER;
+  struct conf conf = {};
   uint32_t src4 = htonl((10<<24)|8);
   uint32_t dst4 = htonl((11<<24)|7);
   char src6[16] = {0xfd,0x80,0x00,0x00,0x00,0x00,0x00,0x00,
@@ -2584,6 +2587,7 @@ static void established_rst_downlink(int version)
     src = src6;
     dst = dst6;
   }
+  conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
   airwall_init(&airwall, &conf);
@@ -2714,7 +2718,7 @@ static void syn_proxy_rst_uplink(int version)
   struct ll_alloc_st st;
   struct worker_local local;
   struct airwall_hash_entry *e;
-  struct conf conf = CONF_INITIALIZER;
+  struct conf conf = {};
   uint32_t src4 = htonl((10<<24)|8);
   uint32_t dst4 = htonl((11<<24)|7);
   char src6[16] = {0xfd,0x80,0x00,0x00,0x00,0x00,0x00,0x00,
@@ -2733,6 +2737,7 @@ static void syn_proxy_rst_uplink(int version)
     src = src6;
     dst = dst6;
   }
+  conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
   airwall_init(&airwall, &conf);
@@ -2866,7 +2871,7 @@ static void syn_proxy_rst_downlink(int version)
   struct ll_alloc_st st;
   struct worker_local local;
   struct airwall_hash_entry *e;
-  struct conf conf = CONF_INITIALIZER;
+  struct conf conf = {};
   uint32_t src4 = htonl((10<<24)|8);
   uint32_t dst4 = htonl((11<<24)|7);
   char src6[16] = {0xfd,0x80,0x00,0x00,0x00,0x00,0x00,0x00,
@@ -2885,6 +2890,7 @@ static void syn_proxy_rst_downlink(int version)
     src = src6;
     dst = dst6;
   }
+  conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
   airwall_init(&airwall, &conf);
@@ -3003,7 +3009,7 @@ static void three_way_handshake_ulretransmit(int version)
   struct airwall airwall;
   struct ll_alloc_st st;
   struct worker_local local;
-  struct conf conf = CONF_INITIALIZER;
+  struct conf conf = {};
   uint32_t src4 = htonl((10<<24)|8);
   uint32_t dst4 = htonl((11<<24)|7);
   char src6[16] = {0xfd,0x80,0x00,0x00,0x00,0x00,0x00,0x00,
@@ -3021,6 +3027,7 @@ static void three_way_handshake_ulretransmit(int version)
     src = src6;
     dst = dst6;
   }
+  conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
   airwall_init(&airwall, &conf);
@@ -3048,7 +3055,7 @@ static void three_way_handshake_dlretransmit(int version)
   struct airwall airwall;
   struct ll_alloc_st st;
   struct worker_local local;
-  struct conf conf = CONF_INITIALIZER;
+  struct conf conf = {};
   uint32_t src4 = htonl((10<<24)|8);
   uint32_t dst4 = htonl((11<<24)|7);
   char src6[16] = {0xfd,0x80,0x00,0x00,0x00,0x00,0x00,0x00,
@@ -3066,6 +3073,7 @@ static void three_way_handshake_dlretransmit(int version)
     src = src6;
     dst = dst6;
   }
+  conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
   airwall_init(&airwall, &conf);
@@ -3093,7 +3101,7 @@ static void three_way_handshake_findlretransmit(int version)
   struct airwall airwall;
   struct ll_alloc_st st;
   struct worker_local local;
-  struct conf conf = CONF_INITIALIZER;
+  struct conf conf = {};
   uint32_t src4 = htonl((10<<24)|8);
   uint32_t dst4 = htonl((11<<24)|7);
   char src6[16] = {0xfd,0x80,0x00,0x00,0x00,0x00,0x00,0x00,
@@ -3111,6 +3119,7 @@ static void three_way_handshake_findlretransmit(int version)
     src = src6;
     dst = dst6;
   }
+  conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
   airwall_init(&airwall, &conf);
@@ -3138,7 +3147,7 @@ static void three_way_handshake_finulretransmit(int version)
   struct airwall airwall;
   struct ll_alloc_st st;
   struct worker_local local;
-  struct conf conf = CONF_INITIALIZER;
+  struct conf conf = {};
   uint32_t src4 = htonl((10<<24)|8);
   uint32_t dst4 = htonl((11<<24)|7);
   char src6[16] = {0xfd,0x80,0x00,0x00,0x00,0x00,0x00,0x00,
@@ -3156,6 +3165,7 @@ static void three_way_handshake_finulretransmit(int version)
     src = src6;
     dst = dst6;
   }
+  conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
   airwall_init(&airwall, &conf);
@@ -3186,7 +3196,7 @@ static void syn_proxy_handshake(int version)
   uint32_t isn;
   uint32_t isn1 = 0x12345678;
   uint32_t isn2 = 0x87654321;
-  struct conf conf = CONF_INITIALIZER;
+  struct conf conf = {};
   uint32_t src4 = htonl((10<<24)|8);
   uint32_t dst4 = htonl((11<<24)|7);
   char src6[16] = {0xfd,0x80,0x00,0x00,0x00,0x00,0x00,0x00,
@@ -3204,6 +3214,7 @@ static void syn_proxy_handshake(int version)
     src = src6;
     dst = dst6;
   }
+  conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
   airwall_init(&airwall, &conf);
@@ -3238,7 +3249,7 @@ static void syn_proxy_uplink(int version)
   uint32_t isn1 = 0x12345678;
   uint32_t isn2 = 0x87654321;
   struct tcp_ctx ctx;
-  struct conf conf = CONF_INITIALIZER;
+  struct conf conf = {};
   uint32_t src4 = htonl((10<<24)|8);
   uint32_t dst4 = htonl((11<<24)|7);
   char src6[16] = {0xfd,0x80,0x00,0x00,0x00,0x00,0x00,0x00,
@@ -3256,6 +3267,7 @@ static void syn_proxy_uplink(int version)
     src = src6;
     dst = dst6;
   }
+  conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
   airwall_init(&airwall, &conf);
@@ -3369,7 +3381,7 @@ static void syn_proxy_downlink(int version)
   uint32_t isn1 = 0x12345678;
   uint32_t isn2 = 0x87654321;
   struct tcp_ctx ctx;
-  struct conf conf = CONF_INITIALIZER;
+  struct conf conf = {};
   uint32_t src4 = htonl((10<<24)|8);
   uint32_t dst4 = htonl((11<<24)|7);
   char src6[16] = {0xfd,0x80,0x00,0x00,0x00,0x00,0x00,0x00,
@@ -3387,6 +3399,7 @@ static void syn_proxy_downlink(int version)
     src = src6;
     dst = dst6;
   }
+  conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
   airwall_init(&airwall, &conf);
@@ -3501,7 +3514,7 @@ static void syn_proxy_uplink_downlink(int version)
   uint32_t isn2 = 0x87654321;
   struct tcp_ctx ctx;
   int i;
-  struct conf conf = CONF_INITIALIZER;
+  struct conf conf = {};
   uint32_t src4 = htonl((10<<24)|8);
   uint32_t dst4 = htonl((11<<24)|7);
   char src6[16] = {0xfd,0x80,0x00,0x00,0x00,0x00,0x00,0x00,
@@ -3519,6 +3532,7 @@ static void syn_proxy_uplink_downlink(int version)
     src = src6;
     dst = dst6;
   }
+  conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
   airwall_init(&airwall, &conf);
@@ -3565,7 +3579,7 @@ static void syn_proxy_closed_port(int version)
   struct ll_alloc_st st;
   struct worker_local local;
   uint32_t isn;
-  struct conf conf = CONF_INITIALIZER;
+  struct conf conf = {};
   uint32_t src4 = htonl((10<<24)|8);
   uint32_t dst4 = htonl((11<<24)|7);
   char src6[16] = {0xfd,0x80,0x00,0x00,0x00,0x00,0x00,0x00,
@@ -3583,6 +3597,7 @@ static void syn_proxy_closed_port(int version)
     src = src6;
     dst = dst6;
   }
+  conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
   airwall_init(&airwall, &conf);
@@ -3612,7 +3627,7 @@ static void syn_proxy_handshake_2_1_1(int version)
   uint32_t isn;
   uint32_t isn1 = 0x12345678;
   uint32_t isn2 = 0x87654321;
-  struct conf conf = CONF_INITIALIZER;
+  struct conf conf = {};
   uint32_t src4 = htonl((10<<24)|8);
   uint32_t dst4 = htonl((11<<24)|7);
   char src6[16] = {0xfd,0x80,0x00,0x00,0x00,0x00,0x00,0x00,
@@ -3630,6 +3645,7 @@ static void syn_proxy_handshake_2_1_1(int version)
     src = src6;
     dst = dst6;
   }
+  conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
   airwall_init(&airwall, &conf);
@@ -3663,7 +3679,7 @@ static void syn_proxy_handshake_1_2_1(int version)
   uint32_t isn;
   uint32_t isn1 = 0x12345678;
   uint32_t isn2 = 0x87654321;
-  struct conf conf = CONF_INITIALIZER;
+  struct conf conf = {};
   uint32_t src4 = htonl((10<<24)|8);
   uint32_t dst4 = htonl((11<<24)|7);
   char src6[16] = {0xfd,0x80,0x00,0x00,0x00,0x00,0x00,0x00,
@@ -3681,6 +3697,7 @@ static void syn_proxy_handshake_1_2_1(int version)
     src = src6;
     dst = dst6;
   }
+  conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
   airwall_init(&airwall, &conf);
@@ -3714,7 +3731,7 @@ static void syn_proxy_handshake_1_1_2(int version)
   uint32_t isn;
   uint32_t isn1 = 0x12345678;
   uint32_t isn2 = 0x87654321;
-  struct conf conf = CONF_INITIALIZER;
+  struct conf conf = {};
   uint32_t src4 = htonl((10<<24)|8);
   uint32_t dst4 = htonl((11<<24)|7);
   char src6[16] = {0xfd,0x80,0x00,0x00,0x00,0x00,0x00,0x00,
@@ -3732,6 +3749,7 @@ static void syn_proxy_handshake_1_1_2(int version)
     src = src6;
     dst = dst6;
   }
+  conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
   airwall_init(&airwall, &conf);
@@ -3765,7 +3783,7 @@ static void syn_proxy_handshake_1_1_1_keepalive(int version)
   uint32_t isn;
   uint32_t isn1 = 0x12345678;
   uint32_t isn2 = 0x87654321;
-  struct conf conf = CONF_INITIALIZER;
+  struct conf conf = {};
   uint32_t src4 = htonl((10<<24)|8);
   uint32_t dst4 = htonl((11<<24)|7);
   char src6[16] = {0xfd,0x80,0x00,0x00,0x00,0x00,0x00,0x00,
@@ -3783,6 +3801,7 @@ static void syn_proxy_handshake_1_1_1_keepalive(int version)
     src = src6;
     dst = dst6;
   }
+  conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
   airwall_init(&airwall, &conf);
@@ -3816,7 +3835,7 @@ static void syn_proxy_handshake_1_1_1_zerowindowprobe(int version)
   uint32_t isn;
   uint32_t isn1 = 0x12345678;
   uint32_t isn2 = 0x87654321;
-  struct conf conf = CONF_INITIALIZER;
+  struct conf conf = {};
   uint32_t src4 = htonl((10<<24)|8);
   uint32_t dst4 = htonl((11<<24)|7);
   char src6[16] = {0xfd,0x80,0x00,0x00,0x00,0x00,0x00,0x00,
@@ -3834,6 +3853,7 @@ static void syn_proxy_handshake_1_1_1_zerowindowprobe(int version)
     src = src6;
     dst = dst6;
   }
+  conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
   airwall_init(&airwall, &conf);

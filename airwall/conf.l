@@ -64,6 +64,7 @@ halfopen_cache_max return HALFOPEN_CACHE_MAX;
 user         return USER;
 group        return GROUP;
 port         return PORT;
+hosts        return HOSTS;
 \"([^\\\"]|\\.)*\"  yylval->s=yy_escape_string(yytext); return STRING_LITERAL;
 
 [0-9]+       {
