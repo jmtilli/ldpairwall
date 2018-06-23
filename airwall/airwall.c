@@ -10,7 +10,37 @@
 #define INITIAL_WINDOW (1<<14)
 #define IPV6_FRAG_CUTOFF 512
 
-#undef ENABLE_ARP
+#define ENABLE_ARP
+
+#ifdef ENABLE_ARP
+
+static void send_arp(
+  struct port *port, uint32_t dst, enum packet_direction direction,
+  uint32_t my_addr, const void *my_mac, struct ll_alloc_st *st)
+{
+  char etherarp[14+28] = {0};
+  void *arp;
+  struct packet *pktstruct;
+  memset(ether_dst(etherarp), 0xff, 6);
+  memcpy(ether_src(etherarp), my_mac, 6);
+  ether_set_type(etherarp, ETHER_TYPE_ARP);
+  arp = ether_payload(etherarp);
+  arp_set_ether(arp);
+  arp_set_req(arp);
+  arp_set_spa(arp, my_addr);
+  arp_set_tpa(arp, dst);
+  memset(arp_tha(arp), 0xff, 6);
+  memcpy(arp_sha(arp), my_mac, 6);
+
+  pktstruct = ll_alloc_st(st, packet_size(sizeof(etherarp)));
+  pktstruct->data = packet_calc_data(pktstruct);
+  pktstruct->direction = direction;
+  pktstruct->sz = sizeof(etherarp);
+  memcpy(pktstruct->data, etherarp, sizeof(etherarp));
+  port->portfunc(pktstruct, port->userdata);
+}
+
+#endif
 
 static inline uint32_t gen_flowlabel(const void *local_ip, uint16_t local_port,
                                      const void *remote_ip, uint16_t remote_port)
@@ -586,7 +616,7 @@ static void send_syn(
   struct ll_alloc_st *st,
   uint16_t mss, uint8_t wscale, uint8_t sack_permitted,
   struct airwall_hash_entry *entry,
-  uint64_t time64, int was_keepalive);
+  uint64_t time64, int was_keepalive, struct airwall *airwall);
 
 static void ack_data(
   void *orig, struct worker_local *local, struct airwall *airwall,
@@ -762,7 +792,8 @@ static void process_data(
       orig, local, port, st, // FIXME verify send_syn doesn't handle orig wrong
       entry->state_data.downlink_half_open.mss,
       entry->state_data.downlink_half_open.wscale,
-      entry->state_data.downlink_half_open.sack_permitted, entry, time64, 0);
+      entry->state_data.downlink_half_open.sack_permitted, entry, time64, 0,
+      airwall);
   }
   
   
@@ -1134,7 +1165,8 @@ static void send_synack(
 static void send_or_resend_syn(
   void *orig, struct worker_local *local, struct port *port,
   struct ll_alloc_st *st,
-  struct airwall_hash_entry *entry)
+  struct airwall_hash_entry *entry,
+  struct airwall *airwall)
 {
   char syn[14+20+40+12+12] = {0};
   void *ip, *origip;
@@ -1235,6 +1267,7 @@ static void send_or_resend_syn(
   tcp46_set_cksum_calc(ip);
 
 #ifdef ENABLE_ARP
+  memcpy(ether_src(syn), airwall->dl_mac, 6);
   uint32_t dst = hdr_get32n(&entry->local_ip);
   struct arp_entry *arpe = arp_cache_get(&local->dl_arp_cache, dst);
   if (arpe == NULL)
@@ -1245,7 +1278,18 @@ static void send_or_resend_syn(
     pktstruct->sz = sz;
     memcpy(pktstruct->data, syn, sz);
     arp_cache_put_packet(&local->dl_arp_cache, dst, pktstruct);
+    send_arp(port, dst, PACKET_DIRECTION_DOWNLINK,
+             airwall->conf->dl_addr, airwall->dl_mac, st);
     return;
+  }
+  else
+  {
+    uint32_t spa = dst;
+    const unsigned char *sha = (const void*)arpe->mac;
+    log_log(LOG_LEVEL_ERR, "WORKER",
+            "%d.%d.%d.%d is at %.2x:%.2x:%.2x:%.2x:%.2x:%.2x",
+            (spa>>24)&0xFF, (spa>>16)&0xFF, (spa>>8)&0xFF, (spa>>0)&0xFF,
+            sha[0], sha[1], sha[2], sha[3], sha[4], sha[5]);
   }
   memcpy(ether_dst(syn), arpe->mac, 6);
 #endif
@@ -1263,7 +1307,7 @@ static void resend_syn(
   void *orig, struct worker_local *local, struct port *port,
   struct ll_alloc_st *st,
   struct airwall_hash_entry *entry,
-  uint64_t time64)
+  uint64_t time64, struct airwall *airwall)
 {
   void *origip;
   void *origtcp;
@@ -1299,7 +1343,7 @@ static void resend_syn(
   entry->timer.time64 = time64 + 120ULL*1000ULL*1000ULL;
   timer_linkheap_modify(&local->timers, &entry->timer);
 
-  send_or_resend_syn(orig, local, port, st, entry);
+  send_or_resend_syn(orig, local, port, st, entry, airwall);
 }
 
 static void send_syn(
@@ -1307,7 +1351,7 @@ static void send_syn(
   struct ll_alloc_st *st,
   uint16_t mss, uint8_t wscale, uint8_t sack_permitted,
   struct airwall_hash_entry *entry,
-  uint64_t time64, int was_keepalive)
+  uint64_t time64, int was_keepalive, struct airwall *airwall)
 {
   //void *origip;
   //void *origtcp;
@@ -1332,12 +1376,12 @@ static void send_syn(
   entry->timer.time64 = time64 + 120ULL*1000ULL*1000ULL;
   timer_linkheap_modify(&local->timers, &entry->timer);
 
-  send_or_resend_syn(orig, local, port, st, entry);
+  send_or_resend_syn(orig, local, port, st, entry, airwall);
 }
 
 static void send_data_only(
   void *orig, struct airwall_hash_entry *entry, struct port *port,
-  struct ll_alloc_st *st, struct worker_local *local)
+  struct ll_alloc_st *st, struct worker_local *local, struct airwall *airwall)
 {
   const size_t maxpay = 1208;
   char data[14+40+20+12+1208] = {0};
@@ -1426,6 +1470,7 @@ static void send_data_only(
     sz = ((version == 4) ? (14+20+20+12+curpay) : (14+40+20+12+curpay));
 
 #ifdef ENABLE_ARP
+    memcpy(ether_src(data), airwall->dl_mac, 6);
     uint32_t dst = hdr_get32n(ip46_src(origip));
     struct arp_entry *arpe = arp_cache_get(&local->dl_arp_cache, dst);
     if (arpe == NULL)
@@ -1436,6 +1481,8 @@ static void send_data_only(
       pktstruct->sz = sz;
       memcpy(pktstruct->data, data, sz);
       arp_cache_put_packet(&local->dl_arp_cache, dst, pktstruct);
+      send_arp(port, dst, PACKET_DIRECTION_DOWNLINK,
+               airwall->conf->dl_addr, airwall->dl_mac, st);
       return;
     }
     memcpy(ether_dst(data), arpe->mac, 6);
@@ -1685,7 +1732,7 @@ static void send_ack_and_window_update(
 
   if (airwall->conf->enable_ack)
   {
-    send_data_only(orig, entry, port, st, local); // XXX send_data_only reparses opts
+    send_data_only(orig, entry, port, st, local, airwall); // XXX send_data_only reparses opts
   }
 
   memcpy(ether_src(windowupdate), ether_src(orig), 6);
@@ -1827,10 +1874,16 @@ int downlink(
     }
     if (arp_is_req(arp))
     {
-      if (arp_cache_get_accept_invalid(&local->dl_arp_cache, arp_spa(arp)))
+      if (arp_cache_get_accept_invalid(&local->ul_arp_cache, arp_spa(arp)))
       {
         // FIXME correct direction port?
-        arp_cache_put(&local->dl_arp_cache, port, arp_spa(arp), arp_const_sha(arp));
+        uint32_t spa = arp_spa(arp);
+        const unsigned char *sha = arp_const_sha(arp);
+        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK",
+                "%d.%d.%d.%d is at %.2x:%.2x:%.2x:%.2x:%.2x:%.2x",
+                (spa>>24)&0xFF, (spa>>16)&0xFF, (spa>>8)&0xFF, (spa>>0)&0xFF,
+                sha[0], sha[1], sha[2], sha[3], sha[4], sha[5]);
+        arp_cache_put(&local->ul_arp_cache, port, arp_spa(arp), arp_const_sha(arp));
       }
       if (arp_tpa(arp) != airwall->conf->ul_addr)
       {
@@ -1859,10 +1912,25 @@ int downlink(
     }
     else if (arp_is_resp(arp))
     {
-      if (arp_cache_get_accept_invalid(&local->dl_arp_cache, arp_spa(arp)))
+      if (arp_cache_get_accept_invalid(&local->ul_arp_cache, arp_spa(arp)))
       {
+        uint32_t spa = arp_spa(arp);
+        const unsigned char *sha = arp_const_sha(arp);
+        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK",
+                "%d.%d.%d.%d is at %.2x:%.2x:%.2x:%.2x:%.2x:%.2x",
+                (spa>>24)&0xFF, (spa>>16)&0xFF, (spa>>8)&0xFF, (spa>>0)&0xFF,
+                sha[0], sha[1], sha[2], sha[3], sha[4], sha[5]);
         // FIXME correct direction port?
-        arp_cache_put(&local->dl_arp_cache, port, arp_spa(arp), arp_const_sha(arp));
+        arp_cache_put(&local->ul_arp_cache, port, arp_spa(arp), arp_const_sha(arp));
+      }
+      else
+      {
+        uint32_t spa = arp_spa(arp);
+        const unsigned char *sha = arp_const_sha(arp);
+        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK",
+                "%d.%d.%d.%d would be at %.2x:%.2x:%.2x:%.2x:%.2x:%.2x",
+                (spa>>24)&0xFF, (spa>>16)&0xFF, (spa>>8)&0xFF, (spa>>0)&0xFF,
+                sha[0], sha[1], sha[2], sha[3], sha[4], sha[5]);
       }
       return 1;
     }
@@ -2513,7 +2581,7 @@ int downlink(
   {
     log_log(LOG_LEVEL_NOTICE, "WORKERDOWNLINK", "resending SYN");
     worker_local_wrlock(local);
-    resend_syn(ether, local, port, st, entry, time64);
+    resend_syn(ether, local, port, st, entry, time64, airwall);
     worker_local_wrunlock(local);
     //airwall_hash_unlock(local, &ctx);
     return 1;
@@ -2724,6 +2792,7 @@ int downlink(
     abort();
   }
 #ifdef ENABLE_ARP
+  memcpy(ether_src(ether), airwall->dl_mac, 6);
   uint32_t dst = ip_dst(ip);
   if ((dst & airwall->conf->dl_mask) !=
       (airwall->conf->dl_addr & airwall->conf->dl_mask))
@@ -2739,7 +2808,9 @@ int downlink(
     pktstruct->direction = PACKET_DIRECTION_DOWNLINK;
     pktstruct->sz = pkt->sz;
     memcpy(pktstruct->data, ether, pkt->sz);
-    arp_cache_put_packet(&local->dl_arp_cache, dst, pkt);
+    arp_cache_put_packet(&local->dl_arp_cache, dst, pktstruct);
+    send_arp(port, dst, PACKET_DIRECTION_DOWNLINK,
+             airwall->conf->dl_addr, airwall->dl_mac, st);
     return 1;
   }
   memcpy(ether_dst(ether), arpe->mac, 6);
@@ -2794,6 +2865,8 @@ int uplink(
   char packetbuf[8192];
   int version;
 
+  log_log(LOG_LEVEL_NOTICE, "WORKERUPLINK", "uplink packet");
+
   if (ether_len < ETHER_HDR_LEN)
   {
     log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "pkt does not have full Ether hdr");
@@ -2821,10 +2894,18 @@ int uplink(
       log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "ARP is not valid");
       return 1;
     }
+    log_log(LOG_LEVEL_NOTICE, "WORKERUPLINK", "ARP packet");
     if (arp_is_req(arp))
     {
+      log_log(LOG_LEVEL_NOTICE, "WORKERUPLINK", "ARP req");
       if (arp_cache_get_accept_invalid(&local->dl_arp_cache, arp_spa(arp)))
       {
+        uint32_t spa = arp_spa(arp);
+        const unsigned char *sha = arp_const_sha(arp);
+        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK",
+                "%d.%d.%d.%d is at %.2x:%.2x:%.2x:%.2x:%.2x:%.2x",
+                (spa>>24)&0xFF, (spa>>16)&0xFF, (spa>>8)&0xFF, (spa>>0)&0xFF,
+                sha[0], sha[1], sha[2], sha[3], sha[4], sha[5]);
         // FIXME correct direction port?
         arp_cache_put(&local->dl_arp_cache, port, arp_spa(arp), arp_const_sha(arp));
       }
@@ -2857,6 +2938,12 @@ int uplink(
     {
       if (arp_cache_get_accept_invalid(&local->dl_arp_cache, arp_spa(arp)))
       {
+        uint32_t spa = arp_spa(arp);
+        const unsigned char *sha = arp_const_sha(arp);
+        log_log(LOG_LEVEL_ERR, "WORKERUPLINK",
+                "%d.%d.%d.%d is at %.2x:%.2x:%.2x:%.2x:%.2x:%.2x",
+                (spa>>24)&0xFF, (spa>>16)&0xFF, (spa>>8)&0xFF, (spa>>0)&0xFF,
+                sha[0], sha[1], sha[2], sha[3], sha[4], sha[5]);
         // FIXME correct direction port?
         arp_cache_put(&local->dl_arp_cache, port, arp_spa(arp), arp_const_sha(arp));
       }
@@ -3576,7 +3663,7 @@ int uplink(
       {
         if (airwall->conf->enable_ack)
         {
-          send_data_only(ether, entry, port, st, local);
+          send_data_only(ether, entry, port, st, local, airwall);
           tcp_set_ack_number_cksum_update(ippay, tcp_len, acked_seq);
         }
       }
@@ -3647,6 +3734,7 @@ int uplink(
     dst = airwall->conf->ul_defaultgw;
   }
 #ifdef ENABLE_ARP
+  memcpy(ether_src(ether), airwall->ul_mac, 6);
   struct arp_entry *arpe = arp_cache_get(&local->ul_arp_cache, dst);
   if (arpe == NULL)
   {
@@ -3655,7 +3743,9 @@ int uplink(
     pktstruct->direction = PACKET_DIRECTION_UPLINK;
     pktstruct->sz = pkt->sz;
     memcpy(pktstruct->data, ether, pkt->sz);
-    arp_cache_put_packet(&local->ul_arp_cache, dst, pkt);
+    arp_cache_put_packet(&local->ul_arp_cache, dst, pktstruct);
+    send_arp(port, dst, PACKET_DIRECTION_UPLINK,
+             airwall->conf->ul_addr, airwall->ul_mac, st);
     return 1;
   }
   memcpy(ether_dst(ether), arpe->mac, 6);
