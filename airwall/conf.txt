@@ -1,11 +1,8 @@
-synproxyconf = {
+airwallconf = {
   user = "root";
   group = 0;
-  sackmode = hashipport;
   sackconflict = remove;
-  mssmode = hashipport;
   threadcount = 1;
-  learnhashsize = 131072;
   conntablesize = 131072;
   halfopen_cache_max = 0;
   mss = {216, 1200, 1400, 1460};

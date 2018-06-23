@@ -22,15 +22,12 @@
 %x COMMENTS
 %%
 
-synproxyconf return SYNPROXYCONF;
+airwallconf  return AIRWALLCONF;
 \{           return OPENBRACE;
 \}           return CLOSEBRACE;
 ;            return SEMICOLON;
 ,            return COMMA;
-sackmode     return SACKHASHMODE;
 own_sack     return OWN_SACK;
-mssmode      return MSSMODE;
-wscalemode   return WSCALEMODE;
 default      return DEFAULT;
 =            return EQUALS;
 disable      return DISABLE;
@@ -38,7 +35,6 @@ enable       return ENABLE;
 haship       return HASHIP;
 hashipport   return HASHIPPORT;
 commanded    return COMMANDED;
-learnhashsize return LEARNHASHSIZE;
 ratehash     return RATEHASH;
 threadcount  return THREADCOUNT;
 size         return SIZE;

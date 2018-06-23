@@ -127,12 +127,14 @@ int main(int argc, char **argv)
   ulintf = ldp_interface_open("veth1", NUM_THR, NUM_THR);
   if (ulintf == NULL)
   {
-    abort();
+    log_log(LOG_LEVEL_CRIT, "LDPAIRWALL", "Can't open uplink interface");
+    exit(1);
   }
   dlintf = ldp_interface_open("veth2", NUM_THR, NUM_THR);
   if (dlintf == NULL)
   {
-    abort();
+    log_log(LOG_LEVEL_CRIT, "LDPAIRWALL", "Can't open downlink interface");
+    exit(1);
   }
   for (i = 0; i < NUM_THR; i++)
   {

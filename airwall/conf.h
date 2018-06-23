@@ -8,18 +8,6 @@
 #include "log.h"
 #include "hosthash.h"
 
-enum sackmode {
-  SACKMODE_ENABLE,
-  SACKMODE_DISABLE,
-  SACKMODE_HASHIP,
-  SACKMODE_HASHIPPORT,
-};
-enum learnmode {
-  HASHMODE_DEFAULT,
-  HASHMODE_HASHIP,
-  HASHMODE_HASHIPPORT,
-  HASHMODE_COMMANDED,
-};
 enum sackconflict {
   SACKCONFLICT_REMOVE,
   SACKCONFLICT_RETAIN,
@@ -35,11 +23,7 @@ struct ratehashconf {
 };
 
 struct conf {
-  enum learnmode sackmode;
   enum sackconflict sackconflict;
-  enum learnmode mssmode;
-  enum learnmode wscalemode;
-  size_t learnhashsize;
   size_t conntablesize;
   unsigned threadcount;
   struct ratehashconf ratehash;
@@ -77,10 +61,7 @@ struct conf {
 
 static inline void conf_init(struct conf *conf)
 {
-  conf->sackmode = SACKMODE_HASHIP;
   conf->sackconflict = SACKCONFLICT_RETAIN;
-  conf->mssmode = HASHMODE_HASHIP;
-  conf->learnhashsize = 131072;
   conf->conntablesize = 131072;
   conf->ratehash.size = 131072;
   conf->ratehash.timer_period_usec = (1000*1000);

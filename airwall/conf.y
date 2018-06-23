@@ -49,14 +49,14 @@ int confyywrap(yyscan_t scanner)
 
 %destructor { free ($$); } STRING_LITERAL
 
-%token ENABLE DISABLE HASHIP HASHIPPORT COMMANDED SACKHASHMODE EQUALS SEMICOLON OPENBRACE CLOSEBRACE SYNPROXYCONF ERROR_TOK INT_LITERAL IP_LITERAL
+%token ENABLE DISABLE HASHIP HASHIPPORT COMMANDED EQUALS SEMICOLON OPENBRACE CLOSEBRACE AIRWALLCONF ERROR_TOK INT_LITERAL IP_LITERAL
 %token LEARNHASHSIZE RATEHASH SIZE TIMER_PERIOD_USEC TIMER_ADD INITIAL_TOKENS
 %token CONNTABLESIZE THREADCOUNT
 %token COMMA MSS WSCALE TSMSS TSWSCALE TS_BITS OWN_MSS OWN_WSCALE OWN_SACK
 %token STRING_LITERAL
 %token SACKCONFLICT REMOVE RETAIN
 %token MSS_CLAMP
-%token NETWORK_PREFIX NETWORK_PREFIX6 MSSMODE WSCALEMODE DEFAULT HALFOPEN_CACHE_MAX
+%token NETWORK_PREFIX NETWORK_PREFIX6 MSSMODE DEFAULT HALFOPEN_CACHE_MAX
 %token USER GROUP
 %token TEST_CONNECTIONS
 %token PORT
@@ -70,9 +70,6 @@ int confyywrap(yyscan_t scanner)
 %token UL_DEFAULTGW
 
 
-%type<i> sackhashval
-%type<i> msshashval
-%type<i> wscaleval
 %type<i> sackconflictval
 %type<i> own_sack
 %type<i> INT_LITERAL
@@ -82,7 +79,7 @@ int confyywrap(yyscan_t scanner)
 
 %%
 
-synproxyconf: SYNPROXYCONF EQUALS OPENBRACE conflist CLOSEBRACE SEMICOLON
+airwallconf: AIRWALLCONF EQUALS OPENBRACE conflist CLOSEBRACE SEMICOLON
 ;
 
 maybe_comma:
@@ -113,25 +110,6 @@ sackconflictval:
 }
 ;
 
-sackhashval:
-  DEFAULT
-{
-  $$ = HASHMODE_DEFAULT;
-}
-| HASHIP
-{
-  $$ = HASHMODE_HASHIP;
-}
-| HASHIPPORT
-{
-  $$ = HASHMODE_HASHIPPORT;
-}
-| COMMANDED
-{
-  $$ = HASHMODE_COMMANDED;
-}
-;
-
 own_sack:
   ENABLE
 {
@@ -141,36 +119,6 @@ own_sack:
 {
   $$ = 0;
 }
-
-msshashval:
-  DEFAULT
-{
-  $$ = HASHMODE_DEFAULT;
-}
-| HASHIP
-{
-  $$ = HASHMODE_HASHIP;
-}
-| HASHIPPORT
-{
-  $$ = HASHMODE_HASHIPPORT;
-}
-| COMMANDED
-{
-  $$ = HASHMODE_COMMANDED;
-}
-;
-
-wscaleval:
-  DEFAULT
-{
-  $$ = HASHMODE_DEFAULT;
-}
-| COMMANDED
-{
-  $$ = HASHMODE_COMMANDED;
-}
-;
 
 ratehashlist:
 | ratehashlist ratehash_entry
@@ -571,39 +519,9 @@ TEST_CONNECTIONS SEMICOLON
   }
   conf->own_wscale = $3;
 }
-| SACKHASHMODE EQUALS sackhashval SEMICOLON
-{
-  conf->sackmode = $3;
-}
-| WSCALEMODE EQUALS wscaleval SEMICOLON
-{
-  conf->wscalemode = $3;
-}
-| MSSMODE EQUALS msshashval SEMICOLON
-{
-  conf->mssmode = $3;
-}
 | SACKCONFLICT EQUALS sackconflictval SEMICOLON
 {
   conf->sackconflict = $3;
-}
-| LEARNHASHSIZE EQUALS INT_LITERAL SEMICOLON
-{
-  if ($3 <= 0)
-  {
-    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
-            "invalid learnhash size: %d at line %d col %d",
-            $3, @3.first_line, @3.first_column);
-    YYABORT;
-  }
-  if (($3 & ($3-1)) != 0)
-  {
-    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
-            "learnhash size not power of 2: %d at line %d col %d",
-            $3, @3.first_line, @3.first_column);
-    YYABORT;
-  }
-  conf->learnhashsize = $3;
 }
 | CONNTABLESIZE EQUALS INT_LITERAL SEMICOLON
 {
