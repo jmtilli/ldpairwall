@@ -49,6 +49,25 @@ host_hash_add(struct host_hash *hash, const char *name, uint32_t ip)
   hash_table_add_nogrow_already_bucket_locked(&hash->tbl, &e->node, host_hash(e));
 }
 
+static inline uint32_t
+host_hash_get(struct host_hash *hash, const char *name)
+{
+  uint32_t hashval = str_hash(name);
+  struct hash_list_node *node;
+  HASH_TABLE_FOR_EACH_POSSIBLE(&hash->tbl, node, hashval)
+  {
+    struct host_hash_entry *e;
+    e = CONTAINER_OF(node, struct host_hash_entry, node);
+    if (strcmp(e->hostname, name) != 0)
+    {
+      continue;
+    }
+    return e->local_ip;
+  }
+  return 0;
+}
+
+
 static inline void host_hash_free(struct host_hash *hash)
 {
   struct hash_list_node *n, *x;

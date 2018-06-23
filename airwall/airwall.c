@@ -732,9 +732,30 @@ static void process_data(
     {
       abort();
     }
-    // FIXME select correct local_ip
     entry->local_port = entry->nat_port;
+#ifdef ENABLE_ARP
+    if (entry->version == 6)
+    {
+      abort(); // FIXME
+    }
+    uint32_t loc =
+      host_hash_get(&airwall->conf->hosts, entry->detect->hostctx.hostname);
+    char ipv4[4];
+    if (loc == 0)
+    {
+      log_log(LOG_LEVEL_ERR, "AIRWALL", "host %s not found",
+              entry->detect->hostctx.hostname);
+      // FIXME send RST
+      entry->timer.time64 = time64 + 45ULL*1000ULL*1000ULL;
+      entry->flag_state = FLAG_STATE_RESETED;
+      timer_linkheap_modify(&local->timers, &entry->timer);
+      return;
+    }
+    hdr_set32n(ipv4, loc);
+    memcpy(&entry->local_ip.ipv4, ipv4, sizeof(ipv4));
+#else
     memcpy(&entry->local_ip, &entry->nat_ip, sizeof(entry->local_ip));
+#endif
     hash_table_add_nogrow_already_bucket_locked(
       &local->local_hash, &entry->local_node, airwall_hash_local(entry));
     send_syn(
@@ -1854,6 +1875,13 @@ int downlink(
     remote_ip = ip_src_ptr(ip);
     protocol = ip_proto(ip);
     ippay = ip_payload(ip);
+#if ENABLE_ARP
+    if (hdr_get32n(lan_ip) != airwall->conf->ul_addr)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "address of packet invalid");
+      return 1;
+    }
+#endif
   }
   else if (version == 6)
   {
@@ -1889,6 +1917,13 @@ int downlink(
     ihl = ((char*)ippay) - ((char*)ip);
     lan_ip = ipv6_dst(ip);
     remote_ip = ipv6_src(ip);
+#if ENABLE_ARP
+    if (1)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "v6 address of packet invalid");
+      return 1;
+    }
+#endif
   }
   else
   {
@@ -2798,6 +2833,14 @@ int uplink(
     ippay = ip_payload(ip);
     lan_ip = ip_src_ptr(ip);
     remote_ip = ip_dst_ptr(ip);
+#if ENABLE_ARP
+    if ((hdr_get32n(remote_ip) & airwall->conf->dl_mask) ==
+        (airwall->conf->dl_addr & airwall->conf->dl_mask))
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "address of packet internal");
+      return 1;
+    }
+#endif
   }
   else
   {
@@ -2833,6 +2876,13 @@ int uplink(
     ihl = ((char*)ippay) - ((char*)ip);
     lan_ip = ipv6_src(ip);
     remote_ip = ipv6_dst(ip);
+#if ENABLE_ARP
+    if (1)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "v6 address of packet internal");
+      return 1;
+    }
+#endif
   }
   if (protocol == 6)
   {
