@@ -1971,6 +1971,30 @@ int downlink(
     if (ip_proto(ip) != 6)
     {
       //port->portfunc(pkt, port->userdata);
+#ifdef ENABLE_ARP
+      memcpy(ether_src(ether), airwall->dl_mac, 6);
+      uint32_t dst = ip_dst(ip);
+      if ((dst & airwall->conf->dl_mask) !=
+          (airwall->conf->dl_addr & airwall->conf->dl_mask))
+      {
+        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "IP not to subnet, dropping");
+        return 1;
+      }
+      struct arp_entry *arpe = arp_cache_get(&local->dl_arp_cache, dst);
+      if (arpe == NULL)
+      {
+        struct packet *pktstruct = ll_alloc_st(st, packet_size(pkt->sz));
+        pktstruct->data = packet_calc_data(pktstruct);
+        pktstruct->direction = PACKET_DIRECTION_DOWNLINK;
+        pktstruct->sz = pkt->sz;
+        memcpy(pktstruct->data, ether, pkt->sz);
+        arp_cache_put_packet(&local->dl_arp_cache, dst, pktstruct);
+        send_arp(port, dst, PACKET_DIRECTION_DOWNLINK,
+                 airwall->conf->dl_addr, airwall->dl_mac, st);
+        return 1;
+      }
+      memcpy(ether_dst(ether), arpe->mac, 6);
+#endif
       return 0;
     }
     if (ip_frag_off(ip) != 0 || ip_more_frags(ip))
@@ -2024,6 +2048,30 @@ int downlink(
     if (protocol != 6)
     {
       //port->portfunc(pkt, port->userdata);
+#ifdef ENABLE_ARP
+      memcpy(ether_src(ether), airwall->dl_mac, 6);
+      uint32_t dst = ip_dst(ip);
+      if ((dst & airwall->conf->dl_mask) !=
+          (airwall->conf->dl_addr & airwall->conf->dl_mask))
+      {
+        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "IP not to subnet, dropping");
+        return 1;
+      }
+      struct arp_entry *arpe = arp_cache_get(&local->dl_arp_cache, dst);
+      if (arpe == NULL)
+      {
+        struct packet *pktstruct = ll_alloc_st(st, packet_size(pkt->sz));
+        pktstruct->data = packet_calc_data(pktstruct);
+        pktstruct->direction = PACKET_DIRECTION_DOWNLINK;
+        pktstruct->sz = pkt->sz;
+        memcpy(pktstruct->data, ether, pkt->sz);
+        arp_cache_put_packet(&local->dl_arp_cache, dst, pktstruct);
+        send_arp(port, dst, PACKET_DIRECTION_DOWNLINK,
+                 airwall->conf->dl_addr, airwall->dl_mac, st);
+        return 1;
+      }
+      memcpy(ether_dst(ether), arpe->mac, 6);
+#endif
       return 0;
     }
     ihl = ((char*)ippay) - ((char*)ip);
@@ -2141,6 +2189,40 @@ int downlink(
         }
         //airwall_hash_unlock(local, &ctx);
         //port->portfunc(pkt, port->userdata);
+        tcp_set_dst_port_cksum_update(ippay, tcp_len, entry->local_port);
+        if (version == 4)
+        {
+          ip_set_dst_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
+                                  hdr_get32n(&entry->local_ip));
+        }
+        else
+        {
+          abort();
+        }
+#ifdef ENABLE_ARP
+        memcpy(ether_src(ether), airwall->dl_mac, 6);
+        uint32_t dst = ip_dst(ip);
+        if ((dst & airwall->conf->dl_mask) !=
+            (airwall->conf->dl_addr & airwall->conf->dl_mask))
+        {
+          log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "IP not to subnet, dropping");
+          return 1;
+        }
+        struct arp_entry *arpe = arp_cache_get(&local->dl_arp_cache, dst);
+        if (arpe == NULL)
+        {
+          struct packet *pktstruct = ll_alloc_st(st, packet_size(pkt->sz));
+          pktstruct->data = packet_calc_data(pktstruct);
+          pktstruct->direction = PACKET_DIRECTION_DOWNLINK;
+          pktstruct->sz = pkt->sz;
+          memcpy(pktstruct->data, ether, pkt->sz);
+          arp_cache_put_packet(&local->dl_arp_cache, dst, pktstruct);
+          send_arp(port, dst, PACKET_DIRECTION_DOWNLINK,
+                   airwall->conf->dl_addr, airwall->dl_mac, st);
+          return 1;
+        }
+        memcpy(ether_dst(ether), arpe->mac, 6);
+#endif
         return 0;
       }
       if (entry->flag_state == FLAG_STATE_ESTABLISHED &&
@@ -2167,6 +2249,40 @@ int downlink(
         }
         //airwall_hash_unlock(local, &ctx);
         //port->portfunc(pkt, port->userdata);
+        tcp_set_dst_port_cksum_update(ippay, tcp_len, entry->local_port);
+        if (version == 4)
+        {
+          ip_set_dst_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
+                                  hdr_get32n(&entry->local_ip));
+        }
+        else
+        {
+          abort();
+        }
+#ifdef ENABLE_ARP
+        memcpy(ether_src(ether), airwall->dl_mac, 6);
+        uint32_t dst = ip_dst(ip);
+        if ((dst & airwall->conf->dl_mask) !=
+            (airwall->conf->dl_addr & airwall->conf->dl_mask))
+        {
+          log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "IP not to subnet, dropping");
+          return 1;
+        }
+        struct arp_entry *arpe = arp_cache_get(&local->dl_arp_cache, dst);
+        if (arpe == NULL)
+        {
+          struct packet *pktstruct = ll_alloc_st(st, packet_size(pkt->sz));
+          pktstruct->data = packet_calc_data(pktstruct);
+          pktstruct->direction = PACKET_DIRECTION_DOWNLINK;
+          pktstruct->sz = pkt->sz;
+          memcpy(pktstruct->data, ether, pkt->sz);
+          arp_cache_put_packet(&local->dl_arp_cache, dst, pktstruct);
+          send_arp(port, dst, PACKET_DIRECTION_DOWNLINK,
+                   airwall->conf->dl_addr, airwall->dl_mac, st);
+          return 1;
+        }
+        memcpy(ether_dst(ether), arpe->mac, 6);
+#endif
         return 0;
       }
       if (entry->flag_state != FLAG_STATE_UPLINK_SYN_SENT)
@@ -2219,6 +2335,40 @@ int downlink(
       }
       //airwall_hash_unlock(local, &ctx);
       //port->portfunc(pkt, port->userdata);
+      tcp_set_dst_port_cksum_update(ippay, tcp_len, entry->local_port);
+      if (version == 4)
+      {
+        ip_set_dst_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
+                                hdr_get32n(&entry->local_ip));
+      }
+      else
+      {
+        abort();
+      }
+#ifdef ENABLE_ARP
+      memcpy(ether_src(ether), airwall->dl_mac, 6);
+      uint32_t dst = ip_dst(ip);
+      if ((dst & airwall->conf->dl_mask) !=
+          (airwall->conf->dl_addr & airwall->conf->dl_mask))
+      {
+        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "IP not to subnet, dropping");
+        return 1;
+      }
+      struct arp_entry *arpe = arp_cache_get(&local->dl_arp_cache, dst);
+      if (arpe == NULL)
+      {
+        struct packet *pktstruct = ll_alloc_st(st, packet_size(pkt->sz));
+        pktstruct->data = packet_calc_data(pktstruct);
+        pktstruct->direction = PACKET_DIRECTION_DOWNLINK;
+        pktstruct->sz = pkt->sz;
+        memcpy(pktstruct->data, ether, pkt->sz);
+        arp_cache_put_packet(&local->dl_arp_cache, dst, pktstruct);
+        send_arp(port, dst, PACKET_DIRECTION_DOWNLINK,
+                 airwall->conf->dl_addr, airwall->dl_mac, st);
+        return 1;
+      }
+      memcpy(ether_dst(ether), arpe->mac, 6);
+#endif
       return 0;
     }
   }
@@ -2571,6 +2721,40 @@ int downlink(
     worker_local_wrunlock(local);
     //airwall_hash_unlock(local, &ctx);
     //port->portfunc(pkt, port->userdata);
+    tcp_set_dst_port_cksum_update(ippay, tcp_len, entry->local_port);
+    if (version == 4)
+    {
+      ip_set_dst_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
+                              hdr_get32n(&entry->local_ip));
+    }
+    else
+    {
+      abort();
+    }
+#ifdef ENABLE_ARP
+    memcpy(ether_src(ether), airwall->dl_mac, 6);
+    uint32_t dst = ip_dst(ip);
+    if ((dst & airwall->conf->dl_mask) !=
+        (airwall->conf->dl_addr & airwall->conf->dl_mask))
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "IP not to subnet, dropping");
+      return 1;
+    }
+    struct arp_entry *arpe = arp_cache_get(&local->dl_arp_cache, dst);
+    if (arpe == NULL)
+    {
+      struct packet *pktstruct = ll_alloc_st(st, packet_size(pkt->sz));
+      pktstruct->data = packet_calc_data(pktstruct);
+      pktstruct->direction = PACKET_DIRECTION_DOWNLINK;
+      pktstruct->sz = pkt->sz;
+      memcpy(pktstruct->data, ether, pkt->sz);
+      arp_cache_put_packet(&local->dl_arp_cache, dst, pktstruct);
+      send_arp(port, dst, PACKET_DIRECTION_DOWNLINK,
+               airwall->conf->dl_addr, airwall->dl_mac, st);
+      return 1;
+    }
+    memcpy(ether_dst(ether), arpe->mac, 6);
+#endif
     return 0;
   }
   if (   tcp_ack(ippay)
@@ -2986,6 +3170,29 @@ int uplink(
     if (ip_proto(ip) != 6)
     {
       //port->portfunc(pkt, port->userdata);
+      uint32_t dst = ip_dst(ip);
+      if ((dst & airwall->conf->ul_mask) !=
+          (airwall->conf->ul_addr & airwall->conf->ul_mask))
+      {
+        dst = airwall->conf->ul_defaultgw;
+      }
+#ifdef ENABLE_ARP
+      memcpy(ether_src(ether), airwall->ul_mac, 6);
+      struct arp_entry *arpe = arp_cache_get(&local->ul_arp_cache, dst);
+      if (arpe == NULL)
+      {
+        struct packet *pktstruct = ll_alloc_st(st, packet_size(pkt->sz));
+        pktstruct->data = packet_calc_data(pktstruct);
+        pktstruct->direction = PACKET_DIRECTION_UPLINK;
+        pktstruct->sz = pkt->sz;
+        memcpy(pktstruct->data, ether, pkt->sz);
+        arp_cache_put_packet(&local->ul_arp_cache, dst, pktstruct);
+        send_arp(port, dst, PACKET_DIRECTION_UPLINK,
+                 airwall->conf->ul_addr, airwall->ul_mac, st);
+        return 1;
+      }
+      memcpy(ether_dst(ether), arpe->mac, 6);
+#endif
       return 0;
     }
     if (ip_frag_off(ip) != 0 || ip_more_frags(ip))
@@ -3041,6 +3248,29 @@ int uplink(
     if (protocol != 6)
     {
       //port->portfunc(pkt, port->userdata);
+      uint32_t dst = ip_dst(ip);
+      if ((dst & airwall->conf->ul_mask) !=
+          (airwall->conf->ul_addr & airwall->conf->ul_mask))
+      {
+        dst = airwall->conf->ul_defaultgw;
+      }
+#ifdef ENABLE_ARP
+      memcpy(ether_src(ether), airwall->ul_mac, 6);
+      struct arp_entry *arpe = arp_cache_get(&local->ul_arp_cache, dst);
+      if (arpe == NULL)
+      {
+        struct packet *pktstruct = ll_alloc_st(st, packet_size(pkt->sz));
+        pktstruct->data = packet_calc_data(pktstruct);
+        pktstruct->direction = PACKET_DIRECTION_UPLINK;
+        pktstruct->sz = pkt->sz;
+        memcpy(pktstruct->data, ether, pkt->sz);
+        arp_cache_put_packet(&local->ul_arp_cache, dst, pktstruct);
+        send_arp(port, dst, PACKET_DIRECTION_UPLINK,
+                 airwall->conf->ul_addr, airwall->ul_mac, st);
+        return 1;
+      }
+      memcpy(ether_dst(ether), arpe->mac, 6);
+#endif
       return 0;
     }
     ihl = ((char*)ippay) - ((char*)ip);
@@ -3103,6 +3333,39 @@ int uplink(
         // retransmit of SYN
         //airwall_hash_unlock(local, &ctx);
         //port->portfunc(pkt, port->userdata);
+        tcp_set_src_port_cksum_update(ippay, tcp_len, entry->nat_port);
+        if (version == 4)
+        {
+          ip_set_src_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
+                                  hdr_get32n(&entry->nat_ip));
+        }
+        else
+        {
+          abort();
+        }
+        uint32_t dst = ip_dst(ip);
+        if ((dst & airwall->conf->ul_mask) !=
+            (airwall->conf->ul_addr & airwall->conf->ul_mask))
+        {
+          dst = airwall->conf->ul_defaultgw;
+        }
+#ifdef ENABLE_ARP
+        memcpy(ether_src(ether), airwall->ul_mac, 6);
+        struct arp_entry *arpe = arp_cache_get(&local->ul_arp_cache, dst);
+        if (arpe == NULL)
+        {
+          struct packet *pktstruct = ll_alloc_st(st, packet_size(pkt->sz));
+          pktstruct->data = packet_calc_data(pktstruct);
+          pktstruct->direction = PACKET_DIRECTION_UPLINK;
+          pktstruct->sz = pkt->sz;
+          memcpy(pktstruct->data, ether, pkt->sz);
+          arp_cache_put_packet(&local->ul_arp_cache, dst, pktstruct);
+          send_arp(port, dst, PACKET_DIRECTION_UPLINK,
+                   airwall->conf->ul_addr, airwall->ul_mac, st);
+          return 1;
+        }
+        memcpy(ether_dst(ether), arpe->mac, 6);
+#endif
         return 0;
       }
       if (entry != NULL)
@@ -3185,12 +3448,45 @@ int uplink(
           tcp_set_mss_cksum_update(ippay, &tcpinfo, mss);
         }
       }
+      tcp_set_src_port_cksum_update(ippay, tcp_len, entry->nat_port);
+      if (version == 4)
+      {
+        ip_set_src_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
+                                hdr_get32n(&entry->nat_ip));
+      }
+      else
+      {
+        abort();
+      }
       //port->portfunc(pkt, port->userdata);
       worker_local_wrlock(local);
       entry->timer.time64 = time64 + 120ULL*1000ULL*1000ULL;
       timer_linkheap_modify(&local->timers, &entry->timer);
       worker_local_wrunlock(local);
       //airwall_hash_unlock(local, &ctx);
+      uint32_t dst = ip_dst(ip);
+      if ((dst & airwall->conf->ul_mask) !=
+          (airwall->conf->ul_addr & airwall->conf->ul_mask))
+      {
+        dst = airwall->conf->ul_defaultgw;
+      }
+#ifdef ENABLE_ARP
+      memcpy(ether_src(ether), airwall->ul_mac, 6);
+      struct arp_entry *arpe = arp_cache_get(&local->ul_arp_cache, dst);
+      if (arpe == NULL)
+      {
+        struct packet *pktstruct = ll_alloc_st(st, packet_size(pkt->sz));
+        pktstruct->data = packet_calc_data(pktstruct);
+        pktstruct->direction = PACKET_DIRECTION_UPLINK;
+        pktstruct->sz = pkt->sz;
+        memcpy(pktstruct->data, ether, pkt->sz);
+        arp_cache_put_packet(&local->ul_arp_cache, dst, pktstruct);
+        send_arp(port, dst, PACKET_DIRECTION_UPLINK,
+                 airwall->conf->ul_addr, airwall->ul_mac, st);
+        return 1;
+      }
+      memcpy(ether_dst(ether), arpe->mac, 6);
+#endif
       return 0;
     }
     else
@@ -3383,8 +3679,41 @@ int uplink(
       entry->timer.time64 = time64 + 45ULL*1000ULL*1000ULL;
       timer_linkheap_modify(&local->timers, &entry->timer);
       worker_local_wrunlock(local);
+      tcp_set_src_port_cksum_update(ippay, tcp_len, entry->nat_port);
+      if (version == 4)
+      {
+        ip_set_src_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
+                                hdr_get32n(&entry->nat_ip));
+      }
+      else
+      {
+        abort();
+      }
       //port->portfunc(pkt, port->userdata);
       //airwall_hash_unlock(local, &ctx);
+      uint32_t dst = ip_dst(ip);
+      if ((dst & airwall->conf->ul_mask) !=
+          (airwall->conf->ul_addr & airwall->conf->ul_mask))
+      {
+        dst = airwall->conf->ul_defaultgw;
+      }
+#ifdef ENABLE_ARP
+      memcpy(ether_src(ether), airwall->ul_mac, 6);
+      struct arp_entry *arpe = arp_cache_get(&local->ul_arp_cache, dst);
+      if (arpe == NULL)
+      {
+        struct packet *pktstruct = ll_alloc_st(st, packet_size(pkt->sz));
+        pktstruct->data = packet_calc_data(pktstruct);
+        pktstruct->direction = PACKET_DIRECTION_UPLINK;
+        pktstruct->sz = pkt->sz;
+        memcpy(pktstruct->data, ether, pkt->sz);
+        arp_cache_put_packet(&local->ul_arp_cache, dst, pktstruct);
+        send_arp(port, dst, PACKET_DIRECTION_UPLINK,
+                 airwall->conf->ul_addr, airwall->ul_mac, st);
+        return 1;
+      }
+      memcpy(ether_dst(ether), arpe->mac, 6);
+#endif
       return 0;
     }
     if (tcp_ack(ippay))
@@ -3421,8 +3750,41 @@ int uplink(
       entry->timer.time64 = time64 + 86400ULL*1000ULL*1000ULL;
       timer_linkheap_modify(&local->timers, &entry->timer);
       worker_local_wrunlock(local);
+      tcp_set_src_port_cksum_update(ippay, tcp_len, entry->nat_port);
+      if (version == 4)
+      {
+        ip_set_src_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
+                                hdr_get32n(&entry->nat_ip));
+      }
+      else
+      {
+        abort();
+      }
       //port->portfunc(pkt, port->userdata);
       //airwall_hash_unlock(local, &ctx);
+      uint32_t dst = ip_dst(ip);
+      if ((dst & airwall->conf->ul_mask) !=
+          (airwall->conf->ul_addr & airwall->conf->ul_mask))
+      {
+        dst = airwall->conf->ul_defaultgw;
+      }
+#ifdef ENABLE_ARP
+      memcpy(ether_src(ether), airwall->ul_mac, 6);
+      struct arp_entry *arpe = arp_cache_get(&local->ul_arp_cache, dst);
+      if (arpe == NULL)
+      {
+        struct packet *pktstruct = ll_alloc_st(st, packet_size(pkt->sz));
+        pktstruct->data = packet_calc_data(pktstruct);
+        pktstruct->direction = PACKET_DIRECTION_UPLINK;
+        pktstruct->sz = pkt->sz;
+        memcpy(pktstruct->data, ether, pkt->sz);
+        arp_cache_put_packet(&local->ul_arp_cache, dst, pktstruct);
+        send_arp(port, dst, PACKET_DIRECTION_UPLINK,
+                 airwall->conf->ul_addr, airwall->ul_mac, st);
+        return 1;
+      }
+      memcpy(ether_dst(ether), arpe->mac, 6);
+#endif
       return 0;
     }
     airwall_entry_to_str(statebuf, sizeof(statebuf), entry);
@@ -3481,8 +3843,41 @@ int uplink(
       entry->timer.time64 = time64 + 45ULL*1000ULL*1000ULL;
       timer_linkheap_modify(&local->timers, &entry->timer);
       worker_local_wrunlock(local);
+      tcp_set_src_port_cksum_update(ippay, tcp_len, entry->nat_port);
+      if (version == 4)
+      {
+        ip_set_src_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
+                                hdr_get32n(&entry->nat_ip));
+      }
+      else
+      {
+        abort();
+      }
       //port->portfunc(pkt, port->userdata);
       //airwall_hash_unlock(local, &ctx);
+      uint32_t dst = ip_dst(ip);
+      if ((dst & airwall->conf->ul_mask) !=
+          (airwall->conf->ul_addr & airwall->conf->ul_mask))
+      {
+        dst = airwall->conf->ul_defaultgw;
+      }
+#ifdef ENABLE_ARP
+      memcpy(ether_src(ether), airwall->ul_mac, 6);
+      struct arp_entry *arpe = arp_cache_get(&local->ul_arp_cache, dst);
+      if (arpe == NULL)
+      {
+        struct packet *pktstruct = ll_alloc_st(st, packet_size(pkt->sz));
+        pktstruct->data = packet_calc_data(pktstruct);
+        pktstruct->direction = PACKET_DIRECTION_UPLINK;
+        pktstruct->sz = pkt->sz;
+        memcpy(pktstruct->data, ether, pkt->sz);
+        arp_cache_put_packet(&local->ul_arp_cache, dst, pktstruct);
+        send_arp(port, dst, PACKET_DIRECTION_UPLINK,
+                 airwall->conf->ul_addr, airwall->ul_mac, st);
+        return 1;
+      }
+      memcpy(ether_dst(ether), arpe->mac, 6);
+#endif
       return 0;
     }
     else
@@ -3507,8 +3902,41 @@ int uplink(
     entry->timer.time64 = time64 + 45ULL*1000ULL*1000ULL;
     timer_linkheap_modify(&local->timers, &entry->timer);
     worker_local_wrunlock(local);
+    tcp_set_src_port_cksum_update(ippay, tcp_len, entry->nat_port);
+    if (version == 4)
+    {
+      ip_set_src_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
+                              hdr_get32n(&entry->nat_ip));
+    }
+    else
+    {
+      abort();
+    }
     //port->portfunc(pkt, port->userdata);
     //airwall_hash_unlock(local, &ctx);
+    uint32_t dst = ip_dst(ip);
+    if ((dst & airwall->conf->ul_mask) !=
+        (airwall->conf->ul_addr & airwall->conf->ul_mask))
+    {
+      dst = airwall->conf->ul_defaultgw;
+    }
+#ifdef ENABLE_ARP
+    memcpy(ether_src(ether), airwall->ul_mac, 6);
+    struct arp_entry *arpe = arp_cache_get(&local->ul_arp_cache, dst);
+    if (arpe == NULL)
+    {
+      struct packet *pktstruct = ll_alloc_st(st, packet_size(pkt->sz));
+      pktstruct->data = packet_calc_data(pktstruct);
+      pktstruct->direction = PACKET_DIRECTION_UPLINK;
+      pktstruct->sz = pkt->sz;
+      memcpy(pktstruct->data, ether, pkt->sz);
+      arp_cache_put_packet(&local->ul_arp_cache, dst, pktstruct);
+      send_arp(port, dst, PACKET_DIRECTION_UPLINK,
+               airwall->conf->ul_addr, airwall->ul_mac, st);
+      return 1;
+    }
+    memcpy(ether_dst(ether), arpe->mac, 6);
+#endif
     return 0;
   }
   if (!airwall_is_connected(entry) && entry->flag_state != FLAG_STATE_RESETED)
