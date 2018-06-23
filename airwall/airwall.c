@@ -2669,6 +2669,16 @@ int downlink(
     }
   }
   tcp_adjust_tsecho_cksum_update(ippay, &hdrs, -entry->tsoffset);
+  tcp_set_dst_port_cksum_update(ippay, tcp_len, entry->local_port);
+  if (version == 4)
+  {
+    ip_set_dst_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
+                            hdr_get32n(&entry->local_ip));
+  }
+  else
+  {
+    abort();
+  }
   //port->portfunc(pkt, port->userdata);
   if (todelete)
   {
@@ -3529,6 +3539,16 @@ int uplink(
   }
   tcp_find_sack_ts_headers(ippay, &hdrs);
   tcp_adjust_tsval_cksum_update(ippay, &hdrs, entry->tsoffset);
+  tcp_set_src_port_cksum_update(ippay, tcp_len, entry->nat_port);
+  if (version == 4)
+  {
+    ip_set_src_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
+                            hdr_get32n(&entry->nat_ip));
+  }
+  else
+  {
+    abort();
+  }
   //port->portfunc(pkt, port->userdata);
   if (todelete)
   {
