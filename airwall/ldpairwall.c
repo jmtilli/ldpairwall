@@ -108,7 +108,7 @@ int main(int argc, char **argv)
   conf_init(&conf);
   confyydirparse(argv[0], "conf.txt", &conf, 0);
   airwall_init(airwall, &conf);
-  worker_local_init(local, airwall, 1, 0); // FIXME change to non-deterministic
+  worker_local_init(local, airwall, 1, 0, &intf); // FIXME change to non-deterministic
 
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)

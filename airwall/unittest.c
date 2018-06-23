@@ -956,6 +956,7 @@ static void closed_port(int version)
   uint32_t isn2 = 0x87654321;
   struct airwall airwall;
   struct ll_alloc_st st;
+  struct allocif intf = {.ops = &ll_allocif_ops_st, .userdata = &st};
   struct worker_local local;
   struct airwall_hash_entry *e;
   struct conf conf = {};
@@ -986,7 +987,7 @@ static void closed_port(int version)
     abort();
   }
 
-  worker_local_init(&local, &airwall, 1, 0);
+  worker_local_init(&local, &airwall, 1, 0, &intf);
 
   linked_list_head_init(&head);
   ud.head = &head;
@@ -2360,6 +2361,7 @@ static void three_way_handshake_four_way_fin(int version)
 {
   struct airwall airwall;
   struct ll_alloc_st st;
+  struct allocif intf = {.ops = &ll_allocif_ops_st, .userdata = &st};
   struct worker_local local;
   struct conf conf = {};
   uint32_t src4 = htonl((10<<24)|8);
@@ -2389,7 +2391,7 @@ static void three_way_handshake_four_way_fin(int version)
     abort();
   }
 
-  worker_local_init(&local, &airwall, 1, 0);
+  worker_local_init(&local, &airwall, 1, 0, &intf);
 
   three_way_handshake_impl(
     &airwall, &local, &st, version, src, dst, 12345, 54321, 1, 1);
@@ -2417,6 +2419,7 @@ static void established_rst_uplink(int version)
   //uint32_t isn2 = 0x87654321;
   struct airwall airwall;
   struct ll_alloc_st st;
+  struct allocif intf = {.ops = &ll_allocif_ops_st, .userdata = &st};
   struct worker_local local;
   struct airwall_hash_entry *e;
   struct conf conf = {};
@@ -2448,7 +2451,7 @@ static void established_rst_uplink(int version)
     abort();
   }
 
-  worker_local_init(&local, &airwall, 1, 0);
+  worker_local_init(&local, &airwall, 1, 0, &intf);
 
   linked_list_head_init(&head);
   ud.head = &head;
@@ -2566,6 +2569,7 @@ static void established_rst_downlink(int version)
   uint32_t isn2 = 0x87654321;
   struct airwall airwall;
   struct ll_alloc_st st;
+  struct allocif intf = {.ops = &ll_allocif_ops_st, .userdata = &st};
   struct worker_local local;
   struct airwall_hash_entry *e;
   struct conf conf = {};
@@ -2597,7 +2601,7 @@ static void established_rst_downlink(int version)
     abort();
   }
 
-  worker_local_init(&local, &airwall, 1, 0);
+  worker_local_init(&local, &airwall, 1, 0, &intf);
 
   linked_list_head_init(&head);
   ud.head = &head;
@@ -2716,6 +2720,7 @@ static void syn_proxy_rst_uplink(int version)
   //uint32_t isn2 = 0x87654321;
   struct airwall airwall;
   struct ll_alloc_st st;
+  struct allocif intf = {.ops = &ll_allocif_ops_st, .userdata = &st};
   struct worker_local local;
   struct airwall_hash_entry *e;
   struct conf conf = {};
@@ -2747,7 +2752,7 @@ static void syn_proxy_rst_uplink(int version)
     abort();
   }
 
-  worker_local_init(&local, &airwall, 1, 0);
+  worker_local_init(&local, &airwall, 1, 0, &intf);
 
   linked_list_head_init(&head);
   ud.head = &head;
@@ -2869,6 +2874,7 @@ static void syn_proxy_rst_downlink(int version)
   uint32_t isn;
   struct airwall airwall;
   struct ll_alloc_st st;
+  struct allocif intf = {.ops = &ll_allocif_ops_st, .userdata = &st};
   struct worker_local local;
   struct airwall_hash_entry *e;
   struct conf conf = {};
@@ -2900,7 +2906,7 @@ static void syn_proxy_rst_downlink(int version)
     abort();
   }
 
-  worker_local_init(&local, &airwall, 1, 0);
+  worker_local_init(&local, &airwall, 1, 0, &intf);
 
   linked_list_head_init(&head);
   ud.head = &head;
@@ -3008,6 +3014,7 @@ static void three_way_handshake_ulretransmit(int version)
 {
   struct airwall airwall;
   struct ll_alloc_st st;
+  struct allocif intf = {.ops = &ll_allocif_ops_st, .userdata = &st};
   struct worker_local local;
   struct conf conf = {};
   uint32_t src4 = htonl((10<<24)|8);
@@ -3037,7 +3044,7 @@ static void three_way_handshake_ulretransmit(int version)
     abort();
   }
 
-  worker_local_init(&local, &airwall, 1, 0);
+  worker_local_init(&local, &airwall, 1, 0, &intf);
 
   three_way_handshake_impl(
     &airwall, &local, &st, version, src, dst, 12345, 54321, 2, 1);
@@ -3054,6 +3061,7 @@ static void three_way_handshake_dlretransmit(int version)
 {
   struct airwall airwall;
   struct ll_alloc_st st;
+  struct allocif intf = {.ops = &ll_allocif_ops_st, .userdata = &st};
   struct worker_local local;
   struct conf conf = {};
   uint32_t src4 = htonl((10<<24)|8);
@@ -3083,7 +3091,7 @@ static void three_way_handshake_dlretransmit(int version)
     abort();
   }
 
-  worker_local_init(&local, &airwall, 1, 0);
+  worker_local_init(&local, &airwall, 1, 0, &intf);
 
   three_way_handshake_impl(
     &airwall, &local, &st, version, src, dst, 12345, 54321, 1, 2);
@@ -3100,6 +3108,7 @@ static void three_way_handshake_findlretransmit(int version)
 {
   struct airwall airwall;
   struct ll_alloc_st st;
+  struct allocif intf = {.ops = &ll_allocif_ops_st, .userdata = &st};
   struct worker_local local;
   struct conf conf = {};
   uint32_t src4 = htonl((10<<24)|8);
@@ -3129,7 +3138,7 @@ static void three_way_handshake_findlretransmit(int version)
     abort();
   }
 
-  worker_local_init(&local, &airwall, 1, 0);
+  worker_local_init(&local, &airwall, 1, 0, &intf);
 
   three_way_handshake_impl(
     &airwall, &local, &st, version, src, dst, 12345, 54321, 1, 1);
@@ -3146,6 +3155,7 @@ static void three_way_handshake_finulretransmit(int version)
 {
   struct airwall airwall;
   struct ll_alloc_st st;
+  struct allocif intf = {.ops = &ll_allocif_ops_st, .userdata = &st};
   struct worker_local local;
   struct conf conf = {};
   uint32_t src4 = htonl((10<<24)|8);
@@ -3175,7 +3185,7 @@ static void three_way_handshake_finulretransmit(int version)
     abort();
   }
 
-  worker_local_init(&local, &airwall, 1, 0);
+  worker_local_init(&local, &airwall, 1, 0, &intf);
 
   three_way_handshake_impl(
     &airwall, &local, &st, version, src, dst, 12345, 54321, 1, 1);
@@ -3192,6 +3202,7 @@ static void syn_proxy_handshake(int version)
 {
   struct airwall airwall;
   struct ll_alloc_st st;
+  struct allocif intf = {.ops = &ll_allocif_ops_st, .userdata = &st};
   struct worker_local local;
   uint32_t isn;
   uint32_t isn1 = 0x12345678;
@@ -3224,7 +3235,7 @@ static void syn_proxy_handshake(int version)
     abort();
   }
 
-  worker_local_init(&local, &airwall, 1, 0);
+  worker_local_init(&local, &airwall, 1, 0, &intf);
 
   synproxy_handshake_impl(
     &airwall, &local, &st, version, src, dst, 12345, 54321,
@@ -3244,6 +3255,7 @@ static void syn_proxy_uplink(int version)
 {
   struct airwall airwall;
   struct ll_alloc_st st;
+  struct allocif intf = {.ops = &ll_allocif_ops_st, .userdata = &st};
   struct worker_local local;
   uint32_t isn;
   uint32_t isn1 = 0x12345678;
@@ -3277,7 +3289,7 @@ static void syn_proxy_uplink(int version)
     abort();
   }
 
-  worker_local_init(&local, &airwall, 1, 0);
+  worker_local_init(&local, &airwall, 1, 0, &intf);
 
   synproxy_handshake_impl(
     &airwall, &local, &st, version, src, dst, 12345, 54321,
@@ -3311,7 +3323,7 @@ static void syn_proxy_uplink(int version)
     abort();
   }
 
-  worker_local_init(&local, &airwall, 1, 0);
+  worker_local_init(&local, &airwall, 1, 0, &intf);
 
   synproxy_handshake_impl(
     &airwall, &local, &st, version, src, dst, 12345, 54321,
@@ -3345,7 +3357,7 @@ static void syn_proxy_uplink(int version)
     abort();
   }
 
-  worker_local_init(&local, &airwall, 1, 0);
+  worker_local_init(&local, &airwall, 1, 0, &intf);
 
   synproxy_handshake_impl(
     &airwall, &local, &st, version, src, dst, 12345, 54321,
@@ -3376,6 +3388,7 @@ static void syn_proxy_downlink(int version)
 {
   struct airwall airwall;
   struct ll_alloc_st st;
+  struct allocif intf = {.ops = &ll_allocif_ops_st, .userdata = &st};
   struct worker_local local;
   uint32_t isn;
   uint32_t isn1 = 0x12345678;
@@ -3409,7 +3422,7 @@ static void syn_proxy_downlink(int version)
     abort();
   }
 
-  worker_local_init(&local, &airwall, 1, 0);
+  worker_local_init(&local, &airwall, 1, 0, &intf);
 
   synproxy_handshake_impl(
     &airwall, &local, &st, version, src, dst, 12345, 54321,
@@ -3443,7 +3456,7 @@ static void syn_proxy_downlink(int version)
     abort();
   }
 
-  worker_local_init(&local, &airwall, 1, 0);
+  worker_local_init(&local, &airwall, 1, 0, &intf);
 
   synproxy_handshake_impl(
     &airwall, &local, &st, version, src, dst, 12345, 54321,
@@ -3477,7 +3490,7 @@ static void syn_proxy_downlink(int version)
     abort();
   }
 
-  worker_local_init(&local, &airwall, 1, 0);
+  worker_local_init(&local, &airwall, 1, 0, &intf);
 
   synproxy_handshake_impl(
     &airwall, &local, &st, version, src, dst, 12345, 54321,
@@ -3508,6 +3521,7 @@ static void syn_proxy_uplink_downlink(int version)
 {
   struct airwall airwall;
   struct ll_alloc_st st;
+  struct allocif intf = {.ops = &ll_allocif_ops_st, .userdata = &st};
   struct worker_local local;
   uint32_t isn;
   uint32_t isn1 = 0x12345678;
@@ -3542,7 +3556,7 @@ static void syn_proxy_uplink_downlink(int version)
     abort();
   }
 
-  worker_local_init(&local, &airwall, 1, 0);
+  worker_local_init(&local, &airwall, 1, 0, &intf);
 
   synproxy_handshake_impl(
     &airwall, &local, &st, version, src, dst, 12345, 54321,
@@ -3577,6 +3591,7 @@ static void syn_proxy_closed_port(int version)
 {
   struct airwall airwall;
   struct ll_alloc_st st;
+  struct allocif intf = {.ops = &ll_allocif_ops_st, .userdata = &st};
   struct worker_local local;
   uint32_t isn;
   struct conf conf = {};
@@ -3607,7 +3622,7 @@ static void syn_proxy_closed_port(int version)
     abort();
   }
 
-  worker_local_init(&local, &airwall, 1, 0);
+  worker_local_init(&local, &airwall, 1, 0, &intf);
 
   airwall_closed_port_impl(
     &airwall, &local, &st, version, src, dst, 12345, 54321,
@@ -3623,6 +3638,7 @@ static void syn_proxy_handshake_2_1_1(int version)
 {
   struct airwall airwall;
   struct ll_alloc_st st;
+  struct allocif intf = {.ops = &ll_allocif_ops_st, .userdata = &st};
   struct worker_local local;
   uint32_t isn;
   uint32_t isn1 = 0x12345678;
@@ -3655,7 +3671,7 @@ static void syn_proxy_handshake_2_1_1(int version)
     abort();
   }
 
-  worker_local_init(&local, &airwall, 1, 0);
+  worker_local_init(&local, &airwall, 1, 0, &intf);
 
   synproxy_handshake_impl(
     &airwall, &local, &st, version, src, dst, 12345, 54321,
@@ -3675,6 +3691,7 @@ static void syn_proxy_handshake_1_2_1(int version)
 {
   struct airwall airwall;
   struct ll_alloc_st st;
+  struct allocif intf = {.ops = &ll_allocif_ops_st, .userdata = &st};
   struct worker_local local;
   uint32_t isn;
   uint32_t isn1 = 0x12345678;
@@ -3707,7 +3724,7 @@ static void syn_proxy_handshake_1_2_1(int version)
     abort();
   }
 
-  worker_local_init(&local, &airwall, 1, 0);
+  worker_local_init(&local, &airwall, 1, 0, &intf);
 
   synproxy_handshake_impl(
     &airwall, &local, &st, version, src, dst, 12345, 54321,
@@ -3727,6 +3744,7 @@ static void syn_proxy_handshake_1_1_2(int version)
 {
   struct airwall airwall;
   struct ll_alloc_st st;
+  struct allocif intf = {.ops = &ll_allocif_ops_st, .userdata = &st};
   struct worker_local local;
   uint32_t isn;
   uint32_t isn1 = 0x12345678;
@@ -3759,7 +3777,7 @@ static void syn_proxy_handshake_1_1_2(int version)
     abort();
   }
 
-  worker_local_init(&local, &airwall, 1, 0);
+  worker_local_init(&local, &airwall, 1, 0, &intf);
 
   synproxy_handshake_impl(
     &airwall, &local, &st, version, src, dst, 12345, 54321,
@@ -3779,6 +3797,7 @@ static void syn_proxy_handshake_1_1_1_keepalive(int version)
 {
   struct airwall airwall;
   struct ll_alloc_st st;
+  struct allocif intf = {.ops = &ll_allocif_ops_st, .userdata = &st};
   struct worker_local local;
   uint32_t isn;
   uint32_t isn1 = 0x12345678;
@@ -3811,7 +3830,7 @@ static void syn_proxy_handshake_1_1_1_keepalive(int version)
     abort();
   }
 
-  worker_local_init(&local, &airwall, 1, 0);
+  worker_local_init(&local, &airwall, 1, 0, &intf);
 
   synproxy_handshake_impl(
     &airwall, &local, &st, version, src, dst, 12345, 54321,
@@ -3831,6 +3850,7 @@ static void syn_proxy_handshake_1_1_1_zerowindowprobe(int version)
 {
   struct airwall airwall;
   struct ll_alloc_st st;
+  struct allocif intf = {.ops = &ll_allocif_ops_st, .userdata = &st};
   struct worker_local local;
   uint32_t isn;
   uint32_t isn1 = 0x12345678;
@@ -3863,7 +3883,7 @@ static void syn_proxy_handshake_1_1_1_zerowindowprobe(int version)
     abort();
   }
 
-  worker_local_init(&local, &airwall, 1, 0);
+  worker_local_init(&local, &airwall, 1, 0, &intf);
 
   synproxy_handshake_impl(
     &airwall, &local, &st, version, src, dst, 12345, 54321,

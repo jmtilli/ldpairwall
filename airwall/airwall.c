@@ -2689,6 +2689,27 @@ int downlink(
   {
     abort();
   }
+#ifdef ENABLE_ARP
+  uint32_t dst = ip_dst(ip);
+  if ((dst & airwall->conf->dl_mask) !=
+      (airwall->conf->dl_addr & airwall->conf->dl_mask))
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "IP not to subnet, dropping");
+    return 1;
+  }
+  struct arp_entry *arpe = arp_cache_get(&local->dl_arp_cache, dst);
+  if (arpe == NULL)
+  {
+    struct packet *pktstruct = ll_alloc_st(st, packet_size(pkt->sz));
+    pktstruct->data = packet_calc_data(pktstruct);
+    pktstruct->direction = PACKET_DIRECTION_DOWNLINK;
+    pktstruct->sz = pkt->sz;
+    memcpy(pktstruct->data, ether, pkt->sz);
+    arp_cache_put_packet(&local->dl_arp_cache, dst, pkt);
+    return 1;
+  }
+  memcpy(ether_dst(ether), arpe->mac, 6);
+#endif
   //port->portfunc(pkt, port->userdata);
   if (todelete)
   {
@@ -3567,6 +3588,26 @@ int uplink(
   {
     abort();
   }
+  uint32_t dst = ip_dst(ip);
+  if ((dst & airwall->conf->ul_mask) !=
+      (airwall->conf->ul_addr & airwall->conf->ul_mask))
+  {
+    dst = airwall->conf->ul_defaultgw;
+  }
+#ifdef ENABLE_ARP
+  struct arp_entry *arpe = arp_cache_get(&local->ul_arp_cache, dst);
+  if (arpe == NULL)
+  {
+    struct packet *pktstruct = ll_alloc_st(st, packet_size(pkt->sz));
+    pktstruct->data = packet_calc_data(pktstruct);
+    pktstruct->direction = PACKET_DIRECTION_UPLINK;
+    pktstruct->sz = pkt->sz;
+    memcpy(pktstruct->data, ether, pkt->sz);
+    arp_cache_put_packet(&local->ul_arp_cache, dst, pkt);
+    return 1;
+  }
+  memcpy(ether_dst(ether), arpe->mac, 6);
+#endif
   //port->portfunc(pkt, port->userdata);
   if (todelete)
   {

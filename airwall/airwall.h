@@ -229,7 +229,7 @@ static inline void worker_local_wrunlock(struct worker_local *local)
 
 static inline void worker_local_init(
   struct worker_local *local, struct airwall *airwall, int deterministic,
-  int locked)
+  int locked, struct allocif *intf)
 {
   if (locked)
   {
@@ -272,6 +272,8 @@ static inline void worker_local_init(
   local->synproxied_connections = 0;
   local->direct_connections = 0;
   local->half_open_connections = 0;
+  arp_cache_init(&local->dl_arp_cache, intf);
+  arp_cache_init(&local->ul_arp_cache, intf);
   ip_hash_init(&local->ratelimit, &local->timers, locked ? &local->rwlock : NULL);
   linked_list_head_init(&local->half_open_list);
 }
