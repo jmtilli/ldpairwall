@@ -1233,11 +1233,29 @@ static void send_or_resend_syn(
     memset(&tcpopts[12], 0, 12);
   }
   tcp46_set_cksum_calc(ip);
+
+#ifdef ENABLE_ARP
+  uint32_t dst = hdr_get32n(&entry->local_ip);
+  struct arp_entry *arpe = arp_cache_get(&local->dl_arp_cache, dst);
+  if (arpe == NULL)
+  {
+    pktstruct = ll_alloc_st(st, packet_size(sz));
+    pktstruct->data = packet_calc_data(pktstruct);
+    pktstruct->direction = PACKET_DIRECTION_DOWNLINK;
+    pktstruct->sz = sz;
+    memcpy(pktstruct->data, syn, sz);
+    arp_cache_put_packet(&local->dl_arp_cache, dst, pktstruct);
+    return;
+  }
+  memcpy(ether_dst(syn), arpe->mac, 6);
+#endif
+
   pktstruct = ll_alloc_st(st, packet_size(sz));
   pktstruct->data = packet_calc_data(pktstruct);
   pktstruct->direction = PACKET_DIRECTION_DOWNLINK;
   pktstruct->sz = sz;
   memcpy(pktstruct->data, syn, sz);
+
   port->portfunc(pktstruct, port->userdata);
 }
 
@@ -1319,7 +1337,7 @@ static void send_syn(
 
 static void send_data_only(
   void *orig, struct airwall_hash_entry *entry, struct port *port,
-  struct ll_alloc_st *st)
+  struct ll_alloc_st *st, struct worker_local *local)
 {
   const size_t maxpay = 1208;
   char data[14+40+20+12+1208] = {0};
@@ -1406,6 +1424,22 @@ static void send_data_only(
     tcp46_set_cksum_calc(ip);
   
     sz = ((version == 4) ? (14+20+20+12+curpay) : (14+40+20+12+curpay));
+
+#ifdef ENABLE_ARP
+    uint32_t dst = hdr_get32n(ip46_src(origip));
+    struct arp_entry *arpe = arp_cache_get(&local->dl_arp_cache, dst);
+    if (arpe == NULL)
+    {
+      pktstruct = ll_alloc_st(st, packet_size(sz));
+      pktstruct->data = packet_calc_data(pktstruct);
+      pktstruct->direction = PACKET_DIRECTION_DOWNLINK;
+      pktstruct->sz = sz;
+      memcpy(pktstruct->data, data, sz);
+      arp_cache_put_packet(&local->dl_arp_cache, dst, pktstruct);
+      return;
+    }
+    memcpy(ether_dst(data), arpe->mac, 6);
+#endif
   
     pktstruct = ll_alloc_st(st, packet_size(sz));
     pktstruct->data = packet_calc_data(pktstruct);
@@ -1627,7 +1661,7 @@ static void send_window_update(
 
 static void send_ack_and_window_update(
   void *orig, struct airwall_hash_entry *entry, struct port *port,
-  struct ll_alloc_st *st, struct airwall *airwall)
+  struct ll_alloc_st *st, struct airwall *airwall, struct worker_local *local)
 {
   char windowupdate[14+40+20+12] = {0};
   void *ip, *origip;
@@ -1651,7 +1685,7 @@ static void send_ack_and_window_update(
 
   if (airwall->conf->enable_ack)
   {
-    send_data_only(orig, entry, port, st); // XXX send_data_only reparses opts
+    send_data_only(orig, entry, port, st, local); // XXX send_data_only reparses opts
   }
 
   memcpy(ether_src(windowupdate), ether_src(orig), 6);
@@ -3214,7 +3248,7 @@ int uplink(
       entry->timer.time64 = time64 + 86400ULL*1000ULL*1000ULL;
       timer_linkheap_modify(&local->timers, &entry->timer);
       worker_local_wrunlock(local);
-      send_ack_and_window_update(ether, entry, port, st, airwall);
+      send_ack_and_window_update(ether, entry, port, st, airwall, local);
       //airwall_hash_unlock(local, &ctx);
       return 1;
     }
@@ -3542,7 +3576,7 @@ int uplink(
       {
         if (airwall->conf->enable_ack)
         {
-          send_data_only(ether, entry, port, st);
+          send_data_only(ether, entry, port, st, local);
           tcp_set_ack_number_cksum_update(ippay, tcp_len, acked_seq);
         }
       }
