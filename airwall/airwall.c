@@ -1775,8 +1775,8 @@ int downlink(
     return 1;
   }
 #ifdef ENABLE_ARP
-  if (memcmp(ether_src(ether), airwall->ul_mac, 6) != 0 &&
-      memcmp(ether_src(ether), bcast_mac, 6) != 0)
+  if (memcmp(ether_dst(ether), airwall->ul_mac, 6) != 0 &&
+      memcmp(ether_dst(ether), bcast_mac, 6) != 0)
   {
     log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "MAC not to airwall");
     return 1;
@@ -2750,8 +2750,8 @@ int uplink(
     return 1;
   }
 #ifdef ENABLE_ARP
-  if (memcmp(ether_src(ether), airwall->dl_mac, 6) != 0 &&
-      memcmp(ether_src(ether), bcast_mac, 6) != 0)
+  if (memcmp(ether_dst(ether), airwall->dl_mac, 6) != 0 &&
+      memcmp(ether_dst(ether), bcast_mac, 6) != 0)
   {
     log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "MAC not to airwall");
     return 1;
