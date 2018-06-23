@@ -652,6 +652,8 @@ OPENBRACE STRING_LITERAL COMMA STRING_LITERAL CLOSEBRACE
     (ntohl(addr.s_addr)>>8)&0xFF,
     (ntohl(addr.s_addr)>>0)&0xFF);
 #endif
+  free($2);
+  free($4);
 }
 ;
 
