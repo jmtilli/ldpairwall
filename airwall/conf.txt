@@ -26,7 +26,13 @@ synproxyconf = {
     network_prefix6 = 64;
   };
   hosts = {
-    {"www1.example.com", "10.0.0.1"},
-    {"www2.example.com", "10.0.0.2"},
+    {"www1.example.com", 10.0.0.1},
+    {"www2.example.com", 10.0.0.2},
   };
+  enable_ack;
+  dl_addr = 10.150.1.1;
+  dl_mask = 255.255.255.0;
+  ul_addr = 10.150.2.100;
+  ul_mask = 255.255.255.0;
+  ul_defaultgw = 10.150.2.1;
 };

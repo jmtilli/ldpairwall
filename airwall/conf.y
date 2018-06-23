@@ -49,7 +49,7 @@ int confyywrap(yyscan_t scanner)
 
 %destructor { free ($$); } STRING_LITERAL
 
-%token ENABLE DISABLE HASHIP HASHIPPORT COMMANDED SACKHASHMODE EQUALS SEMICOLON OPENBRACE CLOSEBRACE SYNPROXYCONF ERROR_TOK INT_LITERAL
+%token ENABLE DISABLE HASHIP HASHIPPORT COMMANDED SACKHASHMODE EQUALS SEMICOLON OPENBRACE CLOSEBRACE SYNPROXYCONF ERROR_TOK INT_LITERAL IP_LITERAL
 %token LEARNHASHSIZE RATEHASH SIZE TIMER_PERIOD_USEC TIMER_ADD INITIAL_TOKENS
 %token CONNTABLESIZE THREADCOUNT
 %token COMMA MSS WSCALE TSMSS TSWSCALE TS_BITS OWN_MSS OWN_WSCALE OWN_SACK
@@ -63,6 +63,12 @@ int confyywrap(yyscan_t scanner)
 %token HOSTS
 %token ENABLE_ACK
 
+%token DL_ADDR
+%token UL_ADDR
+%token DL_MASK
+%token UL_MASK
+%token UL_DEFAULTGW
+
 
 %type<i> sackhashval
 %type<i> msshashval
@@ -70,6 +76,7 @@ int confyywrap(yyscan_t scanner)
 %type<i> sackconflictval
 %type<i> own_sack
 %type<i> INT_LITERAL
+%type<i> IP_LITERAL
 %type<s> STRING_LITERAL
 %type<both> intorstring
 
@@ -296,12 +303,32 @@ tswscalelist_maybe:
 
 conflist_entry:
 TEST_CONNECTIONS SEMICOLON
-    {
+{
   conf->test_connections = 1;
 }
 | ENABLE_ACK SEMICOLON
-    {
+{
   conf->enable_ack = 1;
+}
+| DL_ADDR EQUALS IP_LITERAL SEMICOLON
+{
+  conf->dl_addr = (uint32_t)$3;
+}
+| UL_ADDR EQUALS IP_LITERAL SEMICOLON
+{
+  conf->ul_addr = (uint32_t)$3;
+}
+| DL_MASK EQUALS IP_LITERAL SEMICOLON
+{
+  conf->dl_mask = (uint32_t)$3;
+}
+| UL_MASK EQUALS IP_LITERAL SEMICOLON
+{
+  conf->ul_mask = (uint32_t)$3;
+}
+| UL_DEFAULTGW EQUALS IP_LITERAL SEMICOLON
+{
+  conf->ul_defaultgw = (uint32_t)$3;
 }
 | PORT EQUALS INT_LITERAL SEMICOLON
 {
@@ -641,24 +668,18 @@ TEST_CONNECTIONS SEMICOLON
 ;
 
 hostslist_entry:
-OPENBRACE STRING_LITERAL COMMA STRING_LITERAL CLOSEBRACE
+OPENBRACE STRING_LITERAL COMMA IP_LITERAL CLOSEBRACE
 {
-  struct in_addr addr;
-  if (inet_aton($4, &addr) == 0)
-  {
-    log_log(LOG_LEVEL_CRIT, "CONFPARSER", "invalid address: %s", $4);
-    YYABORT;
-  }
-  host_hash_add(&conf->hosts, $2, ntohl(addr.s_addr));
+  uint32_t a = $4;
+  host_hash_add(&conf->hosts, $2, a);
 #if 0
   printf("%s is at %d.%d.%d.%d\n", $2,
-    (ntohl(addr.s_addr)>>24)&0xFF,
-    (ntohl(addr.s_addr)>>16)&0xFF,
-    (ntohl(addr.s_addr)>>8)&0xFF,
-    (ntohl(addr.s_addr)>>0)&0xFF);
+    (a>>24)&0xFF,
+    (a>>16)&0xFF,
+    (a>>8)&0xFF,
+    (a>>0)&0xFF);
 #endif
   free($2);
-  free($4);
 }
 ;
 

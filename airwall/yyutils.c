@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <limits.h>
 #include <libgen.h>
+#include <arpa/inet.h>
 #include "conf.h"
 #include "log.h"
 #include "yyutils.h"
@@ -94,6 +95,16 @@ char *yy_escape_string(char *orig)
   result = strdup(buf);
   free(buf);
   return result;
+}
+
+uint32_t yy_get_ip(char *orig)
+{
+  struct in_addr addr;
+  if (inet_aton(orig, &addr) == 0)
+  {
+    return 0;
+  }
+  return ntohl(addr.s_addr);
 }
 
 void confyynameparse(const char *fname, struct conf *conf, int require)

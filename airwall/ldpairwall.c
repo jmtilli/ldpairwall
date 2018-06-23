@@ -142,6 +142,17 @@ int main(int argc, char **argv)
     uloutq[i] = ulintf->outq[i];
   }
 
+  if (ldp_interface_mac_addr(ulintf, airwall->ul_mac) != 0)
+  {
+    log_log(LOG_LEVEL_CRIT, "LDPAIRWALL", "can't get uplink MAC");
+    exit(1);
+  }
+  if (ldp_interface_mac_addr(dlintf, airwall->dl_mac) != 0)
+  {
+    log_log(LOG_LEVEL_CRIT, "LDPAIRWALL", "can't get downlink MAC");
+    exit(1);
+  }
+
   ud.intf = &intf;
   ud.dloutq = dloutq[idx];
   ud.uloutq = uloutq[idx];

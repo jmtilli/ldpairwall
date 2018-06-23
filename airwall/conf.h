@@ -68,6 +68,11 @@ struct conf {
   uint16_t port;
   struct host_hash hosts;
   int enable_ack;
+  uint32_t dl_addr;
+  uint32_t ul_addr;
+  uint32_t dl_mask;
+  uint32_t ul_mask;
+  uint32_t ul_defaultgw;
 };
 
 static inline void conf_init(struct conf *conf)
@@ -102,6 +107,11 @@ static inline void conf_init(struct conf *conf)
   conf->port = 12345;
   host_hash_init(&conf->hosts);
   conf->enable_ack = 0;
+  conf->dl_addr = 0;
+  conf->ul_addr = 0;
+  conf->dl_mask = 0;
+  conf->ul_mask = 0;
+  conf->ul_defaultgw = 0;
 }
 
 static inline void conf_free(struct conf *conf)
@@ -310,6 +320,31 @@ static inline int conf_postprocess(struct conf *conf)
   {
     log_log(LOG_LEVEL_CRIT, "CONFPARSER",
             "first element of ts wscale list must be 0");
+    return -EINVAL;
+  }
+  if (conf->dl_addr == 0)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER", "downlink address not set");
+    return -EINVAL;
+  }
+  if (conf->ul_addr == 0)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER", "uplink address not set");
+    return -EINVAL;
+  }
+  if (conf->dl_mask == 0)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER", "downlink mask not set");
+    return -EINVAL;
+  }
+  if (conf->ul_mask == 0)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER", "uplink mask not set");
+    return -EINVAL;
+  }
+  if (conf->ul_defaultgw == 0)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER", "uplink default GW not set");
     return -EINVAL;
   }
   return 0;

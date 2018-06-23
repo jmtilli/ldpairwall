@@ -10,6 +10,8 @@
 #define INITIAL_WINDOW (1<<14)
 #define IPV6_FRAG_CUTOFF 512
 
+#undef ENABLE_ARP
+
 static inline uint32_t gen_flowlabel(const void *local_ip, uint16_t local_port,
                                      const void *remote_ip, uint16_t remote_port)
 {
@@ -1744,10 +1746,73 @@ int downlink(
     log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "pkt does not have full Ether hdr");
     return 1;
   }
+  if (ether_type(ether) == ETHER_TYPE_IPV6)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "IPv6 not supported yet");
+    return 1;
+  }
+#ifdef ENABLE_ARP
+  if (ether_type(ether) == ETHER_TYPE_ARP)
+  {
+    const void *arp = ether_payload(ether);
+    if (ether_len < ETHER_HDR_LEN + 28 || !arp_is_valid_reqresp(arp))
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "ARP is not valid");
+      return 1;
+    }
+    if (arp_is_req(arp))
+    {
+      if (arp_cache_get_accept_invalid(&local->dl_arp_cache, arp_spa(arp)))
+      {
+        // FIXME correct direction port?
+        arp_cache_put(&local->dl_arp_cache, port, arp_spa(arp), arp_const_sha(arp));
+      }
+      if (arp_tpa(arp) != airwall->conf->ul_addr)
+      {
+        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "ARP is not to us");
+        return 1;
+      }
+      char etherarp[14+28] = {0};
+      char *arp2 = ether_payload(etherarp);
+      memcpy(ether_src(etherarp), airwall->ul_mac, 6);
+      memcpy(ether_dst(etherarp), arp_const_sha(arp), 6);
+      ether_set_type(etherarp, ETHER_TYPE_ARP);
+      arp_set_ether(arp2);
+      arp_set_resp(arp2);
+      memcpy(arp_sha(arp2), airwall->ul_mac, 6);
+      memcpy(arp_tha(arp2), arp_const_sha(arp), 6);
+      arp_set_spa(arp2, airwall->conf->ul_addr);
+      arp_set_tpa(arp2, arp_spa(arp));
+
+      struct packet *pktstruct = ll_alloc_st(st, packet_size(sizeof(etherarp)));
+      pktstruct->data = packet_calc_data(pktstruct);
+      pktstruct->direction = PACKET_DIRECTION_UPLINK;
+      pktstruct->sz = sizeof(etherarp);
+      memcpy(pktstruct->data, etherarp, sizeof(etherarp));
+      port->portfunc(pktstruct, port->userdata);
+      return 1;
+    }
+    else if (arp_is_resp(arp))
+    {
+      if (arp_cache_get_accept_invalid(&local->dl_arp_cache, arp_spa(arp)))
+      {
+        // FIXME correct direction port?
+        arp_cache_put(&local->dl_arp_cache, port, arp_spa(arp), arp_const_sha(arp));
+      }
+      return 1;
+    }
+  }
+#else
+  if (ether_type(ether) == ETHER_TYPE_ARP)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "ARP packet bypass");
+    return 0;
+  }
+#endif
   if (ether_type(ether) != ETHER_TYPE_IP && ether_type(ether) != ETHER_TYPE_IPV6)
   {
-    //port->portfunc(pkt, port->userdata);
-    return 0;
+    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "pkt is neither IPv4 nor IPv6");
+    return 1;
   }
   ip = ether_payload(ether);
   ip_len = ether_len - ETHER_HDR_LEN;
@@ -2629,12 +2694,7 @@ int uplink(
     log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "IPv6 not supported yet");
     return 1;
   }
-  if (ether_type(ether) == ETHER_TYPE_ARP)
-  {
-    log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "ARP packet bypass");
-    return 0;
-  }
-#if 0
+#ifdef ENABLE_ARP
   if (ether_type(ether) == ETHER_TYPE_ARP)
   {
     const void *arp = ether_payload(ether);
@@ -2650,7 +2710,7 @@ int uplink(
         // FIXME correct direction port?
         arp_cache_put(&local->dl_arp_cache, port, arp_spa(arp), arp_const_sha(arp));
       }
-      if (arp_tpa(arp) != airwall->dl_addr)
+      if (arp_tpa(arp) != airwall->conf->dl_addr)
       {
         log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "ARP is not to us");
         return 1;
@@ -2664,7 +2724,7 @@ int uplink(
       arp_set_resp(arp2);
       memcpy(arp_sha(arp2), airwall->dl_mac, 6);
       memcpy(arp_tha(arp2), arp_const_sha(arp), 6);
-      arp_set_spa(arp2, airwall->dl_addr);
+      arp_set_spa(arp2, airwall->conf->dl_addr);
       arp_set_tpa(arp2, arp_spa(arp));
 
       struct packet *pktstruct = ll_alloc_st(st, packet_size(sizeof(etherarp)));
@@ -2684,6 +2744,12 @@ int uplink(
       }
       return 1;
     }
+  }
+#else
+  if (ether_type(ether) == ETHER_TYPE_ARP)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "ARP packet bypass");
+    return 0;
   }
 #endif
   if (ether_type(ether) != ETHER_TYPE_IP && ether_type(ether) != ETHER_TYPE_IPV6)

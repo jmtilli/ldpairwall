@@ -66,7 +66,13 @@ group        return GROUP;
 port         return PORT;
 hosts        return HOSTS;
 enable_ack   return ENABLE_ACK;
+dl_addr      return DL_ADDR;
+ul_addr      return UL_ADDR;
+dl_mask      return DL_MASK;
+ul_mask      return UL_MASK;
+ul_defaultgw return UL_DEFAULTGW;
 \"([^\\\"]|\\.)*\"  yylval->s=yy_escape_string(yytext); return STRING_LITERAL;
+[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+ yylval->i = yy_get_ip(yytext); return IP_LITERAL;
 
 [0-9]+       {
   char *endptr;

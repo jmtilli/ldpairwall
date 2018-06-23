@@ -26,8 +26,6 @@ struct airwall {
   struct conf *conf;
   //struct sack_ip_port_hash autolearn;
   //struct threetuplectx threetuplectx;
-  uint32_t dl_addr;
-  uint32_t ul_addr;
   char ul_mac[6];
   char dl_mac[6];
 };
