@@ -102,6 +102,9 @@ int main(int argc, char **argv)
   struct port outport;
   struct ldpfunc2_userdata ud;
   struct conf conf = {};
+  int opt;
+
+  log_open("LDPAIRWALL", LOG_LEVEL_DEBUG, LOG_LEVEL_INFO);
 
   hash_seed_init();
 
@@ -124,13 +127,30 @@ int main(int argc, char **argv)
   periodic.next_time64 = periodic.last_time64 + 2*1000*1000;
   periodic.args = &args;
 
-  ulintf = ldp_interface_open("veth1", NUM_THR, NUM_THR);
+  while ((opt = getopt(argc, argv, "")) != -1)
+  {
+    switch (opt)
+    {
+      default:
+        log_log(LOG_LEVEL_CRIT, "LDPAIRWALL", "usage: %s veth1 veth2", argv[0]);
+        exit(1);
+        break;
+    }
+  }
+
+  if (argc != optind + 2)
+  {
+    log_log(LOG_LEVEL_CRIT, "LDPAIRWALL", "usage: %s veth1 veth2", argv[0]);
+    exit(1);
+  }
+
+  ulintf = ldp_interface_open(argv[optind+0], NUM_THR, NUM_THR);
   if (ulintf == NULL)
   {
     log_log(LOG_LEVEL_CRIT, "LDPAIRWALL", "Can't open uplink interface");
     exit(1);
   }
-  dlintf = ldp_interface_open("veth2", NUM_THR, NUM_THR);
+  dlintf = ldp_interface_open(argv[optind+1], NUM_THR, NUM_THR);
   if (dlintf == NULL)
   {
     log_log(LOG_LEVEL_CRIT, "LDPAIRWALL", "Can't open downlink interface");
