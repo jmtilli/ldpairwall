@@ -955,7 +955,8 @@ static inline void set_bit_range(uint64_t *bitmask, size_t start, size_t end)
 }
 
 int proto_detect_feed(struct proto_detect_ctx *ctx,
-                      const void *data, size_t start_off, size_t sz)
+                      const void *data, size_t start_off, size_t sz,
+                      uint32_t *ackp)
 {
   const char *tcppay = data;
   size_t tocopy;
@@ -1006,6 +1007,10 @@ int proto_detect_feed(struct proto_detect_ctx *ctx,
   }
   if (start_off > ctx->init_data_fed)
   {
+    if (ackp)
+    {
+      *ackp = ctx->acked;
+    }
     return -EAGAIN;
   }
   procstart = start_off;
@@ -1050,6 +1055,28 @@ int proto_detect_feed(struct proto_detect_ctx *ctx,
   if (ret1 != -EAGAIN && ret2 != -EAGAIN)
   {
     return -ENOTSUP;
+  }
+
+  //if (start_off <= ctx->acked)
+  {
+#if 0
+    for (i = start_off + sz; i < sizeof(ctx->init_data); i++)
+    {
+      if (i > ctx->max_bitmask)
+      {
+        break;
+      }
+      if (!(ctx->init_bitmask[i/64] & (1<<(i%64))))
+      {
+        break;
+      }
+    }
+#endif
+    ctx->acked = procstart + toprocess;
+    if (ackp)
+    {
+      *ackp = ctx->acked;
+    }
   }
   return -EAGAIN;
 }

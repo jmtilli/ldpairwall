@@ -6,6 +6,8 @@
 #include "time64.h"
 #include "detect.h"
 
+#define ENABLE_ACK 0
+
 #define MAX_FRAG 65535
 #define INITIAL_WINDOW (1<<14)
 #define IPV6_FRAG_CUTOFF 512
@@ -586,7 +588,91 @@ static void send_syn(
   struct airwall_hash_entry *entry,
   uint64_t time64, int was_keepalive);
 
-static __attribute__((unused)) void process_data(
+#if ENABLE_ACK
+
+static void ack_data(
+  void *orig, struct worker_local *local, struct airwall *airwall,
+  struct port *port, struct ll_alloc_st *st, uint64_t time64,
+  struct airwall_hash_entry *entry, uint32_t acked)
+{
+  char ack[14+40+20+12] = {0};
+  char *origip, *origtcp;
+  void *ip, *tcp;
+  int version;
+  uint32_t seqack;
+  unsigned char *tcpopts;
+  struct packet *pktstruct;
+  size_t sz;
+  struct tcp_information info;
+  uint32_t sh;
+
+  origip = ether_payload(orig);
+  version = ip_version(origip);
+  origtcp = ip46_payload(origip);
+  tcp_parse_options(origtcp, &info);
+
+  seqack = entry->remote_isn + 1 + acked;
+
+  version = entry->version;
+  sz = (version == 4) ? (sizeof(ack) - 20) : sizeof(ack);
+
+  memcpy(ether_src(ack), ether_dst(orig), 6);
+  memcpy(ether_dst(ack), ether_src(orig), 6);
+  ether_set_type(ack, (version == 4) ? ETHER_TYPE_IP : ETHER_TYPE_IPV6);
+  ip = ether_payload(ack);
+  ip_set_version(ip, version);
+#if 0 // FIXME this needs to be thought carefully
+  if (version == 6)
+  {
+    ipv6_set_flow_label(ip, entry->ulflowlabel);
+  }
+#endif
+  ip46_set_min_hdr_len(ip);
+  ip46_set_payload_len(ip, sizeof(ack) - 14 - 40);
+  ip46_set_dont_frag(ip, 1);
+  ip46_set_id(ip, 0); // XXX
+  ip46_set_ttl(ip, 64);
+  ip46_set_proto(ip, 6);
+  ip46_set_src(ip, ip46_dst(origip));
+  ip46_set_dst(ip, ip46_src(origip));
+  ip46_set_hdr_cksum_calc(ip);
+  tcp = ip46_payload(ip);
+  tcp_set_src_port(tcp, tcp_dst_port(origtcp));
+  tcp_set_dst_port(tcp, tcp_src_port(origtcp));
+  tcp_set_ack_on(tcp);
+  tcp_set_data_offset(tcp, sizeof(ack) - 14 - 40);
+  tcp_set_seq_number(tcp, entry->local_isn + 1);
+  tcp_set_ack_number(tcp, seqack);
+
+  sh = (1<<airwall->conf->own_wscale) - 1;
+  tcp_set_window(tcp, (INITIAL_WINDOW - acked + sh)>>airwall->conf->own_wscale);
+  tcpopts = &((unsigned char*)tcp)[20];
+  if (info.options_valid && info.ts_present)
+  {
+    tcpopts[0] = 1;
+    tcpopts[1] = 1;
+    tcpopts[2] = 8;
+    tcpopts[3] = 10;
+    hdr_set32n(&tcpopts[4], info.tsecho);
+    hdr_set32n(&tcpopts[8], info.ts);
+  }
+  else
+  {
+    memset(&tcpopts[0], 0, 12);
+  }
+  tcp46_set_cksum_calc(ip);
+
+  pktstruct = ll_alloc_st(st, packet_size(sz));
+  pktstruct->data = packet_calc_data(pktstruct);
+  pktstruct->direction = PACKET_DIRECTION_UPLINK;
+  pktstruct->sz = sz;
+  memcpy(pktstruct->data, ack, sz);
+  port->portfunc(pktstruct, port->userdata);
+}
+
+#endif
+
+static void process_data(
   void *orig, struct worker_local *local, struct airwall *airwall,
   struct port *port, struct ll_alloc_st *st, uint64_t time64,
   struct airwall_hash_entry *entry)
@@ -595,6 +681,7 @@ static __attribute__((unused)) void process_data(
   char *origip, *origtcp;
   char *tcppay;
   uint16_t tcppay_len;
+  uint32_t acked;
   uint32_t seqdiff;
   int res;
 
@@ -608,7 +695,7 @@ static __attribute__((unused)) void process_data(
   origtcp = ip46_payload(origip);
   tcppay = origtcp + tcp_data_offset(origtcp);
   tcppay_len = ip46_payload_len(origip) - tcp_data_offset(origtcp);
-  seqdiff = tcp_seq_number(origtcp) - entry->state_data.downlink_syn_sent.remote_isn - 1;
+  seqdiff = tcp_seq_number(origtcp) - entry->remote_isn - 1;
 #if 0
   if (seqdiff < 0)
   {
@@ -616,14 +703,25 @@ static __attribute__((unused)) void process_data(
     return;
   }
 #endif
-  res = proto_detect_feed(entry->detect, tcppay, seqdiff, tcppay_len);
+  res = proto_detect_feed(entry->detect, tcppay, seqdiff, tcppay_len, &acked);
   if (res == -EAGAIN)
   {
+#if ENABLE_ACK
+    ack_data(orig, local, airwall, port, st, time64, entry, acked);
+#endif
     return;
   }
   else if (res == -ENOTSUP)
   {
     log_log(LOG_LEVEL_ERR, "AIRWALL", "can't detect protocol and host");
+    // FIXME send RST
+    entry->timer.time64 = time64 + 45ULL*1000ULL*1000ULL;
+    entry->flag_state = FLAG_STATE_RESETED;
+    timer_linkheap_modify(&local->timers, &entry->timer);
+  }
+  else if (res == -EBADMSG)
+  {
+    log_log(LOG_LEVEL_ERR, "AIRWALL", "content conflict");
     // FIXME send RST
     entry->timer.time64 = time64 + 45ULL*1000ULL*1000ULL;
     entry->flag_state = FLAG_STATE_RESETED;
@@ -647,7 +745,6 @@ static __attribute__((unused)) void process_data(
       entry->state_data.downlink_half_open.mss,
       entry->state_data.downlink_half_open.wscale,
       entry->state_data.downlink_half_open.sack_permitted, entry, time64, 0);
-    // FIXME send SYN
   }
   
   
@@ -1004,8 +1101,8 @@ static void send_synack(
     e->state_data.downlink_half_open.wscale = tcpinfo.wscale;
     e->state_data.downlink_half_open.mss = tcpinfo.mss;
     e->state_data.downlink_half_open.sack_permitted = tcpinfo.sack_permitted;
-    e->state_data.downlink_half_open.remote_isn = tcp_seq_number(origtcp);
-    e->state_data.downlink_half_open.local_isn = syn_cookie;
+    e->remote_isn = tcp_seq_number(origtcp);
+    e->local_isn = syn_cookie;
     if (e->version == 6)
     {
       e->ulflowlabel = gen_flowlabel_entry(e);
@@ -1057,7 +1154,7 @@ static void send_or_resend_syn(
   tcp_set_dst_port(tcp, entry->local_port);
   tcp_set_syn_on(tcp);
   tcp_set_data_offset(tcp, sizeof(syn) - 14 - 40);
-  tcp_set_seq_number(tcp, entry->state_data.downlink_syn_sent.remote_isn);
+  tcp_set_seq_number(tcp, entry->remote_isn);
   tcp_set_ack_number(tcp, 0);
   tcp_set_window(tcp, tcp_window(origtcp));
   tcpopts = &((unsigned char*)tcp)[20];
@@ -1202,6 +1299,110 @@ static void send_syn(
   send_or_resend_syn(orig, local, port, st, entry);
 }
 
+#if ENABLE_ACK
+
+static void send_data_only(
+  void *orig, struct airwall_hash_entry *entry, struct port *port,
+  struct ll_alloc_st *st)
+{
+  const size_t maxpay = 1208;
+  char data[14+40+20+12+1208] = {0};
+  char *ip, *origip;
+  char *tcp, *origtcp;
+  char *tcppay;
+  struct packet *pktstruct;
+  struct tcp_information tcpinfo;
+  unsigned char *tcpopts;
+  int version;
+  size_t sz;
+  size_t curstart = 0;
+  size_t curpay = 0;
+
+  origip = ether_payload(orig);
+  version = ip_version(origip);
+  origtcp = ip46_payload(origip);
+  tcp_parse_options(origtcp, &tcpinfo);
+
+  curstart = tcp_ack_number(origtcp) - entry->remote_isn - 1;
+  for (;;)
+  {
+    curpay = maxpay;
+    if (curstart >= entry->detect->acked)
+    {
+      return;
+    }
+    if (curstart + curpay > entry->detect->acked)
+    {
+      curpay = entry->detect->acked - curstart;
+    }
+    if (curpay > ((uint32_t)tcp_window(origtcp)) << entry->lan_wscale)
+    {
+      curpay = tcp_window(origtcp) << entry->lan_wscale;
+    }
+  
+    memcpy(ether_src(data), ether_dst(orig), 6);
+    memcpy(ether_dst(data), ether_src(orig), 6);
+    ether_set_type(data, version == 4 ? ETHER_TYPE_IP : ETHER_TYPE_IPV6);
+    ip = ether_payload(data);
+    ip_set_version(ip, version);
+    if (version == 6)
+    {
+      ipv6_set_flow_label(ip, entry->dlflowlabel);
+    }
+    ip46_set_min_hdr_len(ip);
+    ip46_set_payload_len(ip, 20 + 12 + curpay);
+    ip46_set_dont_frag(ip, 1);
+    ip46_set_id(ip, 0); // XXX
+    ip46_set_ttl(ip, 64);
+    ip46_set_proto(ip, 6);
+    ip46_set_src(ip, ip46_dst(origip));
+    ip46_set_dst(ip, ip46_src(origip));
+    ip46_set_hdr_cksum_calc(ip);
+    tcp = ip46_payload(ip);
+    tcp_set_src_port(tcp, tcp_dst_port(origtcp));
+    tcp_set_dst_port(tcp, tcp_src_port(origtcp));
+    tcp_set_ack_on(tcp);
+    tcp_set_data_offset(tcp, 20 + 12);
+    tcp_set_seq_number(tcp, curstart + entry->remote_isn + 1);
+    tcp_set_ack_number(tcp,
+      entry->local_isn+1-entry->seqoffset); // FIXME entry->wan_acked?
+    tcp_set_window(tcp, entry->wan_max_window_unscaled);
+  
+    tcpopts = &((unsigned char*)tcp)[20];
+  
+    if (tcpinfo.options_valid && tcpinfo.ts_present)
+    {
+      tcpopts[0] = 1;
+      tcpopts[1] = 1;
+      tcpopts[2] = 8;
+      tcpopts[3] = 10;
+      hdr_set32n(&tcpopts[4], tcpinfo.tsecho);
+      hdr_set32n(&tcpopts[8], tcpinfo.ts);
+    }
+    else
+    {
+      memset(&tcpopts[0], 0, 12);
+    }
+  
+    tcppay = tcp + tcp_data_offset(tcp);
+    memcpy(tcppay, &entry->detect->init_data[curstart], curpay);
+  
+    tcp46_set_cksum_calc(ip);
+  
+    sz = ((version == 4) ? (14+20+20+12+curpay) : (14+40+20+12+curpay));
+  
+    pktstruct = ll_alloc_st(st, packet_size(sz));
+    pktstruct->data = packet_calc_data(pktstruct);
+    pktstruct->direction = PACKET_DIRECTION_DOWNLINK;
+    pktstruct->sz = sz;
+    memcpy(pktstruct->data, data, sz);
+    port->portfunc(pktstruct, port->userdata);
+    curstart += curpay;
+  }
+}
+
+#endif
+
 static void send_ack_only(
   void *orig, struct airwall_hash_entry *entry, struct port *port,
   struct ll_alloc_st *st)
@@ -1345,8 +1546,8 @@ static void send_window_update(
   entry->detect = malloc(sizeof(*entry->detect));
   proto_detect_ctx_init(entry->detect);
 
-  entry->state_data.downlink_syn_sent.local_isn = tcp_ack_number(origtcp) - 1;
-  entry->state_data.downlink_syn_sent.remote_isn = tcp_seq_number(origtcp) - 1 + (!!was_keepalive);
+  entry->local_isn = tcp_ack_number(origtcp) - 1;
+  entry->remote_isn = tcp_seq_number(origtcp) - 1 + (!!was_keepalive);
   entry->flag_state = FLAG_STATE_WINDOW_UPDATE_SENT;
   entry->timer.time64 = time64 + 120ULL*1000ULL*1000ULL;
   timer_linkheap_modify(&local->timers, &entry->timer);
@@ -1422,6 +1623,11 @@ static void send_ack_and_window_update(
   unsigned char *tcpopts;
   int version;
   size_t sz;
+#if ENABLE_ACK
+  uint32_t acked_seq;
+
+  acked_seq = entry->detect->acked + 1 + entry->remote_isn; // FIXME correct?
+#endif
 
   origip = ether_payload(orig);
   version = ip_version(origip);
@@ -1430,6 +1636,10 @@ static void send_ack_and_window_update(
   tcp_parse_options(origtcp, &tcpinfo);
 
   send_ack_only(orig, entry, port, st); // XXX send_ack_only reparses opts
+
+#if ENABLE_ACK
+  send_data_only(orig, entry, port, st); // XXX send_data_only reparses opts
+#endif
 
   memcpy(ether_src(windowupdate), ether_src(orig), 6);
   memcpy(ether_dst(windowupdate), ether_dst(orig), 6);
@@ -1459,7 +1669,18 @@ static void send_ack_and_window_update(
   tcp_set_ack_number(tcp, tcp_seq_number(origtcp)+1); // FIXME the same
 #endif
   tcp_set_seq_number(tcp, tcp_seq_number(origtcp)+1+entry->seqoffset);
+#if ENABLE_ACK
+  if (seq_cmp(tcp_ack_number(origtcp), acked_seq) < 0)
+  {
+    tcp_set_ack_number(tcp, acked_seq);
+  }
+  else
+  {
+    tcp_set_ack_number(tcp, tcp_ack_number(origtcp));
+  }
+#else
   tcp_set_ack_number(tcp, tcp_ack_number(origtcp));
+#endif
   if (entry->wscalediff >= 0)
   {
     tcp_set_window(tcp, tcp_window(origtcp)>>entry->wscalediff);
@@ -1837,7 +2058,7 @@ int downlink(
         //airwall_hash_unlock(local, &ctx);
         return 1;
       }
-      if (((uint32_t)(entry->state_data.downlink_half_open.remote_isn + 1)) != tcp_seq_number(ippay))
+      if (((uint32_t)(entry->remote_isn + 1)) != tcp_seq_number(ippay))
       {
         log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "invalid TCP SEQ number");
         //airwall_hash_unlock(local, &ctx);
@@ -2713,7 +2934,7 @@ int uplink(
         //airwall_hash_unlock(local, &ctx);
         return 1;
       }
-      if (tcp_ack_number(ippay) != entry->state_data.downlink_syn_sent.remote_isn + 1)
+      if (tcp_ack_number(ippay) != entry->remote_isn + 1)
       {
         airwall_entry_to_str(statebuf, sizeof(statebuf), entry);
         airwall_packet_to_str(packetbuf, sizeof(packetbuf), ether);
@@ -2792,7 +3013,7 @@ int uplink(
       entry->wscalediff =
         ((int)own_wscale) - ((int)tcpinfo.wscale);
       entry->seqoffset =
-        entry->state_data.downlink_syn_sent.local_isn - tcp_seq_number(ippay);
+        entry->local_isn - tcp_seq_number(ippay);
       if (tcpinfo.ts_present)
       {
         entry->tsoffset =
@@ -2945,7 +3166,7 @@ int uplink(
         //airwall_hash_unlock(local, &ctx);
         return 1;
       }
-      if (tcp_ack_number(ippay) != entry->state_data.downlink_syn_sent.remote_isn + 1)
+      if (tcp_ack_number(ippay) != entry->remote_isn + 1)
       {
         airwall_entry_to_str(statebuf, sizeof(statebuf), entry);
         airwall_packet_to_str(packetbuf, sizeof(packetbuf), ether);
@@ -2954,7 +3175,7 @@ int uplink(
         return 1;
       }
       tcp_set_seq_number_cksum_update(
-        ippay, tcp_len, entry->state_data.downlink_syn_sent.local_isn + 1);
+        ippay, tcp_len, entry->local_isn + 1);
       tcp_set_ack_off_cksum_update(ippay);
       tcp_set_ack_number_cksum_update(
         ippay, tcp_len, 0);
@@ -3130,6 +3351,24 @@ int uplink(
     if (seq_cmp(ack + (window << entry->lan_wscale), entry->lan_max) >= 0)
     {
       entry->lan_max = ack + (window << entry->lan_wscale);
+    }
+    if (entry->detect) 
+    {
+      uint32_t acked_seq = entry->detect->acked + 1 + entry->remote_isn;
+      int cmp;
+      cmp = seq_cmp(tcp_ack_number(ippay), acked_seq);
+      if (cmp >= 0)
+      {
+        free(entry->detect);
+        entry->detect = NULL;
+      }
+      else
+      {
+#if ENABLE_ACK
+        send_data_only(ether, entry, port, st);
+        tcp_set_ack_number_cksum_update(ippay, tcp_len, acked_seq);
+#endif
+      }
     }
   }
   uint64_t next64;

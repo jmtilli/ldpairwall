@@ -76,6 +76,8 @@ struct airwall_hash_entry {
 #endif
   uint16_t lan_max_window_unscaled; // max window LAN has advertised
   uint16_t wan_max_window_unscaled; // max window WAN has advertised
+  uint32_t local_isn; // ACK number - 1 of ACK packet
+  uint32_t remote_isn; // SEQ number - 1 of ACK packet
   union {
     struct {
       uint32_t isn;
@@ -84,8 +86,6 @@ struct airwall_hash_entry {
       uint32_t isn;
     } uplink_syn_sent;
     struct {
-      uint32_t local_isn; // ACK number - 1 of ACK packet
-      uint32_t remote_isn; // SEQ number - 1 of ACK packet
       uint16_t mss;
       uint8_t sack_permitted;
       uint8_t timestamp_present;

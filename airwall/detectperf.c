@@ -120,7 +120,7 @@ static void http_proto_test(void)
   for (i = 0; i < 1000*1000; i++)
   {
     proto_detect_ctx_init(&ctx);
-    ret = proto_detect_feed(&ctx, str, 0, sizeof(str)-1);
+    ret = proto_detect_feed(&ctx, str, 0, sizeof(str)-1, NULL);
     if (ret != 0)
     {
       abort();
@@ -137,7 +137,7 @@ static void http_proto_test(void)
   for (i = 0; i < 1000*1000; i++)
   {
     proto_detect_ctx_init(&ctx);
-    ret = proto_detect_feed(&ctx, strsimple, 0, sizeof(strsimple)-1);
+    ret = proto_detect_feed(&ctx, strsimple, 0, sizeof(strsimple)-1, NULL);
     if (ret != 0)
     {
       abort();
@@ -201,7 +201,7 @@ int main(int argc, char **argv)
   {
     proto_detect_ctx_init(&ctx);
 
-    ret = proto_detect_feed(&ctx, withsni, 0, sizeof(withsni));
+    ret = proto_detect_feed(&ctx, withsni, 0, sizeof(withsni), NULL);
     if (ret != 0)
     {
       abort();

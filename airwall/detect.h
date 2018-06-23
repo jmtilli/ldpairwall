@@ -117,6 +117,7 @@ struct proto_detect_ctx {
   struct hostname_ctx hostctx;
   struct ssl_fragment_ctx fragctx;
   struct http_ctx httpctx;
+  uint32_t acked;
 };
 
 static inline void proto_detect_ctx_init(struct proto_detect_ctx *ctx)
@@ -126,12 +127,14 @@ static inline void proto_detect_ctx_init(struct proto_detect_ctx *ctx)
   ctx->max_bitmask = 0;
   ctx->init_data_fed = 0;
   ctx->max_bitmask = 0;
+  ctx->acked = 0;
   hostname_ctx_init(&ctx->hostctx);
   ssl_fragment_ctx_init(&ctx->fragctx);
   http_ctx_init(&ctx->httpctx);
 }
 
 int proto_detect_feed(struct proto_detect_ctx *ctx,
-                      const void *data, size_t start_off, size_t sz);
+                      const void *data, size_t start_off, size_t sz,
+                      uint32_t *ack);
 
 #endif
