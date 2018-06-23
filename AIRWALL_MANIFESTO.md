@@ -55,25 +55,25 @@ bridge or an IP router, or any computer configured to do these functions in
 software. If passive devices are considered as well, an airwall can also be an
 Ethernet cable.
 
-## Protocol detection and NG-AANAT
+## Protocol detection and AL-NAT
 
 There is nothing new in an airwall, then. However, more interesting than
 traditional devices are new kinds of airwall devices that support network
-address translation (NAT). We define a new kind of NAT, called next generation
-application aware NAT (NG-AANAT). This NAT works by first SYN proxying the
-incoming TCP connection using SYN cookies, then when the client has verified
-its intention to truly open the connection, advertising a limited window to the
-client. Everytime a packet is received from the client, it is stored into a
-buffer and the buffer contents are investigated. If the protocol of the buffer
-is detected successfully and the protocol use contains a DNS name of the
-server, the NG-AANAT device will then open the other half of the connection,
-and send the buffered data to the server. If the other half of the connection
-cannot be opened, (RST response to SYN), an RST is created and sent to the
-client to close the connection.
+address translation (NAT). We define a new kind of NAT, called application
+layer NAT (AL-NAT). This NAT works by first SYN proxying the incoming TCP
+connection using SYN cookies, then when the client has verified its intention
+to truly open the connection, advertising a limited window to the client.
+Everytime a packet is received from the client, it is stored into a buffer and
+the buffer contents are investigated. If the protocol of the buffer is detected
+successfully and the protocol use contains a DNS name of the server, the
+AL-NAT device will then open the other half of the connection, and send the
+buffered data to the server. If the other half of the connection cannot be
+opened, (RST response to SYN), an RST is created and sent to the client to
+close the connection.
 
-## NG-AANAT-friendly protocols
+## AL-NAT-friendly protocols
 
-In order to be NG-AANAT friendly, a protocol must have the following
+In order to be AL-NAT friendly, a protocol must have the following
 characteristics:
 
 1. Client must send data without needing the server to send data to the client
@@ -86,31 +86,31 @@ plaintext form.
 
 TLS nowadays has server name indication (SNI), as specified by RFC6066. This is
 transmitted as cleartext, meaning any protocol using TLS that has application
-level support for SNI works with NG-AANAT. TLS also can be detected with
+level support for SNI works with AL-NAT. TLS also can be detected with
 relative ease.
 
 ### HTTP
 
 Some sites still use traditional HTTP. However, due to the existence of the
 `Host:` header and due to the fact that a HTTP connection starts with the
-client's request, traditional HTTP is NG-AANAT friendly. HTTP also is easy to
+client's request, traditional HTTP is AL-NAT friendly. HTTP also is easy to
 detect.
 
-## Non-NG-AANAT-friendly protocols
+## Non-AL-NAT-friendly protocols
 
 ### Plaintext SMTP, POP3 and IMAP
 
 Plaintext SMTP, POP3 and IMAP connections are opened by a greeting of the
-server, meaning these protocols are not NG-AANAT-friendly. However, with mail
+server, meaning these protocols are not AL-NAT-friendly. However, with mail
 protocols slowly moving to the use of TLS, it may be the case that they
-eventually will be NG-AANAT-friendly. A STARTTLS proxy should be reasonably
+eventually will be AL-NAT-friendly. A STARTTLS proxy should be reasonably
 easy to implement.
 
 ### SSH
 
 SSH has reimplemented most of TLS in a custom implementation not used for any
 other protocol. This custom implementation unfortunately does not specify the
-server name anywhere as plaintext. Therefore, SSH is not NG-AANAT-friendly.
+server name anywhere as plaintext. Therefore, SSH is not AL-NAT-friendly.
 
 ## Wildcard connection open
 
