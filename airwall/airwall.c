@@ -1875,7 +1875,7 @@ int downlink(
     remote_ip = ip_src_ptr(ip);
     protocol = ip_proto(ip);
     ippay = ip_payload(ip);
-#if ENABLE_ARP
+#ifdef ENABLE_ARP
     if (hdr_get32n(lan_ip) != airwall->conf->ul_addr)
     {
       log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "address of packet invalid");
@@ -1917,7 +1917,7 @@ int downlink(
     ihl = ((char*)ippay) - ((char*)ip);
     lan_ip = ipv6_dst(ip);
     remote_ip = ipv6_src(ip);
-#if ENABLE_ARP
+#ifdef ENABLE_ARP
     if (1)
     {
       log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "v6 address of packet invalid");
@@ -2843,7 +2843,7 @@ int uplink(
     ippay = ip_payload(ip);
     lan_ip = ip_src_ptr(ip);
     remote_ip = ip_dst_ptr(ip);
-#if ENABLE_ARP
+#ifdef ENABLE_ARP
     if ((hdr_get32n(remote_ip) & airwall->conf->dl_mask) ==
         (airwall->conf->dl_addr & airwall->conf->dl_mask))
     {
@@ -2886,7 +2886,7 @@ int uplink(
     ihl = ((char*)ippay) - ((char*)ip);
     lan_ip = ipv6_src(ip);
     remote_ip = ipv6_dst(ip);
-#if ENABLE_ARP
+#ifdef ENABLE_ARP
     if (1)
     {
       log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "v6 address of packet internal");
