@@ -104,6 +104,7 @@ int main(int argc, char **argv)
   struct ldpfunc2_userdata ud;
   struct conf conf = {};
   int opt;
+  struct timer_link revotimer;
 
   log_open("LDPAIRWALL", LOG_LEVEL_DEBUG, LOG_LEVEL_INFO);
 
@@ -166,6 +167,11 @@ int main(int argc, char **argv)
     dloutq[i] = dlintf->outq[i];
     uloutq[i] = ulintf->outq[i];
   }
+
+  revotimer.time64 = gettime64() + 32*1000*1000;
+  revotimer.fn = revolve_secret;
+  revotimer.userdata = &local->info;
+  timer_linkheap_add(&local->timers, &revotimer);
 
   if (ldp_interface_mac_addr(ulintf, airwall->ul_mac) != 0)
   {
