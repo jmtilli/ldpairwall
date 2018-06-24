@@ -1,5 +1,5 @@
-AIRWALL_SRC_LIB := airwall.c secret.c detect.c yyutils.c hosthash.c
-AIRWALL_SRC := $(AIRWALL_SRC_LIB) ldpairwall.c detecttest.c detectperf.c genchartbl.c unittest.c
+AIRWALL_SRC_LIB := airwall.c secret.c detect.c yyutils.c hosthash.c porter.c
+AIRWALL_SRC := $(AIRWALL_SRC_LIB) ldpairwall.c detecttest.c detectperf.c genchartbl.c unittest.c sz.c portertest.c
 
 AIRWALL_LEX_LIB := conf.l
 AIRWALL_LEX := $(AIRWALL_LEX_LIB)
@@ -61,7 +61,7 @@ ifeq ($(WITH_ODP),yes)
 CFLAGS_AIRWALL += -I$(ODP_DIR)/include
 LIBS_AIRWALL_ODP := $(ODP_DIR)/lib/libodp-linux.a $(LIBS_ODPDEP)
 endif
-AIRWALL: $(DIRAIRWALL)/ldpairwall $(DIRAIRWALL)/detecttest $(DIRAIRWALL)/detectperf $(DIRAIRWALL)/genchartbl $(DIRAIRWALL)/unittest
+AIRWALL: $(DIRAIRWALL)/ldpairwall $(DIRAIRWALL)/detecttest $(DIRAIRWALL)/detectperf $(DIRAIRWALL)/genchartbl $(DIRAIRWALL)/unittest $(DIRAIRWALL)/sz $(DIRAIRWALL)/portertest
 
 unit_AIRWALL: $(DIRAIRWALL)/detecttest $(DIRAIRWALL)/detectperf $(DIRAIRWALL)/unittest
 	$(DIRAIRWALL)/detecttest
@@ -71,6 +71,12 @@ unit_AIRWALL: $(DIRAIRWALL)/detecttest $(DIRAIRWALL)/detectperf $(DIRAIRWALL)/un
 $(DIRAIRWALL)/libairwall.a: $(AIRWALL_OBJ_LIB) $(AIRWALL_OBJGEN_LIB) $(MAKEFILES_COMMON) $(MAKEFILES_AIRWALL)
 	rm -f $@
 	ar rvs $@ $(filter %.o,$^)
+
+$(DIRAIRWALL)/sz: $(DIRAIRWALL)/sz.o $(DIRAIRWALL)/libairwall.a $(LIBS_AIRWALL) $(MAKEFILES_COMMON) $(MAKEFILES_AIRWALL)
+	$(CC) $(CFLAGS) -o $@ $(filter %.o,$^) $(filter %.a,$^) $(CFLAGS_AIRWALL) $(LDFLAGS_LDP) -lpthread -ldl
+
+$(DIRAIRWALL)/portertest: $(DIRAIRWALL)/portertest.o $(DIRAIRWALL)/libairwall.a $(LIBS_AIRWALL) $(MAKEFILES_COMMON) $(MAKEFILES_AIRWALL)
+	$(CC) $(CFLAGS) -o $@ $(filter %.o,$^) $(filter %.a,$^) $(CFLAGS_AIRWALL) $(LDFLAGS_LDP) -lpthread -ldl
 
 $(DIRAIRWALL)/genchartbl: $(DIRAIRWALL)/genchartbl.o $(DIRAIRWALL)/libairwall.a $(LIBS_AIRWALL) $(MAKEFILES_COMMON) $(MAKEFILES_AIRWALL)
 	$(CC) $(CFLAGS) -o $@ $(filter %.o,$^) $(filter %.a,$^) $(CFLAGS_AIRWALL) $(LDFLAGS_LDP) -lpthread -ldl
