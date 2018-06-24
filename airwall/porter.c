@@ -18,7 +18,7 @@ void init_porter(void)
     ports[i].count = 0;
     ports[i].available = 0;
   }
-  for (i = 1024; i < 65536; i++)
+  for (i = 32768; i < 65536; i++)
   {
     ports[i].available = 1;
     linked_list_add_tail(&ports[i].node, &portcnts[0]);
@@ -27,12 +27,12 @@ void init_porter(void)
 
 void allocate_port(uint16_t port)
 {
-  if (ports[port].count <= UINT16_MAX)
+  if (ports[port].count <= UINT16_MAX && ports[port].available)
   {
     linked_list_delete(&ports[port].node);
   }
   ports[port].count++;
-  if (ports[port].count <= UINT16_MAX)
+  if (ports[port].count <= UINT16_MAX && ports[port].available)
   {
     linked_list_add_tail(&ports[port].node, &portcnts[ports[port].count]);
   }
@@ -44,12 +44,12 @@ void deallocate_port(uint16_t port)
   {
     abort();
   }
-  if (ports[port].count <= UINT16_MAX)
+  if (ports[port].count <= UINT16_MAX && ports[port].available)
   {
     linked_list_delete(&ports[port].node);
   }
   ports[port].count--;
-  if (ports[port].count <= UINT16_MAX)
+  if (ports[port].count <= UINT16_MAX && ports[port].available)
   {
     linked_list_add_tail(&ports[port].node, &portcnts[ports[port].count]);
   }

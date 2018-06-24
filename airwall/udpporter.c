@@ -18,7 +18,7 @@ void init_udp_porter(void)
     udpports[i].count = 0;
     udpports[i].available = 0;
   }
-  for (i = 1024; i < 65536; i++)
+  for (i = 32768; i < 65536; i++)
   {
     udpports[i].available = 1;
     linked_list_add_tail(&udpports[i].node, &udpportcnts[0]);
@@ -37,12 +37,12 @@ void allocate_udp_port(uint16_t port, uint32_t local_ip, uint16_t local_port)
     udpports[port].lan_ip = 0;
     udpports[port].lan_port = 0;
   }
-  if (udpports[port].count <= UINT16_MAX)
+  if (udpports[port].count <= UINT16_MAX && udpports[port].available)
   {
     linked_list_delete(&udpports[port].node);
   }
   udpports[port].count++;
-  if (udpports[port].count <= UINT16_MAX)
+  if (udpports[port].count <= UINT16_MAX && udpports[port].available)
   {
     linked_list_add_tail(&udpports[port].node, &udpportcnts[udpports[port].count]);
   }
@@ -54,14 +54,14 @@ void deallocate_udp_port(uint16_t port)
   {
     abort();
   }
-  if (udpports[port].count <= UINT16_MAX)
+  if (udpports[port].count <= UINT16_MAX && udpports[port].available)
   {
     linked_list_delete(&udpports[port].node);
   }
   udpports[port].lan_ip = 0;
   udpports[port].lan_port = 0;
   udpports[port].count--;
-  if (udpports[port].count <= UINT16_MAX)
+  if (udpports[port].count <= UINT16_MAX && udpports[port].available)
   {
     linked_list_add_tail(&udpports[port].node, &udpportcnts[udpports[port].count]);
   }
