@@ -6,8 +6,8 @@
 
 struct free_port {
   struct linked_list_node node;
-  uint16_t port;
   uint32_t count;
+  uint16_t port;
   uint8_t available:1;
 };
 
