@@ -65,6 +65,7 @@ uint16_t get_port(uint16_t preferred)
       continue;
     }
     port = CONTAINER_OF(portcnts[i].node.next, struct free_port, node)->port;
+    break;
   }
   allocate_port(port);
   return port;
