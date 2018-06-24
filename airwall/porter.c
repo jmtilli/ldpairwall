@@ -2,6 +2,9 @@
 #include "containerof.h"
 #include <stdlib.h>
 
+struct linked_list_head portcnts[65536] = {};
+struct free_port ports[65536] = {};
+
 void init_porter(void)
 {
   size_t i;

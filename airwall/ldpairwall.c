@@ -11,6 +11,7 @@
 #include "ldpports.h"
 #include "mypcapng.h"
 #include "yyutils.h"
+#include "porter.h"
 
 #define POOL_SIZE 48
 #define BLOCK_SIZE 65664
@@ -105,6 +106,8 @@ int main(int argc, char **argv)
   int opt;
 
   log_open("LDPAIRWALL", LOG_LEVEL_DEBUG, LOG_LEVEL_INFO);
+
+  init_porter();
 
   hash_seed_init();
 
