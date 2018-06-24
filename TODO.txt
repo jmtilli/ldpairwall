@@ -1,0 +1,10 @@
+UDP
+port control protocol
+NAT port mapping protocol
+universal plug and play
+DHCP client
+DHCP server
+wildcard connection open
+some solution to protocol detection memory exhaustion
+(P)RGW mode of operation
+QUIC
