@@ -11,3 +11,5 @@ QUIC
 IPv6
 multithreading
 fragmented traffic
+ICMP ping
+ICMP unreachable / time exceeded packets
