@@ -36,6 +36,7 @@ void init_udp_porter(struct udp_porter *porter)
   {
     porter->udpports[i].port = i;
     porter->udpports[i].count = 0;
+    porter->udpports[i].outcount = 0;
     porter->udpports[i].available = 0;
     porter->udpports[i].lan_ip = 0;
     porter->udpports[i].lan_port = 0;
