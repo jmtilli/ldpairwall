@@ -10,3 +10,4 @@ some solution to protocol detection memory exhaustion
 QUIC
 IPv6
 multithreading
+fragmented traffic
