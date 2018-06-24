@@ -32,7 +32,7 @@ void allocate_udp_port(uint16_t port, uint32_t local_ip, uint16_t local_port)
     udpports[port].lan_ip = local_ip;
     udpports[port].lan_port = local_port;
   }
-  else
+  else if (udpports[port].lan_ip != local_ip || udpports[port].lan_port != local_port)
   {
     udpports[port].lan_ip = 0;
     udpports[port].lan_port = 0;
@@ -58,8 +58,6 @@ void deallocate_udp_port(uint16_t port)
   {
     linked_list_delete(&udpports[port].node);
   }
-  udpports[port].lan_ip = 0;
-  udpports[port].lan_port = 0;
   udpports[port].count--;
   if (udpports[port].count <= UINT16_MAX && udpports[port].available)
   {
@@ -71,7 +69,7 @@ uint16_t get_udp_port(uint32_t local_ip, uint16_t preferred)
 {
   uint16_t port = 0;
   size_t i;
-  if (udpports[preferred].count == 0 && udpports[preferred].available)
+  if ((udpports[preferred].count == 0 || (udpports[preferred].lan_ip == local_ip && udpports[preferred].lan_port == preferred)) && udpports[preferred].available)
   {
     allocate_udp_port(preferred, local_ip, preferred);
     return preferred;
