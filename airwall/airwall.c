@@ -927,9 +927,6 @@ static void process_data(
       entry->state_data.downlink_half_open.sack_permitted, entry, time64, 0,
       airwall);
   }
-  
-  
-  // FIXME detect protocol
 }
 
 // Caller must hold worker_local mutex lock
