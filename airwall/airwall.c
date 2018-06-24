@@ -756,6 +756,80 @@ static void ack_data(
   port->portfunc(pktstruct, port->userdata);
 }
 
+static void send_rst(
+  void *orig, struct worker_local *local, struct airwall *airwall,
+  struct port *port, struct ll_alloc_st *st, uint64_t time64,
+  struct airwall_hash_entry *entry)
+{
+  char windowupdate[14+40+20+12] = {0};
+  void *ip, *origip;
+  void *tcp, *origtcp;
+  struct packet *pktstruct;
+  unsigned char *tcpopts;
+  int version;
+  size_t sz;
+
+  struct tcp_information info;
+
+  origip = ether_payload(orig);
+  version = ip_version(origip);
+  origtcp = ip46_payload(origip);
+  tcp_parse_options(origtcp, &info);
+
+  version = entry->version;
+  sz = (version == 4) ? (sizeof(windowupdate) - 20) : sizeof(windowupdate);
+
+  memcpy(ether_src(windowupdate), ether_dst(orig), 6);
+  memcpy(ether_dst(windowupdate), ether_src(orig), 6);
+  ether_set_type(windowupdate, (version == 4) ? ETHER_TYPE_IP : ETHER_TYPE_IPV6);
+  ip = ether_payload(windowupdate);
+  ip_set_version(ip, version);
+#if 0 // FIXME this needs to be thought carefully
+  if (version == 6)
+  {
+    ipv6_set_flow_label(ip, entry->ulflowlabel);
+  }
+#endif
+  ip46_set_min_hdr_len(ip);
+  ip46_set_payload_len(ip, sizeof(windowupdate) - 14 - 40);
+  ip46_set_dont_frag(ip, 1);
+  ip46_set_id(ip, 0); // XXX
+  ip46_set_ttl(ip, 64);
+  ip46_set_proto(ip, 6);
+  ip46_set_src(ip, ip46_dst(origip));
+  ip46_set_dst(ip, ip46_src(origip));
+  ip46_set_hdr_cksum_calc(ip);
+  tcp = ip46_payload(ip);
+  tcp_set_src_port(tcp, tcp_dst_port(origtcp));
+  tcp_set_dst_port(tcp, tcp_src_port(origtcp));
+  tcp_set_rst_on(tcp);
+  tcp_set_data_offset(tcp, sizeof(windowupdate) - 14 - 40);
+  tcp_set_seq_number(tcp, tcp_ack_number(origtcp));
+  tcp_set_window(tcp, 0);
+  tcpopts = &((unsigned char*)tcp)[20];
+  if (info.options_valid && info.ts_present)
+  {
+    tcpopts[0] = 1;
+    tcpopts[1] = 1;
+    tcpopts[2] = 8;
+    tcpopts[3] = 10;
+    hdr_set32n(&tcpopts[4], info.tsecho);
+    hdr_set32n(&tcpopts[8], info.ts);
+  }
+  else
+  {
+    memset(&tcpopts[0], 0, 12);
+  }
+  tcp46_set_cksum_calc(ip);
+
+  pktstruct = ll_alloc_st(st, packet_size(sz));
+  pktstruct->data = packet_calc_data(pktstruct);
+  pktstruct->direction = PACKET_DIRECTION_UPLINK;
+  pktstruct->sz = sz;
+  memcpy(pktstruct->data, windowupdate, sz);
+  port->portfunc(pktstruct, port->userdata);
+}
+
 static void process_data(
   void *orig, struct worker_local *local, struct airwall *airwall,
   struct port *port, struct ll_alloc_st *st, uint64_t time64,
@@ -799,7 +873,7 @@ static void process_data(
   else if (res == -ENOTSUP)
   {
     log_log(LOG_LEVEL_ERR, "AIRWALL", "can't detect protocol and host");
-    // FIXME send RST
+    send_rst(orig, local, airwall, port, st, time64, entry);
     entry->timer.time64 = time64 + 45ULL*1000ULL*1000ULL;
     entry->flag_state = FLAG_STATE_RESETED;
     timer_linkheap_modify(&local->timers, &entry->timer);
@@ -807,7 +881,7 @@ static void process_data(
   else if (res == -EBADMSG)
   {
     log_log(LOG_LEVEL_ERR, "AIRWALL", "content conflict");
-    // FIXME send RST
+    send_rst(orig, local, airwall, port, st, time64, entry);
     entry->timer.time64 = time64 + 45ULL*1000ULL*1000ULL;
     entry->flag_state = FLAG_STATE_RESETED;
     timer_linkheap_modify(&local->timers, &entry->timer);
@@ -833,7 +907,7 @@ static void process_data(
     {
       log_log(LOG_LEVEL_ERR, "AIRWALL", "host %s not found",
               entry->detect->hostctx.hostname);
-      // FIXME send RST
+      send_rst(orig, local, airwall, port, st, time64, entry);
       entry->timer.time64 = time64 + 45ULL*1000ULL*1000ULL;
       entry->flag_state = FLAG_STATE_RESETED;
       timer_linkheap_modify(&local->timers, &entry->timer);
