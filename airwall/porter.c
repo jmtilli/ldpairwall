@@ -27,8 +27,11 @@ void init_porter(void)
 
 void allocate_port(uint16_t port)
 {
+  if (ports[port].count <= UINT16_MAX)
+  {
+    linked_list_delete(&ports[port].node);
+  }
   ports[port].count++;
-  linked_list_delete(&ports[port].node);
   if (ports[port].count <= UINT16_MAX)
   {
     linked_list_add_tail(&ports[port].node, &portcnts[ports[port].count]);
@@ -41,8 +44,11 @@ void deallocate_port(uint16_t port)
   {
     abort();
   }
+  if (ports[port].count <= UINT16_MAX)
+  {
+    linked_list_delete(&ports[port].node);
+  }
   ports[port].count--;
-  linked_list_delete(&ports[port].node);
   if (ports[port].count <= UINT16_MAX)
   {
     linked_list_add_tail(&ports[port].node, &portcnts[ports[port].count]);
