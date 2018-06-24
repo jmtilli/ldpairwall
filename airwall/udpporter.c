@@ -140,7 +140,8 @@ uint16_t get_udp_port(struct udp_porter *porter, uint32_t local_ip, uint16_t pre
   {
     struct free_udp_port *freeport =
       CONTAINER_OF(node, struct free_udp_port, hashnode);
-    if (freeport->lan_ip == local_ip && freeport->lan_port == preferred)
+    if (freeport->lan_ip == local_ip && freeport->lan_port == preferred &&
+        freeport->available)
     {
       allocate_udp_port(porter, freeport->port, local_ip, preferred, 1);
       return freeport->port;
