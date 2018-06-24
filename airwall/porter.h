@@ -11,15 +11,17 @@ struct free_port {
   uint8_t available:1;
 };
 
-struct linked_list_head portcnts[65536];
-struct free_port ports[65536];
+struct porter {
+  struct linked_list_head portcnts[65536];
+  struct free_port ports[65536];
+};
 
-void init_porter(void);
+void init_porter(struct porter *porter);
 
-void allocate_port(uint16_t port);
+void allocate_port(struct porter *porter, uint16_t port);
 
-void deallocate_port(uint16_t port);
+void deallocate_port(struct porter *porter, uint16_t port);
 
-uint16_t get_port(uint16_t preferred);
+uint16_t get_port(struct porter *porter, uint16_t preferred);
 
 #endif

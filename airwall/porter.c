@@ -2,77 +2,74 @@
 #include "containerof.h"
 #include <stdlib.h>
 
-struct linked_list_head portcnts[65536] = {};
-struct free_port ports[65536] = {};
-
-void init_porter(void)
+void init_porter(struct porter *porter)
 {
   size_t i;
   for (i = 0; i < 65536; i++)
   {
-    linked_list_head_init(&portcnts[i]);
+    linked_list_head_init(&porter->portcnts[i]);
   }
   for (i = 0; i < 65536; i++)
   {
-    ports[i].port = i;
-    ports[i].count = 0;
-    ports[i].available = 0;
+    porter->ports[i].port = i;
+    porter->ports[i].count = 0;
+    porter->ports[i].available = 0;
   }
   for (i = 32768; i < 65536; i++)
   {
-    ports[i].available = 1;
-    linked_list_add_tail(&ports[i].node, &portcnts[0]);
+    porter->ports[i].available = 1;
+    linked_list_add_tail(&porter->ports[i].node, &porter->portcnts[0]);
   }
 }
 
-void allocate_port(uint16_t port)
+void allocate_port(struct porter *porter, uint16_t port)
 {
-  if (ports[port].count <= UINT16_MAX && ports[port].available)
+  if (porter->ports[port].count <= UINT16_MAX && porter->ports[port].available)
   {
-    linked_list_delete(&ports[port].node);
+    linked_list_delete(&porter->ports[port].node);
   }
-  ports[port].count++;
-  if (ports[port].count <= UINT16_MAX && ports[port].available)
+  porter->ports[port].count++;
+  if (porter->ports[port].count <= UINT16_MAX && porter->ports[port].available)
   {
-    linked_list_add_tail(&ports[port].node, &portcnts[ports[port].count]);
+    linked_list_add_tail(&porter->ports[port].node, &porter->portcnts[porter->ports[port].count]);
   }
 }
 
-void deallocate_port(uint16_t port)
+void deallocate_port(struct porter *porter, uint16_t port)
 {
-  if (ports[port].count == 0)
+  if (porter->ports[port].count == 0)
   {
     abort();
   }
-  if (ports[port].count <= UINT16_MAX && ports[port].available)
+  if (porter->ports[port].count <= UINT16_MAX && porter->ports[port].available)
   {
-    linked_list_delete(&ports[port].node);
+    linked_list_delete(&porter->ports[port].node);
   }
-  ports[port].count--;
-  if (ports[port].count <= UINT16_MAX && ports[port].available)
+  porter->ports[port].count--;
+  if (porter->ports[port].count <= UINT16_MAX && porter->ports[port].available)
   {
-    linked_list_add_tail(&ports[port].node, &portcnts[ports[port].count]);
+    linked_list_add_tail(&porter->ports[port].node, &porter->portcnts[porter->ports[port].count]);
   }
 }
 
-uint16_t get_port(uint16_t preferred)
+uint16_t get_port(struct porter *porter, uint16_t preferred)
 {
   uint16_t port = 0;
   size_t i;
-  if (ports[preferred].count == 0 && ports[preferred].available)
+  if (porter->ports[preferred].count == 0 && porter->ports[preferred].available)
   {
-    allocate_port(preferred);
+    allocate_port(porter, preferred);
     return preferred;
   }
   for (i = 0; i < 65536; i++)
   {
-    if (linked_list_is_empty(&portcnts[i]))
+    if (linked_list_is_empty(&porter->portcnts[i]))
     {
       continue;
     }
-    port = CONTAINER_OF(portcnts[i].node.next, struct free_port, node)->port;
+    port = CONTAINER_OF(porter->portcnts[i].node.next, struct free_port, node)->port;
     break;
   }
-  allocate_port(port);
+  allocate_port(porter, port);
   return port;
 }

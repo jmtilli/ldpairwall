@@ -500,7 +500,7 @@ static void airwall_expiry_fn(
     hash_table_delete(&local->local_hash, &e->local_node, airwall_hash_local(e));
   }
   hash_table_delete(&local->nat_hash, &e->nat_node, airwall_hash_nat(e));
-  deallocate_port(e->nat_port);
+  deallocate_port(local->airwall->porter, e->nat_port);
   worker_local_wrlock(local);
   if (e->was_synproxied)
   {
@@ -653,7 +653,7 @@ static void delete_closing_already_bucket_locked(
   log_log(LOG_LEVEL_NOTICE, "SYNPROXY",
           "deleting closing connection to make room for new");
   timer_linkheap_remove(&local->timers, &entry->timer);
-  deallocate_port(entry->nat_port);
+  deallocate_port(local->airwall->porter, entry->nat_port);
   if (entry->local_port != 0)
   {
     hash_table_delete_already_bucket_locked(&local->local_hash, &entry->local_node);
@@ -1237,7 +1237,7 @@ static void send_synack(
       timer_linkheap_remove(&local->timers, &e->timer);
       free(e->detect);
       e->detect = NULL;
-      deallocate_port(e->nat_port);
+      deallocate_port(airwall->porter, e->nat_port);
       //if (ctx.hashval == hashval)
       {
         if (e->local_port != 0)
@@ -1275,7 +1275,7 @@ static void send_synack(
     memcpy(&e->remote_ip, remote_ip, (version == 6) ? 16 : 4);
     e->nat_port = local_port;
     e->remote_port = remote_port;
-    allocate_port(e->nat_port);
+    allocate_port(airwall->porter, e->nat_port);
     e->was_synproxied = 1;
     e->timer.time64 = time64 + 64ULL*1000ULL*1000ULL;
     e->timer.fn = airwall_expiry_fn;
@@ -1699,7 +1699,7 @@ static void send_window_update(
 
   if (entry == NULL)
   {
-    allocate_port(tcp_dst_port(origtcp));
+    allocate_port(airwall->porter, tcp_dst_port(origtcp));
     entry = airwall_hash_put(
       local, version,
       NULL, 0,
@@ -3320,7 +3320,7 @@ int uplink(
       {
         uint32_t loc = airwall->conf->ul_addr;
         hdr_set32n(ipv4, loc);
-        tcp_port = get_port(lan_port);
+        tcp_port = get_port(airwall->porter, lan_port);
       }
       else
       {

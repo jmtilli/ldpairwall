@@ -27,6 +27,8 @@ struct ldp_in_queue *ulinq[MAX_RX_TX];
 struct ldp_out_queue *dloutq[MAX_RX_TX];
 struct ldp_out_queue *uloutq[MAX_RX_TX];
 
+struct porter porter;
+
 atomic_int exit_threads = 0;
 
 struct rx_args {
@@ -108,13 +110,13 @@ int main(int argc, char **argv)
 
   log_open("LDPAIRWALL", LOG_LEVEL_DEBUG, LOG_LEVEL_INFO);
 
-  init_porter();
+  init_porter(&porter);
 
   hash_seed_init();
 
   conf_init(&conf);
   confyydirparse(argv[0], "conf.txt", &conf, 0);
-  airwall_init(airwall, &conf);
+  airwall_init(airwall, &conf, &porter);
   worker_local_init(local, airwall, 1, 0, &intf); // FIXME change to non-deterministic
 
 

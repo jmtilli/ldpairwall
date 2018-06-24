@@ -29,6 +29,7 @@ struct airwall {
   //struct threetuplectx threetuplectx;
   char ul_mac[6];
   char dl_mac[6];
+  struct porter *porter;
 };
 
 struct airwall_hash_entry {
@@ -190,6 +191,7 @@ struct worker_local {
   struct linked_list_head half_open_list;
   struct arp_cache dl_arp_cache;
   struct arp_cache ul_arp_cache;
+  struct airwall *airwall;
 };
 
 static inline void worker_local_rdlock(struct worker_local *local)
@@ -273,6 +275,7 @@ static inline void worker_local_init(
   local->synproxied_connections = 0;
   local->direct_connections = 0;
   local->half_open_connections = 0;
+  local->airwall = airwall;
   arp_cache_init(&local->dl_arp_cache, intf);
   arp_cache_init(&local->ul_arp_cache, intf);
   ip_hash_init(&local->ratelimit, &local->timers, locked ? &local->rwlock : NULL);
@@ -291,7 +294,7 @@ static inline void worker_local_free(struct worker_local *local)
     hash_table_delete(&local->local_hash, &e->local_node, airwall_hash_local(e));
     hash_table_delete(&local->nat_hash, &e->nat_node, airwall_hash_nat(e));
     timer_linkheap_remove(&local->timers, &e->timer);
-    deallocate_port(e->nat_port);
+    deallocate_port(local->airwall->porter, e->nat_port);
     free(e->detect);
     e->detect = NULL;
     free(e);
@@ -447,7 +450,7 @@ static inline void airwall_hash_put_connected(
   uint64_t time64)
 {
   struct airwall_hash_entry *e;
-  allocate_port(nat_port);
+  allocate_port(local->airwall->porter, nat_port);
   e = airwall_hash_put(
     local, version, local_ip, local_port, nat_ip, nat_port, remote_ip, remote_port, 0, time64);
   e->flag_state = FLAG_STATE_ESTABLISHED;
@@ -460,9 +463,11 @@ static inline void airwall_hash_put_connected(
 
 static inline void airwall_init(
   struct airwall *airwall,
-  struct conf *conf)
+  struct conf *conf,
+  struct porter *porter)
 {
   airwall->conf = conf;
+  airwall->porter = porter;
   //sack_ip_port_hash_init(&airwall->autolearn, conf->learnhashsize);
   //threetuplectx_init(&airwall->threetuplectx);
 }
@@ -495,7 +500,7 @@ static inline void airwall_hash_del(
     linked_list_delete(&e->state_data.downlink_half_open.listnode);
     local->half_open_connections--;
   }
-  deallocate_port(e->nat_port);
+  deallocate_port(local->airwall->porter, e->nat_port);
   free(e->detect);
   e->detect = NULL;
   free(e);
