@@ -173,12 +173,12 @@ ip netns exec ns2 ip link set lo up
 
 Then run in one terminal window and leave it running:
 ```
-./airwall/ldpairwall veth1 veth2
+./airwall/ldpairwall veth2 veth1
 ```
 
 Or you may alternatively run:
 ```
-./airwall/ldpairwall netmap:veth1 netmap:veth2
+./airwall/ldpairwall netmap:veth2 netmap:veth1
 ```
 
 Then, execute netcat in two terminal windows:

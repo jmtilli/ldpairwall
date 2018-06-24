@@ -144,13 +144,13 @@ int main(int argc, char **argv)
     exit(1);
   }
 
-  ulintf = ldp_interface_open(argv[optind+0], NUM_THR, NUM_THR);
+  ulintf = ldp_interface_open(argv[optind+1], NUM_THR, NUM_THR);
   if (ulintf == NULL)
   {
     log_log(LOG_LEVEL_CRIT, "LDPAIRWALL", "Can't open uplink interface");
     exit(1);
   }
-  dlintf = ldp_interface_open(argv[optind+1], NUM_THR, NUM_THR);
+  dlintf = ldp_interface_open(argv[optind+0], NUM_THR, NUM_THR);
   if (dlintf == NULL)
   {
     log_log(LOG_LEVEL_CRIT, "LDPAIRWALL", "Can't open downlink interface");
