@@ -1975,7 +1975,6 @@ int downlink(
     {
       if (arp_cache_get_accept_invalid(&local->ul_arp_cache, arp_spa(arp)))
       {
-        // FIXME correct direction port?
         uint32_t spa = arp_spa(arp);
         const unsigned char *sha = arp_const_sha(arp);
         log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK",
@@ -2019,7 +2018,6 @@ int downlink(
                 "%d.%d.%d.%d is at %.2x:%.2x:%.2x:%.2x:%.2x:%.2x",
                 (spa>>24)&0xFF, (spa>>16)&0xFF, (spa>>8)&0xFF, (spa>>0)&0xFF,
                 sha[0], sha[1], sha[2], sha[3], sha[4], sha[5]);
-        // FIXME correct direction port?
         arp_cache_put(&local->ul_arp_cache, port, arp_spa(arp), arp_const_sha(arp));
       }
       else
@@ -3063,7 +3061,6 @@ int uplink(
                 "%d.%d.%d.%d is at %.2x:%.2x:%.2x:%.2x:%.2x:%.2x",
                 (spa>>24)&0xFF, (spa>>16)&0xFF, (spa>>8)&0xFF, (spa>>0)&0xFF,
                 sha[0], sha[1], sha[2], sha[3], sha[4], sha[5]);
-        // FIXME correct direction port?
         arp_cache_put(&local->dl_arp_cache, port, arp_spa(arp), arp_const_sha(arp));
       }
       if (arp_tpa(arp) != airwall->conf->dl_addr)
@@ -3101,7 +3098,6 @@ int uplink(
                 "%d.%d.%d.%d is at %.2x:%.2x:%.2x:%.2x:%.2x:%.2x",
                 (spa>>24)&0xFF, (spa>>16)&0xFF, (spa>>8)&0xFF, (spa>>0)&0xFF,
                 sha[0], sha[1], sha[2], sha[3], sha[4], sha[5]);
-        // FIXME correct direction port?
         arp_cache_put(&local->dl_arp_cache, port, arp_spa(arp), arp_const_sha(arp));
       }
       return 1;
