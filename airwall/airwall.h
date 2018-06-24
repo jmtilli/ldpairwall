@@ -21,7 +21,7 @@
 #include "conf.h"
 #include "arp.h"
 #include "detect.h"
-#include "porter.h"
+#include "udpporter.h"
 
 struct airwall {
   struct conf *conf;
@@ -29,7 +29,7 @@ struct airwall {
   //struct threetuplectx threetuplectx;
   char ul_mac[6];
   char dl_mac[6];
-  struct porter *porter;
+  struct udp_porter *porter;
 };
 
 struct airwall_hash_entry {
@@ -294,7 +294,7 @@ static inline void worker_local_free(struct worker_local *local)
     hash_table_delete(&local->local_hash, &e->local_node, airwall_hash_local(e));
     hash_table_delete(&local->nat_hash, &e->nat_node, airwall_hash_nat(e));
     timer_linkheap_remove(&local->timers, &e->timer);
-    deallocate_port(local->airwall->porter, e->nat_port);
+    deallocate_udp_port(local->airwall->porter, e->nat_port, !e->was_synproxied);
     free(e->detect);
     e->detect = NULL;
     free(e);
@@ -450,7 +450,13 @@ static inline void airwall_hash_put_connected(
   uint64_t time64)
 {
   struct airwall_hash_entry *e;
-  allocate_port(local->airwall->porter, nat_port);
+  uint32_t local_ipv4;
+  if (version == 6)
+  {
+    abort();
+  }
+  local_ipv4 = hdr_get32n(local_ip);
+  allocate_udp_port(local->airwall->porter, nat_port, local_ipv4, local_port, 1);
   e = airwall_hash_put(
     local, version, local_ip, local_port, nat_ip, nat_port, remote_ip, remote_port, 0, time64);
   e->flag_state = FLAG_STATE_ESTABLISHED;
@@ -464,7 +470,7 @@ static inline void airwall_hash_put_connected(
 static inline void airwall_init(
   struct airwall *airwall,
   struct conf *conf,
-  struct porter *porter)
+  struct udp_porter *porter)
 {
   airwall->conf = conf;
   airwall->porter = porter;
@@ -500,7 +506,7 @@ static inline void airwall_hash_del(
     linked_list_delete(&e->state_data.downlink_half_open.listnode);
     local->half_open_connections--;
   }
-  deallocate_port(local->airwall->porter, e->nat_port);
+  deallocate_udp_port(local->airwall->porter, e->nat_port, !e->was_synproxied);
   free(e->detect);
   e->detect = NULL;
   free(e);

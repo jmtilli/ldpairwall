@@ -59,13 +59,18 @@ void allocate_udp_port(struct udp_porter *porter,
 {
   if (porter->udpports[port].count == 0)
   {
+    int add_hash = 0;
     if (porter->udpports[port].lan_ip == 0 && porter->udpports[port].lan_port == 0)
+    {
+      add_hash = 1;
+    }
+    porter->udpports[port].lan_ip = local_ip;
+    porter->udpports[port].lan_port = local_port;
+    if (add_hash && (local_ip != 0 || local_port != 0))
     {
       uint32_t hashval = free_udp_port_hash(&porter->udpports[port]);
       hash_table_add_nogrow(&porter->hash, &porter->udpports[port].hashnode, hashval);
     }
-    porter->udpports[port].lan_ip = local_ip;
-    porter->udpports[port].lan_port = local_port;
   }
   else if (porter->udpports[port].lan_ip != local_ip || porter->udpports[port].lan_port != local_port)
   {

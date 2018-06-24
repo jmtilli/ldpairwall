@@ -11,7 +11,7 @@
 #include "ldpports.h"
 #include "mypcapng.h"
 #include "yyutils.h"
-#include "porter.h"
+#include "udpporter.h"
 
 #define POOL_SIZE 48
 #define BLOCK_SIZE 65664
@@ -27,7 +27,7 @@ struct ldp_in_queue *ulinq[MAX_RX_TX];
 struct ldp_out_queue *dloutq[MAX_RX_TX];
 struct ldp_out_queue *uloutq[MAX_RX_TX];
 
-struct porter porter;
+struct udp_porter porter;
 
 atomic_int exit_threads = 0;
 
@@ -110,7 +110,7 @@ int main(int argc, char **argv)
 
   log_open("LDPAIRWALL", LOG_LEVEL_DEBUG, LOG_LEVEL_INFO);
 
-  init_porter(&porter);
+  init_udp_porter(&porter);
 
   hash_seed_init();
 
