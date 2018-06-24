@@ -290,6 +290,8 @@ static inline void worker_local_free(struct worker_local *local)
     hash_table_delete(&local->local_hash, &e->local_node, airwall_hash_local(e));
     hash_table_delete(&local->nat_hash, &e->nat_node, airwall_hash_nat(e));
     timer_linkheap_remove(&local->timers, &e->timer);
+    free(e->detect);
+    e->detect = NULL;
     free(e);
   }
   hash_table_free(&local->local_hash);
@@ -490,6 +492,8 @@ static inline void airwall_hash_del(
     linked_list_delete(&e->state_data.downlink_half_open.listnode);
     local->half_open_connections--;
   }
+  free(e->detect);
+  e->detect = NULL;
   free(e);
 }
 

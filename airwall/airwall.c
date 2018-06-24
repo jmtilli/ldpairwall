@@ -515,6 +515,8 @@ static void airwall_expiry_fn(
     local->half_open_connections--;
   }
   worker_local_wrunlock(local);
+  free(e->detect);
+  e->detect = NULL;
   free(e);
 }
 
@@ -665,6 +667,8 @@ static void delete_closing_already_bucket_locked(
     local->direct_connections--;
   }
   worker_local_wrunlock(local);
+  free(entry->detect);
+  entry->detect = NULL;
   free(entry);
   entry = NULL;
 }
@@ -1229,6 +1233,8 @@ static void send_synack(
       //hashval = airwall_hash(e);
       linked_list_delete(&e->state_data.downlink_half_open.listnode);
       timer_linkheap_remove(&local->timers, &e->timer);
+      free(e->detect);
+      e->detect = NULL;
       //if (ctx.hashval == hashval)
       {
         if (e->local_port != 0)
