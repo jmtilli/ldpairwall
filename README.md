@@ -46,7 +46,8 @@ git submodule update
 To compile, type `make -j4` where the number after `-j` is the number of cores.
 
 To run unit tests, run `make unit`. Note that using `-j` with `make unit` is
-not recommended.
+not recommended. Note also that this early development version has failing unit
+tests.
 
 # Netmap support
 
