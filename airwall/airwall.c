@@ -2042,6 +2042,11 @@ static int uplink_udp(
   lan_ip = ip_src_ptr(ip);
   remote_port = udp_dst_port(ippay);
   lan_port = udp_src_port(ippay);
+  if (remote_ip == 0 || remote_port == 0 || lan_ip == 0 || lan_port == 0)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "some of UDP addresses and ports were zero");
+    return 1;
+  }
   ue = airwall_hash_get_local_udp(local, version, lan_ip, lan_port, remote_ip, remote_port, &ctx);
   if (ue == NULL)
   {
@@ -2119,6 +2124,11 @@ static int downlink_udp(
   remote_ip = ip_src_ptr(ip);
   lan_port = udp_dst_port(ippay);
   remote_port = udp_src_port(ippay);
+  if (remote_ip == 0 || remote_port == 0 || lan_ip == 0 || lan_port == 0)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "some of UDP addresses and ports were zero");
+    return 1;
+  }
   ue = airwall_hash_get_nat_udp(local, version, lan_ip, lan_port, remote_ip, remote_port, &ctx);
   if (ue == NULL)
   {
@@ -2403,6 +2413,11 @@ int downlink(
     }
     lan_port = tcp_dst_port(ippay);
     remote_port = tcp_src_port(ippay);
+    if (remote_ip == 0 || remote_port == 0 || lan_ip == 0 || lan_port == 0)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "some of TCP addresses and ports were zero");
+      return 1;
+    }
   }
   else
   {
@@ -3469,6 +3484,11 @@ int uplink(
     }
     lan_port = tcp_src_port(ippay);
     remote_port = tcp_dst_port(ippay);
+    if (remote_ip == 0 || remote_port == 0 || lan_ip == 0 || lan_port == 0)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "some of TCP addresses and ports were zero");
+      return 1;
+    }
   }
   else
   {
