@@ -165,11 +165,11 @@ ip link set veth0 netns ns1
 ip link set veth3 netns ns2
 ip netns exec ns1 ip addr add 10.150.2.1/24 dev veth0
 ip netns exec ns2 ip addr add 10.150.1.101/24 dev veth3
-ip netns exec ns2 ip route add default via 10.150.1.1
 ip netns exec ns1 ip link set veth0 up
 ip netns exec ns2 ip link set veth3 up
 ip netns exec ns1 ip link set lo up
 ip netns exec ns2 ip link set lo up
+ip netns exec ns2 ip route add default via 10.150.1.1
 ```
 
 Then run in one terminal window and leave it running:
