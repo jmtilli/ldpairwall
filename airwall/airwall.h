@@ -30,6 +30,32 @@ struct airwall {
   char ul_mac[6];
   char dl_mac[6];
   struct udp_porter *porter;
+  struct udp_porter *udp_porter;
+};
+
+struct airwall_udp_entry {
+  struct hash_list_node local_node;
+  struct hash_list_node nat_node;
+  struct timer_link timer;
+  union {
+    uint32_t ipv4;
+    char ipv6[16];
+  } local_ip;
+  union {
+    uint32_t ipv4;
+    char ipv6[16];
+  } nat_ip;
+  union {
+    uint32_t ipv4;
+    char ipv6[16];
+  } remote_ip;
+  uint32_t ulflowlabel; // after mangling
+  uint32_t dlflowlabel;
+  uint16_t local_port;
+  uint16_t nat_port;
+  uint16_t remote_port;
+  uint8_t version; // 4 or 6, IPv4 or IPv6
+  uint8_t was_incoming;
 };
 
 struct airwall_hash_entry {
@@ -173,13 +199,43 @@ static inline uint32_t airwall_hash_nat(struct airwall_hash_entry *e)
   }
 }
 
+static inline uint32_t airwall_hash_local_udp(struct airwall_udp_entry *e)
+{
+  if (e->version == 4)
+  {
+    return airwall_hash_separate4(ntohl(e->local_ip.ipv4), e->local_port, ntohl(e->remote_ip.ipv4), e->remote_port);
+  }
+  else
+  {
+    return airwall_hash_separate6(&e->local_ip, e->local_port, &e->remote_ip, e->remote_port);
+  }
+}
+
+static inline uint32_t airwall_hash_nat_udp(struct airwall_udp_entry *e)
+{
+  if (e->version == 4)
+  {
+    return airwall_hash_separate4(ntohl(e->nat_ip.ipv4), e->nat_port, ntohl(e->remote_ip.ipv4), e->remote_port);
+  }
+  else
+  {
+    return airwall_hash_separate6(&e->nat_ip, e->nat_port, &e->remote_ip, e->remote_port);
+  }
+}
+
 uint32_t airwall_hash_fn_local(struct hash_list_node *node, void *userdata);
 
 uint32_t airwall_hash_fn_nat(struct hash_list_node *node, void *userdata);
 
+uint32_t airwall_hash_fn_local_udp(struct hash_list_node *node, void *userdata);
+
+uint32_t airwall_hash_fn_nat_udp(struct hash_list_node *node, void *userdata);
+
 struct worker_local {
   struct hash_table local_hash;
   struct hash_table nat_hash;
+  struct hash_table local_udp_hash;
+  struct hash_table nat_udp_hash;
   int locked;
   pthread_rwlock_t rwlock; // Lock order: first hash bucket lock, then mutex, then global hash lock
   struct timer_linkheap timers;
@@ -240,6 +296,10 @@ static inline void worker_local_init(
       &local->nat_hash, airwall->conf->conntablesize, airwall_hash_fn_nat, NULL);
     hash_table_init(
       &local->local_hash, airwall->conf->conntablesize, airwall_hash_fn_local, NULL);
+    hash_table_init(
+      &local->nat_udp_hash, airwall->conf->conntablesize, airwall_hash_fn_nat_udp, NULL);
+    hash_table_init(
+      &local->local_udp_hash, airwall->conf->conntablesize, airwall_hash_fn_local_udp, NULL);
     local->locked = 1;
     if (pthread_rwlock_init(&local->rwlock, NULL) != 0)
     {
@@ -252,6 +312,10 @@ static inline void worker_local_init(
       &local->nat_hash, airwall->conf->conntablesize, airwall_hash_fn_nat, NULL);
     hash_table_init(
       &local->local_hash, airwall->conf->conntablesize, airwall_hash_fn_local, NULL);
+    hash_table_init(
+      &local->nat_udp_hash, airwall->conf->conntablesize, airwall_hash_fn_nat_udp, NULL);
+    hash_table_init(
+      &local->local_udp_hash, airwall->conf->conntablesize, airwall_hash_fn_local_udp, NULL);
     local->locked = 0;
   }
   timer_linkheap_init(&local->timers);
@@ -287,11 +351,14 @@ static inline void worker_local_free(struct worker_local *local)
   struct hash_list_node *x, *n;
   size_t bucket;
   ip_hash_free(&local->ratelimit, &local->timers);
-  HASH_TABLE_FOR_EACH_SAFE(&local->local_hash, bucket, n, x)
+  HASH_TABLE_FOR_EACH_SAFE(&local->nat_hash, bucket, n, x)
   {
     struct airwall_hash_entry *e;
-    e = CONTAINER_OF(n, struct airwall_hash_entry, local_node);
-    hash_table_delete(&local->local_hash, &e->local_node, airwall_hash_local(e));
+    e = CONTAINER_OF(n, struct airwall_hash_entry, nat_node);
+    if (e->local_port != 0)
+    {
+      hash_table_delete(&local->local_hash, &e->local_node, airwall_hash_local(e));
+    }
     hash_table_delete(&local->nat_hash, &e->nat_node, airwall_hash_nat(e));
     timer_linkheap_remove(&local->timers, &e->timer);
     deallocate_udp_port(local->airwall->porter, e->nat_port, !e->was_synproxied);
@@ -299,6 +366,18 @@ static inline void worker_local_free(struct worker_local *local)
     e->detect = NULL;
     free(e);
   }
+  HASH_TABLE_FOR_EACH_SAFE(&local->nat_udp_hash, bucket, n, x)
+  {
+    struct airwall_udp_entry *e;
+    e = CONTAINER_OF(n, struct airwall_udp_entry, nat_node);
+    hash_table_delete(&local->local_udp_hash, &e->local_node, airwall_hash_local_udp(e));
+    hash_table_delete(&local->nat_udp_hash, &e->nat_node, airwall_hash_nat_udp(e));
+    timer_linkheap_remove(&local->timers, &e->timer);
+    deallocate_udp_port(local->airwall->udp_porter, e->nat_port, !e->was_incoming);
+    free(e);
+  }
+  hash_table_free(&local->local_udp_hash);
+  hash_table_free(&local->nat_udp_hash);
   hash_table_free(&local->local_hash);
   hash_table_free(&local->nat_hash);
   timer_linkheap_free(&local->timers);
@@ -470,10 +549,12 @@ static inline void airwall_hash_put_connected(
 static inline void airwall_init(
   struct airwall *airwall,
   struct conf *conf,
-  struct udp_porter *porter)
+  struct udp_porter *porter,
+  struct udp_porter *udp_porter)
 {
   airwall->conf = conf;
   airwall->porter = porter;
+  airwall->udp_porter = udp_porter;
   //sack_ip_port_hash_init(&airwall->autolearn, conf->learnhashsize);
   //threetuplectx_init(&airwall->threetuplectx);
 }

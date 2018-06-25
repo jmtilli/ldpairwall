@@ -634,6 +634,15 @@ uint32_t airwall_hash_fn_nat(struct hash_list_node *node, void *userdata)
   return airwall_hash_nat(CONTAINER_OF(node, struct airwall_hash_entry, nat_node));
 }
 
+uint32_t airwall_hash_fn_local_udp(struct hash_list_node *node, void *userdata)
+{
+  return airwall_hash_local_udp(CONTAINER_OF(node, struct airwall_udp_entry, local_node));
+}
+uint32_t airwall_hash_fn_nat_udp(struct hash_list_node *node, void *userdata)
+{
+  return airwall_hash_nat_udp(CONTAINER_OF(node, struct airwall_udp_entry, nat_node));
+}
+
 static void delete_closing_already_bucket_locked(
   struct airwall *airwall, struct worker_local *local,
   struct airwall_hash_entry *entry)
