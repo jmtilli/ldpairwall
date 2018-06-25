@@ -521,6 +521,28 @@ static void airwall_expiry_fn(
   free(e);
 }
 
+static void airwall_udp_expiry_fn(
+  struct timer_link *timer, struct timer_linkheap *heap, void *ud)
+{
+  struct worker_local *local = ud;
+  struct airwall_udp_entry *e;
+  e = CONTAINER_OF(timer, struct airwall_udp_entry, timer);
+  hash_table_delete(&local->local_udp_hash, &e->local_node, airwall_hash_local_udp(e));
+  hash_table_delete(&local->nat_udp_hash, &e->nat_node, airwall_hash_nat_udp(e));
+  deallocate_udp_port(local->airwall->udp_porter, e->nat_port, !e->was_incoming);
+  worker_local_wrlock(local);
+  if (e->was_incoming)
+  {
+    local->incoming_udp_connections--;
+  }
+  else
+  {
+    local->direct_udp_connections--;
+  }
+  worker_local_wrunlock(local);
+  free(e);
+}
+
 static inline int seq_cmp(uint32_t x, uint32_t y)
 {
   int32_t result = x-y;
@@ -622,6 +644,67 @@ struct airwall_hash_entry *airwall_hash_put(
   }
   worker_local_wrunlock(local);
   return e;
+}
+
+struct airwall_udp_entry *airwall_hash_put_udp(
+  struct worker_local *local,
+  int version,
+  const void *local_ip,
+  uint16_t local_port,
+  const void *nat_ip,
+  uint16_t nat_port,
+  const void *remote_ip,
+  uint16_t remote_port,
+  uint8_t was_incoming,
+  uint64_t time64)
+{
+  struct airwall_udp_entry *ue;
+  struct airwall_hash_ctx ctx;
+
+  if (airwall_hash_get_local_udp(local, version, local_ip, local_port, remote_ip, remote_port, &ctx))
+  {
+    return NULL;
+  }
+  if (airwall_hash_get_nat_udp(local, version, nat_ip, nat_port, remote_ip, remote_port, &ctx))
+  {
+    return NULL;
+  }
+  ue = malloc(sizeof(*ue));
+  if (ue == NULL)
+  {
+    return NULL;
+  }
+  memset(ue, 0, sizeof(*ue));
+  ue->version = version;
+  if (local_ip != NULL)
+  {
+    memcpy(&ue->local_ip, local_ip, (version == 4) ? 4 : 16);
+  }
+  memcpy(&ue->nat_ip, nat_ip, (version == 4) ? 4 : 16);
+  memcpy(&ue->remote_ip, remote_ip, (version == 4) ? 4 : 16);
+  ue->local_port = local_port;
+  ue->nat_port = nat_port;
+  ue->remote_port = remote_port;
+  ue->was_incoming = was_incoming;
+  ue->timer.time64 = time64 + 120ULL*1000ULL*1000ULL;
+  ue->timer.fn = airwall_udp_expiry_fn;
+  ue->timer.userdata = local;
+  worker_local_wrlock(local);
+  timer_linkheap_add(&local->timers, &ue->timer);
+  hash_table_add_nogrow_already_bucket_locked(
+    &local->local_udp_hash, &ue->local_node, airwall_hash_local_udp(ue));
+  hash_table_add_nogrow_already_bucket_locked(
+    &local->nat_udp_hash, &ue->nat_node, airwall_hash_nat_udp(ue));
+  if (was_incoming)
+  {
+    local->incoming_udp_connections++;
+  }
+  else
+  {
+    local->direct_udp_connections++;
+  }
+  worker_local_wrunlock(local);
+  return ue;
 }
 
 
@@ -1933,6 +2016,145 @@ static void send_ack_and_window_update(
 
 const unsigned char bcast_mac[6] = {0xff,0xff,0xff,0xff,0xff,0xff};
 
+static int uplink_udp(
+  struct airwall *airwall, struct worker_local *local, struct packet *pkt,
+  struct port *port, uint64_t time64, struct ll_alloc_st *st)
+{
+  void *ether = pkt->data;
+  void *ip = ether_payload(ether);
+  void *ippay = ip46_payload(ip);
+  struct airwall_udp_entry *ue;
+  int version = ip_version(ip);
+  struct airwall_hash_ctx ctx;
+  void *lan_ip, *remote_ip;
+  const uint8_t protocol = 17;
+  uint16_t lan_port, remote_port;
+  size_t ether_len = pkt->sz;
+  size_t ip_len = ether_len - ETHER_HDR_LEN;
+  uint16_t udp_len = ip46_payload_len(ip);
+  uint64_t next64;
+
+  if (version != 4)
+  {
+    abort();
+  }
+  remote_ip = ip_dst_ptr(ip);
+  lan_ip = ip_src_ptr(ip);
+  remote_port = udp_dst_port(ippay);
+  lan_port = udp_src_port(ippay);
+  ue = airwall_hash_get_local_udp(local, version, lan_ip, lan_port, remote_ip, remote_port, &ctx);
+  if (ue == NULL)
+  {
+    char ipv4[4];
+    uint16_t nat_port;
+    if (version == 4)
+    {
+      uint32_t loc = airwall->conf->ul_addr;
+      hdr_set32n(ipv4, loc);
+      nat_port = get_udp_port(airwall->udp_porter, hdr_get32n(lan_ip), lan_port);
+    }
+    else
+    {
+      abort();
+    }
+    ue = airwall_hash_put_udp(local, version, lan_ip, lan_port, ipv4, nat_port, remote_ip, remote_port, 0, time64);
+    if (ue == NULL)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "No memory for UDP enry");
+      return 1;
+    }
+  }
+
+  udp_set_src_port_cksum_update(ippay, udp_len, ue->nat_port);
+  if (version == 4)
+  {
+    ip_set_src_cksum_update(ip, ip_len, protocol, ippay, udp_len,
+                            hdr_get32n(&ue->nat_ip));
+  }
+  else
+  {
+    abort();
+  }
+
+  next64 = time64 + 120ULL*1000ULL*1000ULL;
+  if (abs(next64 - ue->timer.time64) >= 1000*1000)
+  {
+    worker_local_wrlock(local);
+    ue->timer.time64 = next64;
+    timer_linkheap_modify(&local->timers, &ue->timer);
+    worker_local_wrunlock(local);
+  }
+
+  if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK))
+  {
+    return 1;
+  }
+
+  return 0;
+}
+
+static int downlink_udp(
+  struct airwall *airwall, struct worker_local *local, struct packet *pkt,
+  struct port *port, uint64_t time64, struct ll_alloc_st *st)
+{
+  void *ether = pkt->data;
+  void *ip = ether_payload(ether);
+  void *ippay = ip46_payload(ip);
+  struct airwall_udp_entry *ue;
+  int version = ip_version(ip);
+  struct airwall_hash_ctx ctx;
+  void *lan_ip, *remote_ip;
+  const uint8_t protocol = 17;
+  uint16_t lan_port, remote_port;
+  size_t ether_len = pkt->sz;
+  size_t ip_len = ether_len - ETHER_HDR_LEN;
+  uint16_t udp_len = ip46_payload_len(ip);
+  uint64_t next64;
+
+  if (version != 4)
+  {
+    abort();
+  }
+  lan_ip = ip_dst_ptr(ip);
+  remote_ip = ip_src_ptr(ip);
+  lan_port = udp_dst_port(ippay);
+  remote_port = udp_src_port(ippay);
+  ue = airwall_hash_get_nat_udp(local, version, lan_ip, lan_port, remote_ip, remote_port, &ctx);
+  if (ue == NULL)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "UDP entry not found");
+    return 1;
+  }
+
+
+  udp_set_dst_port_cksum_update(ippay, udp_len, ue->local_port);
+  if (version == 4)
+  {
+    ip_set_dst_cksum_update(ip, ip_len, protocol, ippay, udp_len,
+                            hdr_get32n(&ue->local_ip));
+  }
+  else
+  {
+    abort();
+  }
+
+  next64 = time64 + 120ULL*1000ULL*1000ULL;
+  if (abs(next64 - ue->timer.time64) >= 1000*1000)
+  {
+    worker_local_wrlock(local);
+    ue->timer.time64 = next64;
+    timer_linkheap_modify(&local->timers, &ue->timer);
+    worker_local_wrunlock(local);
+  }
+
+  if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK))
+  {
+    return 1;
+  }
+
+  return 0;
+}
+
 int downlink(
   struct airwall *airwall, struct worker_local *local, struct packet *pkt,
   struct port *port, uint64_t time64, struct ll_alloc_st *st)
@@ -2082,17 +2304,6 @@ int downlink(
       log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "pkt does not have full IP hdr 2");
       return 1;
     }
-    if (ip_proto(ip) != 6)
-    {
-      //port->portfunc(pkt, port->userdata);
-#ifdef ENABLE_ARP
-      if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK))
-      {
-        return 1;
-      }
-#endif
-      return 0;
-    }
     if (ip_frag_off(ip) != 0 || ip_more_frags(ip))
     {
       log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "fragment");
@@ -2114,6 +2325,15 @@ int downlink(
       return 1;
     }
 #endif
+    if (ip_proto(ip) == 17)
+    {
+      return downlink_udp(airwall, local, pkt, port, time64, st);
+    }
+    else if (ip_proto(ip) != 6)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "non-TCP/UDP");
+      return 1;
+    }
   }
   else if (version == 6)
   {
@@ -3153,17 +3373,6 @@ int uplink(
       log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "pkt does not have full IP hdr 2");
       return 1;
     }
-    if (ip_proto(ip) != 6)
-    {
-      //port->portfunc(pkt, port->userdata);
-#ifdef ENABLE_ARP
-      if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK))
-      {
-        return 1;
-      }
-#endif
-      return 0;
-    }
     if (ip_frag_off(ip) != 0 || ip_more_frags(ip))
     {
       log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "fragment");
@@ -3187,6 +3396,15 @@ int uplink(
       return 1;
     }
 #endif
+    if (ip_proto(ip) == 17)
+    {
+      return uplink_udp(airwall, local, pkt, port, time64, st);
+    }
+    else if (ip_proto(ip) != 6)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "non-TCP/UDP");
+      return 1;
+    }
   }
   else
   {

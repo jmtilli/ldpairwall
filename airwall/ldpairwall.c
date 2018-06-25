@@ -64,12 +64,15 @@ static void periodic_fn(
   worker_local_rdlock(ud->args->local);
   log_log(LOG_LEVEL_INFO, "LDPAIRWALL",
          "worker/%d %g MPPS %g Gbps ul %g MPPS %g Gbps dl"
-         " %u conns synproxied %u conns not",
+         " %u conns synproxied %u conns not"
+         " %u conns UDP-in %u conns UDP-out",
          ud->args->idx,
          ulpdiff/diff/1e6, 8*ulbdiff/diff/1e9,
          dlpdiff/diff/1e6, 8*dlbdiff/diff/1e9,
          ud->args->local->synproxied_connections,
-         ud->args->local->direct_connections);
+         ud->args->local->direct_connections,
+         ud->args->local->incoming_udp_connections,
+         ud->args->local->direct_udp_connections);
   worker_local_rdunlock(ud->args->local);
   ud->last_time64 = time64;
   ud->next_time64 += 2*1000*1000;
@@ -112,6 +115,7 @@ int main(int argc, char **argv)
   log_open("LDPAIRWALL", LOG_LEVEL_DEBUG, LOG_LEVEL_INFO);
 
   init_udp_porter(&porter);
+  init_udp_porter(&udp_porter);
 
   hash_seed_init();
 

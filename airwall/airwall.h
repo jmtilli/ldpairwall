@@ -244,6 +244,8 @@ struct worker_local {
   uint32_t synproxied_connections;
   uint32_t direct_connections;
   uint32_t half_open_connections;
+  uint32_t incoming_udp_connections;
+  uint32_t direct_udp_connections;
   struct linked_list_head half_open_list;
   struct arp_cache dl_arp_cache;
   struct arp_cache ul_arp_cache;
@@ -454,6 +456,39 @@ static inline struct airwall_hash_entry *airwall_hash_get_local(
   return NULL;
 }
 
+static inline struct airwall_udp_entry *airwall_hash_get_local_udp(
+  struct worker_local *local, int version,
+  const void *local_ip, uint16_t local_port, const void *remote_ip, uint16_t remote_port, struct airwall_hash_ctx *ctx)
+{
+  struct hash_list_node *node;
+  int len;
+  if (version == 4)
+  {
+    ctx->hashval = airwall_hash_separate4(hdr_get32n(local_ip), local_port, hdr_get32n(remote_ip), remote_port);
+    len = 4;
+  }
+  else
+  {
+    ctx->hashval = airwall_hash_separate6(local_ip, local_port, remote_ip, remote_port);
+    len = 16;
+  }
+  HASH_TABLE_FOR_EACH_POSSIBLE(&local->local_udp_hash, node, ctx->hashval)
+  {
+    struct airwall_udp_entry *entry;
+    entry = CONTAINER_OF(node, struct airwall_udp_entry, local_node);
+    if (   entry->version == version
+        && ipmemequal(&entry->local_ip, local_ip, len)
+        && entry->local_port == local_port
+        && ipmemequal(&entry->remote_ip, remote_ip, len)
+        && entry->remote_port == remote_port)
+    {
+      //ctx->entry = entry;
+      return entry;
+    }
+  }
+  return NULL;
+}
+
 static inline struct airwall_hash_entry *airwall_hash_get_nat(
   struct worker_local *local, int version,
   const void *nat_ip, uint16_t nat_port, const void *remote_ip, uint16_t remote_port, struct airwall_hash_ctx *ctx)
@@ -474,6 +509,39 @@ static inline struct airwall_hash_entry *airwall_hash_get_nat(
   {
     struct airwall_hash_entry *entry;
     entry = CONTAINER_OF(node, struct airwall_hash_entry, nat_node);
+    if (   entry->version == version
+        && ipmemequal(&entry->nat_ip, nat_ip, len)
+        && entry->nat_port == nat_port
+        && ipmemequal(&entry->remote_ip, remote_ip, len)
+        && entry->remote_port == remote_port)
+    {
+      //ctx->entry = entry;
+      return entry;
+    }
+  }
+  return NULL;
+}
+
+static inline struct airwall_udp_entry *airwall_hash_get_nat_udp(
+  struct worker_local *local, int version,
+  const void *nat_ip, uint16_t nat_port, const void *remote_ip, uint16_t remote_port, struct airwall_hash_ctx *ctx)
+{
+  struct hash_list_node *node;
+  int len;
+  if (version == 4)
+  {
+    ctx->hashval = airwall_hash_separate4(hdr_get32n(nat_ip), nat_port, hdr_get32n(remote_ip), remote_port);
+    len = 4;
+  }
+  else
+  {
+    ctx->hashval = airwall_hash_separate6(nat_ip, nat_port, remote_ip, remote_port);
+    len = 16;
+  }
+  HASH_TABLE_FOR_EACH_POSSIBLE(&local->nat_udp_hash, node, ctx->hashval)
+  {
+    struct airwall_udp_entry *entry;
+    entry = CONTAINER_OF(node, struct airwall_udp_entry, nat_node);
     if (   entry->version == version
         && ipmemequal(&entry->nat_ip, nat_ip, len)
         && entry->nat_port == nat_port
@@ -515,6 +583,18 @@ struct airwall_hash_entry *airwall_hash_put(
   const void *remote_ip,
   uint16_t remote_port,
   uint8_t was_synproxied,
+  uint64_t time64);
+
+struct airwall_udp_entry *airwall_hash_put_udp(
+  struct worker_local *local,
+  int version,
+  const void *local_ip,
+  uint16_t local_port,
+  const void *nat_ip,
+  uint16_t nat_port,
+  const void *remote_ip,
+  uint16_t remote_port,
+  uint8_t was_incoming,
   uint64_t time64);
 
 static inline void airwall_hash_put_connected(
