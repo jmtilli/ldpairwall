@@ -12,11 +12,13 @@ struct hostname_ctx {
   int len;
   int truncated;
   char hostname[256];
+  int is_http_connect_num_bytes;
 };
 
 void hostname_ctx_init(struct hostname_ctx *nam);
 
 struct http_ctx {
+  int request_method_is_connect;
   int request_method_seen;
   int request_method_len;
   int uri_seen;
@@ -32,6 +34,7 @@ struct http_ctx {
   //int hostname_truncated;
   //char hostname[256];
   int crlfcrlf_lfcnt;
+  int total_num;
 };
 
 void http_ctx_init(struct http_ctx *ctx);

@@ -12,10 +12,13 @@ void hostname_ctx_init(struct hostname_ctx *nam)
   nam->len = 0;
   nam->truncated = 0;
   nam->hostname[0] = '\0';
+  nam->is_http_connect_num_bytes = 0;
 }
 
 void http_ctx_init(struct http_ctx *ctx)
 {
+  ctx->total_num = 0;
+  ctx->request_method_is_connect = 1;
   ctx->request_method_seen = 0;
   ctx->request_method_len = 0;
   ctx->uri_seen = 0;
@@ -93,10 +96,20 @@ int http_ctx_feed(struct http_ctx *ctx, const void *data, size_t sz,
       return ctx->verdict;
     }
     uch = udata[0];
-    if (istokenfast(uch))
+    if (ctx->request_method_len < (int)strlen("CONNECT") &&
+        "CONNECT"[ctx->request_method_len] == uch)
     {
       ctx->request_method_len++;
       sz--;
+      ctx->total_num++;
+      udata++;
+    }
+    else if (istokenfast(uch))
+    {
+      ctx->request_method_is_connect = 0;
+      ctx->request_method_len++;
+      sz--;
+      ctx->total_num++;
       udata++;
     }
     else if (uch != ' ')
@@ -113,6 +126,7 @@ int http_ctx_feed(struct http_ctx *ctx, const void *data, size_t sz,
         return ctx->verdict;
       }
       sz--;
+      ctx->total_num++;
       udata++;
     }
   }
@@ -126,8 +140,16 @@ int http_ctx_feed(struct http_ctx *ctx, const void *data, size_t sz,
     uch = udata[0];
     if (isuricharfast(uch))
     {
+      if (ctx->request_method_is_connect)
+      {
+        if (ctx->uri_len < (int)(sizeof(nam->hostname) - 1))
+        {
+          nam->hostname[ctx->uri_len] = uch;
+        }
+      }
       ctx->uri_len++;
       sz--;
+      ctx->total_num++;
       udata++;
     }
     else if (uch != ' ')
@@ -138,12 +160,25 @@ int http_ctx_feed(struct http_ctx *ctx, const void *data, size_t sz,
     else
     {
       ctx->uri_seen = 1;
+      if (ctx->request_method_is_connect)
+      {
+        if (ctx->uri_len < (int)sizeof(nam->hostname))
+        {
+          nam->hostname[ctx->uri_len] = '\0';
+        }
+        else
+        {
+          nam->hostname[sizeof(nam->hostname)-1] = '\0';
+          nam->truncated = 1;
+        }
+      }
       if (ctx->uri_len == 0)
       {
         ctx->verdict = -ENOTSUP;
         return ctx->verdict;
       }
       sz--;
+      ctx->total_num++;
       udata++;
     }
   }
@@ -159,6 +194,7 @@ int http_ctx_feed(struct http_ctx *ctx, const void *data, size_t sz,
     {
       ctx->chars_httpslash_seen++;
       sz--;
+      ctx->total_num++;
       udata++;
     }
     else
@@ -179,6 +215,7 @@ int http_ctx_feed(struct http_ctx *ctx, const void *data, size_t sz,
     {
       ctx->period_seen = 1;
       sz--;
+      ctx->total_num++;
       udata++;
       if (ctx->major_digits_seen == 0)
       {
@@ -190,6 +227,7 @@ int http_ctx_feed(struct http_ctx *ctx, const void *data, size_t sz,
     {
       ctx->major_digits_seen++;
       sz--;
+      ctx->total_num++;
       udata++;
     }
     else
@@ -209,6 +247,7 @@ int http_ctx_feed(struct http_ctx *ctx, const void *data, size_t sz,
     if (uch == '\r')
     {
       sz--;
+      ctx->total_num++;
       udata++;
     }
     else if (uch == '\n')
@@ -220,12 +259,14 @@ int http_ctx_feed(struct http_ctx *ctx, const void *data, size_t sz,
       }
       ctx->lf_seen = 1;
       sz--;
+      ctx->total_num++;
       udata++;
     }
     else if (isdigit(uch))
     {
       ctx->minor_digits_seen++;
       sz--;
+      ctx->total_num++;
       udata++;
     }
     else
@@ -250,19 +291,29 @@ int http_ctx_feed(struct http_ctx *ctx, const void *data, size_t sz,
         {
           ctx->host_num_seen = 0;
           ctx->crlfcrlf_lfcnt++;
+          if (ctx->crlfcrlf_lfcnt == 2)
+          {
+            sz--;
+            ctx->total_num++;
+            udata++;
+            goto end;
+          }
         }
         sz--;
+        ctx->total_num++;
         udata++;
       }
-      else if (uch == "HOST:"[ctx->host_num_seen] ||
-               uch == "host:"[ctx->host_num_seen])
+      else if ((!ctx->request_method_is_connect) &&
+               (uch == "HOST:"[ctx->host_num_seen] ||
+                uch == "host:"[ctx->host_num_seen]))
       {
         ctx->crlfcrlf_lfcnt = 0;
         ctx->host_num_seen++;
         sz--;
+        ctx->total_num++;
         udata++;
       }
-      else if (!istokenfast(uch))
+      else if (!istokenfast(uch) && uch != '\r' && uch != '\n')
       {
         ctx->verdict = -ENOTSUP;
         return ctx->verdict;
@@ -273,8 +324,20 @@ int http_ctx_feed(struct http_ctx *ctx, const void *data, size_t sz,
         {
           ctx->crlfcrlf_lfcnt = 0;
         }
+        else if (uch == '\n')
+        {
+          ctx->crlfcrlf_lfcnt++;
+          if (ctx->crlfcrlf_lfcnt == 2)
+          {
+            sz--;
+            ctx->total_num++;
+            udata++;
+            goto end;
+          }
+        }
         ctx->host_num_seen = -1;
         sz--;
+        ctx->total_num++;
         udata++;
       }
     }
@@ -290,11 +353,13 @@ int http_ctx_feed(struct http_ctx *ctx, const void *data, size_t sz,
       if (uch == ' ' || uch == '\t')
       {
         sz--;
+        ctx->total_num++;
         udata++;
       }
       else if (ctx->hostname_seen >= (int)(sizeof(nam->hostname) - 1) && uch != '\r' && uch != '\n')
       {
         sz--;
+        ctx->total_num++;
         udata++;
         ctx->hostname_seen++;
         nam->truncated = 1;
@@ -305,12 +370,14 @@ int http_ctx_feed(struct http_ctx *ctx, const void *data, size_t sz,
         nam->hostname[ctx->hostname_seen] = uch;
         ctx->hostname_seen++;
         sz--;
+        ctx->total_num++;
         udata++;
         ctx->crlfcrlf_lfcnt = 0;
       }
       else if (uch == '\r')
       {
         sz--;
+        ctx->total_num++;
         udata++;
       }
       else if (uch == '\n')
@@ -330,6 +397,13 @@ int http_ctx_feed(struct http_ctx *ctx, const void *data, size_t sz,
         return ctx->verdict;
       }
     }
+  }
+end:
+  if (ctx->request_method_is_connect)
+  {
+    ctx->verdict = 0;
+    nam->is_http_connect_num_bytes = ctx->total_num;
+    return ctx->verdict;
   }
   ctx->verdict = -ENOTSUP;
   return ctx->verdict;

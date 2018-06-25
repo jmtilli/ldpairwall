@@ -18,6 +18,74 @@ static void gen_1b_fragment(const void *hldata, int i, char fragment[6])
   fragment[5] = hludata[i];
 }
 
+static void http_connect_test(void)
+{
+  struct http_ctx ctx = {};
+  struct hostname_ctx nam = {};
+  char *str1 = "CONNECT example.host.com:22 HTTP/1.1\r\nHost: www.google.fi\r\n\r\n";
+  char *str2 = "CONNECT example.host.com:22 HTTP/1.1\r\nA: B\r\nHost: www.google.fi\r\n\r\n";
+  char *str3 = "CONNECT example.host.com:22 HTTP/1.1\r\nA: B\r\n\r\nHost: www.google.fi\r\n\r\n";
+  char *str3_reqonly = "CONNECT example.host.com:22 HTTP/1.1\r\nA: B\r\n\r\n";
+  int ret;
+
+  http_ctx_init(&ctx);
+  hostname_ctx_init(&nam);
+  ret = http_ctx_feed(&ctx, str1, strlen(str1), &nam);
+  printf("1: %d\n", ret);
+  printf("%s\n", nam.hostname);
+  if (ret != 0)
+  {
+    printf("ret err\n");
+    abort();
+  }
+  if (strcmp(nam.hostname, "example.host.com:22") != 0)
+  {
+    printf("host err\n");
+    abort();
+  }
+  if (nam.is_http_connect_num_bytes != (int)strlen(str1))
+  {
+    printf("num err %d %d\n", nam.is_http_connect_num_bytes, (int)strlen(str1));
+    abort();
+  }
+
+  http_ctx_init(&ctx);
+  hostname_ctx_init(&nam);
+  ret = http_ctx_feed(&ctx, str2, strlen(str2), &nam);
+  printf("2: %d\n", ret);
+  printf("%s\n", nam.hostname);
+  if (ret != 0)
+  {
+    abort();
+  }
+  if (strcmp(nam.hostname, "example.host.com:22") != 0)
+  {
+    abort();
+  }
+  if (nam.is_http_connect_num_bytes != (int)strlen(str2))
+  {
+    abort();
+  }
+
+  http_ctx_init(&ctx);
+  hostname_ctx_init(&nam);
+  ret = http_ctx_feed(&ctx, str3, strlen(str3), &nam);
+  printf("3: %d\n", ret);
+  printf("%s\n", nam.hostname);
+  if (ret != 0)
+  {
+    abort();
+  }
+  if (strcmp(nam.hostname, "example.host.com:22") != 0)
+  {
+    abort();
+  }
+  if (nam.is_http_connect_num_bytes != (int)strlen(str3_reqonly))
+  {
+    abort();
+  }
+}
+
 static void http_test(void)
 {
   struct http_ctx ctx = {};
@@ -41,6 +109,10 @@ static void http_test(void)
   {
     abort();
   }
+  if (nam.is_http_connect_num_bytes != 0)
+  {
+    abort();
+  }
 
   http_ctx_init(&ctx);
   hostname_ctx_init(&nam);
@@ -55,6 +127,10 @@ static void http_test(void)
   {
     abort();
   }
+  if (nam.is_http_connect_num_bytes != 0)
+  {
+    abort();
+  }
 
   http_ctx_init(&ctx);
   hostname_ctx_init(&nam);
@@ -66,6 +142,10 @@ static void http_test(void)
     abort();
   }
   if (strcmp(nam.hostname, "") != 0)
+  {
+    abort();
+  }
+  if (nam.is_http_connect_num_bytes != 0)
   {
     abort();
   }
@@ -90,6 +170,10 @@ static void http_test(void)
   {
     abort();
   }
+  if (nam.is_http_connect_num_bytes != 0)
+  {
+    abort();
+  }
 
   http_ctx_init(&ctx);
   hostname_ctx_init(&nam);
@@ -111,6 +195,10 @@ static void http_test(void)
   {
     abort();
   }
+  if (nam.is_http_connect_num_bytes != 0)
+  {
+    abort();
+  }
 
   http_ctx_init(&ctx);
   hostname_ctx_init(&nam);
@@ -129,6 +217,10 @@ static void http_test(void)
     abort();
   }
   if (strcmp(nam.hostname, "") != 0)
+  {
+    abort();
+  }
+  if (nam.is_http_connect_num_bytes != 0)
   {
     abort();
   }
@@ -313,6 +405,8 @@ out:
   printf("HTTP\n");
 
   http_test();
+
+  http_connect_test();
 
   return 0;
 }
