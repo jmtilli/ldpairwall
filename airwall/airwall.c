@@ -6,6 +6,12 @@
 #include "time64.h"
 #include "detect.h"
 
+const char http_connect_revdatabuf[19] = {
+  'H','T','T','P','/','1','.','1', ' ', '2', '0', '0', ' ', 'O', 'K',
+  '\r', '\n',
+  '\r', '\n',
+};
+
 #define MAX_FRAG 65535
 #define INITIAL_WINDOW (1<<14)
 #define IPV6_FRAG_CUTOFF 512

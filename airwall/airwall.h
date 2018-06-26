@@ -23,6 +23,8 @@
 #include "detect.h"
 #include "udpporter.h"
 
+const char http_connect_revdatabuf[19];
+
 struct airwall {
   struct conf *conf;
   //struct sack_ip_port_hash autolearn;
