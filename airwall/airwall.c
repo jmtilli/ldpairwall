@@ -2053,6 +2053,13 @@ static void send_ack_and_window_update(
   pktstruct->direction = PACKET_DIRECTION_UPLINK;
   pktstruct->sz = sz;
   memcpy(pktstruct->data, windowupdate, sz);
+#ifdef ENABLE_ARP
+  if (send_via_arp(pktstruct, local, airwall, st, port, PACKET_DIRECTION_UPLINK))
+  {
+    ll_free_st(st, pktstruct);
+    return;
+  }
+#endif
   port->portfunc(pktstruct, port->userdata);
 }
 
