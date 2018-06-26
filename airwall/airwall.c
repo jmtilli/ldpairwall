@@ -986,13 +986,48 @@ static void process_data(
   }
   else if (res == 0)
   {
+    uint16_t proxied_port = 0;
     log_log(LOG_LEVEL_NOTICE, "AIRWALL", "detected protocol and host %s",
             entry->detect->hostctx.hostname);
     if (entry->local_port != 0)
     {
       abort();
     }
-    entry->local_port = entry->nat_port;
+    if (entry->detect->hostctx.is_http_connect_num_bytes)
+    {
+      char *strr = strrchr(entry->detect->hostctx.hostname, ':');
+      if (strr != NULL)
+      {
+        unsigned long int portul;
+        char *endptr;
+        *strr = '\0';
+        portul = strtoul(strr+1, &endptr, 10);
+        if (*endptr != '\0' || portul >= 65536 || portul == 0)
+        {
+          log_log(LOG_LEVEL_ERR, "AIRWALL", "invalid port %s", strr+1);
+          send_rst(orig, local, airwall, port, st, time64, entry);
+          entry->timer.time64 = time64 + 45ULL*1000ULL*1000ULL;
+          entry->flag_state = FLAG_STATE_RESETED;
+          timer_linkheap_modify(&local->timers, &entry->timer);
+          return;
+        }
+        proxied_port = portul;
+      }
+      else
+      {
+        proxied_port = 80;
+      }
+      if (airwall->conf->enable_ack)
+      {
+        ack_data(orig, local, airwall, port, st, time64, entry,
+                 entry->detect->hostctx.is_http_connect_num_bytes);
+      }
+    }
+    else
+    {
+      proxied_port = entry->nat_port;
+    }
+    entry->local_port = proxied_port;
 #ifdef ENABLE_ARP
     if (entry->version == 6)
     {
@@ -1018,6 +1053,13 @@ static void process_data(
 #endif
     hash_table_add_nogrow_already_bucket_locked(
       &local->local_hash, &entry->local_node, airwall_hash_local(entry));
+    if (entry->detect->hostctx.is_http_connect_num_bytes)
+    {
+      entry->revdata = 1;
+      entry->remote_isn += entry->detect->hostctx.is_http_connect_num_bytes;
+      free(entry->detect);
+      entry->detect = NULL;
+    }
     send_syn(
       orig, local, port, st, // FIXME verify send_syn doesn't handle orig wrong
       entry->state_data.downlink_half_open.mss,
@@ -1776,7 +1818,7 @@ static void send_window_update(
 {
   char windowupdate[14+40+20+12] = {0};
   void *ip, *origip;
-  void *tcp, *origtcp;
+  char *tcp, *origtcp;
   struct packet *pktstruct;
   unsigned char *tcpopts;
   int version;
@@ -1919,8 +1961,6 @@ static void send_ack_and_window_update(
   size_t sz;
   uint32_t acked_seq;
 
-  acked_seq = entry->detect->acked + 1 + entry->remote_isn; // FIXME correct?
-
   origip = ether_payload(orig);
   version = ip_version(origip);
   sz = (version == 4) ? (sizeof(windowupdate) - 20) : sizeof(windowupdate);
@@ -1929,7 +1969,7 @@ static void send_ack_and_window_update(
 
   send_ack_only(orig, entry, port, st); // XXX send_ack_only reparses opts
 
-  if (airwall->conf->enable_ack)
+  if (airwall->conf->enable_ack && entry->detect)
   {
     send_data_only(orig, entry, port, st, local, airwall); // XXX send_data_only reparses opts
   }
@@ -1962,8 +2002,10 @@ static void send_ack_and_window_update(
   tcp_set_ack_number(tcp, tcp_seq_number(origtcp)+1); // FIXME the same
 #endif
   tcp_set_seq_number(tcp, tcp_seq_number(origtcp)+1+entry->seqoffset);
-  if (airwall->conf->enable_ack)
+  if (airwall->conf->enable_ack && entry->detect)
   {
+    acked_seq = entry->detect->acked + 1 + entry->remote_isn; // FIXME correct?
+
     if (seq_cmp(tcp_ack_number(origtcp), acked_seq) < 0)
     {
       tcp_set_ack_number(tcp, acked_seq);

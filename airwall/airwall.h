@@ -86,6 +86,7 @@ struct airwall_hash_entry {
   uint8_t wan_wscale;
   uint8_t was_synproxied;
   uint8_t lan_sack_was_supported;
+  uint8_t revdata;
   uint32_t seqoffset;
   uint32_t tsoffset;
   uint32_t lan_sent; // what LAN has sent plus 1
