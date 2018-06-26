@@ -1957,7 +1957,8 @@ static void send_ack_and_window_update(
   void *orig, struct airwall_hash_entry *entry, struct port *port,
   struct ll_alloc_st *st, struct airwall *airwall, struct worker_local *local)
 {
-  char windowupdate[14+40+20+12] = {0};
+  char windowupdate[14+40+20+12+sizeof(http_connect_revdatabuf)] = {0};
+  const size_t rsz = sizeof(http_connect_revdatabuf);
   void *ip, *origip;
   void *tcp, *origtcp;
   struct packet *pktstruct;
@@ -1970,6 +1971,10 @@ static void send_ack_and_window_update(
   origip = ether_payload(orig);
   version = ip_version(origip);
   sz = (version == 4) ? (sizeof(windowupdate) - 20) : sizeof(windowupdate);
+  if (!entry->revdata)
+  {
+    sz -= rsz;
+  }
   origtcp = ip46_payload(origip);
   tcp_parse_options(origtcp, &tcpinfo);
 
@@ -1980,8 +1985,8 @@ static void send_ack_and_window_update(
     send_data_only(orig, entry, port, st, local, airwall); // XXX send_data_only reparses opts
   }
 
-  memcpy(ether_src(windowupdate), ether_src(orig), 6);
-  memcpy(ether_dst(windowupdate), ether_dst(orig), 6);
+  memcpy(ether_src(windowupdate), airwall->ul_mac, 6);
+  memset(ether_dst(windowupdate), 0, 6);
   ether_set_type(windowupdate, (version == 4) ? ETHER_TYPE_IP : ETHER_TYPE_IPV6);
   ip = ether_payload(windowupdate);
   ip_set_version(ip, version);
@@ -1990,19 +1995,20 @@ static void send_ack_and_window_update(
     ipv6_set_flow_label(ip, entry->ulflowlabel);
   }
   ip46_set_min_hdr_len(ip);
-  ip46_set_payload_len(ip, sizeof(windowupdate) - 14 - 40);
+  ip46_set_payload_len(ip, sizeof(windowupdate) - 14 - 40 -
+                           (entry->revdata ? 0 : rsz));
   ip46_set_dont_frag(ip, 1);
   ip46_set_id(ip, 0); // XXX
   ip46_set_ttl(ip, 64);
   ip46_set_proto(ip, 6);
-  ip46_set_src(ip, ip46_src(origip));
+  ip46_set_src(ip, &entry->nat_ip);
   ip46_set_dst(ip, ip46_dst(origip));
   ip46_set_hdr_cksum_calc(ip);
   tcp = ip46_payload(ip);
-  tcp_set_src_port(tcp, tcp_src_port(origtcp));
+  tcp_set_src_port(tcp, entry->nat_port);
   tcp_set_dst_port(tcp, tcp_dst_port(origtcp));
   tcp_set_ack_on(tcp);
-  tcp_set_data_offset(tcp, sizeof(windowupdate) - 14 - 40);
+  tcp_set_data_offset(tcp, sizeof(windowupdate) - 14 - 40 - rsz);
 #if 0
   tcp_set_seq_number(tcp, tcp_ack_number(origtcp)); // FIXME looks suspicious
   tcp_set_ack_number(tcp, tcp_seq_number(origtcp)+1); // FIXME the same
@@ -2051,6 +2057,13 @@ static void send_ack_and_window_update(
   else
   {
     memset(&tcpopts[0], 0, 12);
+  }
+  if (entry->revdata)
+  {
+    // FIXME we need capability to retransmit!!! Otherwise will work badly!!!
+    char *tcppay = ((char*)tcp) + tcp_data_offset(tcp);
+    memcpy(tcppay, http_connect_revdatabuf, rsz);
+    entry->seqoffset += rsz;
   }
   tcp46_set_cksum_calc(ip);
 
