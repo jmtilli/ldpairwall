@@ -22,11 +22,33 @@ static void http_connect_test(void)
 {
   struct http_ctx ctx = {};
   struct hostname_ctx nam = {};
+  char *str0 = "CONNECT example.host.com:22 HTTP/1.1\r\n\r\n";
   char *str1 = "CONNECT example.host.com:22 HTTP/1.1\r\nHost: www.google.fi\r\n\r\n";
   char *str2 = "CONNECT example.host.com:22 HTTP/1.1\r\nA: B\r\nHost: www.google.fi\r\n\r\n";
   char *str3 = "CONNECT example.host.com:22 HTTP/1.1\r\nA: B\r\n\r\nHost: www.google.fi\r\n\r\n";
   char *str3_reqonly = "CONNECT example.host.com:22 HTTP/1.1\r\nA: B\r\n\r\n";
   int ret;
+
+  http_ctx_init(&ctx);
+  hostname_ctx_init(&nam);
+  ret = http_ctx_feed(&ctx, str0, strlen(str0), &nam);
+  printf("0: %d\n", ret);
+  printf("%s\n", nam.hostname);
+  if (ret != 0)
+  {
+    printf("ret err\n");
+    abort();
+  }
+  if (strcmp(nam.hostname, "example.host.com:22") != 0)
+  {
+    printf("host err\n");
+    abort();
+  }
+  if (nam.is_http_connect_num_bytes != (int)strlen(str0))
+  {
+    printf("num err %d %d\n", nam.is_http_connect_num_bytes, (int)strlen(str0));
+    abort();
+  }
 
   http_ctx_init(&ctx);
   hostname_ctx_init(&nam);
