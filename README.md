@@ -205,3 +205,24 @@ protocol and host detection, type this into netcat client:
 GET / HTTP/1.1
 Host: www1.example.com
 ```
+
+To test the integrated HTTP CONNECT proxy, try this:
+```
+ip netns exec ns2 nc -v -v -v -l -p 1234
+ip netns exec ns1 nc -v -v -v 10.150.2.100 4321
+```
+
+...and type this into the client:
+```
+CONNECT www1.example.com:1234 HTTP/1.1
+
+```
+
+After typing two newlines after CONNECT, you should see:
+```
+HTTP/1.1 200 OK
+
+```
+
+...and now you have a HTTP connection to the machine's port 1234 even though
+you originally connected to a different port.
