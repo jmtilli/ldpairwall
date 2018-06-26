@@ -12,4 +12,3 @@ multithreading
 fragmented traffic
 ICMP ping
 ICMP unreachable / time exceeded packets
-ARP timeout
