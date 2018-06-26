@@ -527,6 +527,32 @@ static void airwall_expiry_fn(
   free(e);
 }
 
+static void retx_timer_del(
+  struct airwall_hash_entry *entry, struct worker_local *local)
+{
+  if (!entry->retxtimer_set)
+  {
+    return;
+  }
+  timer_linkheap_remove(&local->timers, &entry->retx_timer);
+  entry->retxtimer_set = 0;
+}
+
+static void retx_http_connect_response(
+  struct airwall_hash_entry *entry, struct port *port,
+  struct ll_alloc_st *st, struct airwall *airwall, struct worker_local *local);
+
+static void airwall_retx_fn(
+  struct timer_link *timer, struct timer_linkheap *heap, void *ud)
+{
+  struct worker_local *local = ud;
+  struct airwall_hash_entry *e;
+  e = CONTAINER_OF(timer, struct airwall_hash_entry, retx_timer);
+  retx_http_connect_response(e, thread_port, thread_st, local->airwall, local);
+  e->retx_timer.time64 += 1000ULL*1000ULL;
+  timer_linkheap_add(&local->timers, &e->retx_timer);
+}
+
 static void airwall_udp_expiry_fn(
   struct timer_link *timer, struct timer_linkheap *heap, void *ud)
 {
@@ -751,6 +777,11 @@ static void delete_closing_already_bucket_locked(
   log_log(LOG_LEVEL_NOTICE, "SYNPROXY",
           "deleting closing connection to make room for new");
   timer_linkheap_remove(&local->timers, &entry->timer);
+  if (entry->retxtimer_set)
+  {
+    timer_linkheap_remove(&local->timers, &entry->retx_timer);
+    entry->retxtimer_set = 0;
+  }
   deallocate_udp_port(local->airwall->porter, entry->nat_port, !entry->was_synproxied);
   if (entry->local_port != 0)
   {
@@ -1375,6 +1406,11 @@ static void send_synack(
       //hashval = airwall_hash(e);
       linked_list_delete(&e->state_data.downlink_half_open.listnode);
       timer_linkheap_remove(&local->timers, &e->timer);
+      if (e->retxtimer_set)
+      {
+        timer_linkheap_remove(&local->timers, &e->retx_timer);
+        e->retxtimer_set = 0;
+      }
       free(e->detect);
       e->detect = NULL;
       deallocate_udp_port(airwall->porter, e->nat_port, !e->was_synproxied);
@@ -1953,9 +1989,100 @@ static void send_window_update(
   port->portfunc(pktstruct, port->userdata);
 }
 
+__thread struct port *thread_port = NULL;
+__thread struct ll_alloc_st *thread_st = NULL;
+
+static void retx_http_connect_response(
+  struct airwall_hash_entry *entry, struct port *port,
+  struct ll_alloc_st *st, struct airwall *airwall, struct worker_local *local)
+{
+  char windowupdate[14+40+20+12+sizeof(http_connect_revdatabuf)] = {0};
+  const size_t rsz = sizeof(http_connect_revdatabuf);
+  void *ip;//, *origip;
+  void *tcp;//, *origtcp;
+  struct packet *pktstruct;
+  //struct tcp_information tcpinfo;
+  unsigned char *tcpopts;
+  int version;
+  size_t sz;
+
+  //origip = ether_payload(orig);
+  version = entry->version;
+  sz = (version == 4) ? (sizeof(windowupdate) - 20) : sizeof(windowupdate);
+  if (!entry->revdata)
+  {
+    sz -= rsz;
+  }
+  //origtcp = ip46_payload(origip);
+  //tcp_parse_options(origtcp, &tcpinfo);
+
+  memcpy(ether_src(windowupdate), airwall->ul_mac, 6);
+  memset(ether_dst(windowupdate), 0, 6);
+  ether_set_type(windowupdate, (version == 4) ? ETHER_TYPE_IP : ETHER_TYPE_IPV6);
+  ip = ether_payload(windowupdate);
+  ip_set_version(ip, version);
+  if (version == 6)
+  {
+    ipv6_set_flow_label(ip, entry->ulflowlabel);
+  }
+  ip46_set_min_hdr_len(ip);
+  ip46_set_payload_len(ip, sizeof(windowupdate) - 14 - 40 -
+                           (entry->revdata ? 0 : rsz));
+  ip46_set_dont_frag(ip, 1);
+  ip46_set_id(ip, 0); // XXX
+  ip46_set_ttl(ip, 64);
+  ip46_set_proto(ip, 6);
+  ip46_set_src(ip, &entry->nat_ip);
+  ip46_set_dst(ip, &entry->remote_ip);
+  ip46_set_hdr_cksum_calc(ip);
+  tcp = ip46_payload(ip);
+  tcp_set_src_port(tcp, entry->nat_port);
+  tcp_set_dst_port(tcp, entry->remote_port);
+  tcp_set_ack_on(tcp);
+  tcp_set_data_offset(tcp, sizeof(windowupdate) - 14 - 40 - rsz);
+  tcp_set_seq_number(tcp, entry->state_data.established.retx_seq);
+  tcp_set_ack_number(tcp, entry->state_data.established.retx_ack);
+  tcp_set_window(tcp, entry->state_data.established.retx_win);
+  tcpopts = &((unsigned char*)tcp)[20];
+  if (entry->state_data.established.retx_ts_present)
+  {
+    tcpopts[0] = 1;
+    tcpopts[1] = 1;
+    tcpopts[2] = 8;
+    tcpopts[3] = 10;
+    hdr_set32n(&tcpopts[4], entry->state_data.established.retx_ts);
+    hdr_set32n(&tcpopts[8], entry->state_data.established.retx_tsecho);
+  }
+  else
+  {
+    memset(&tcpopts[0], 0, 12);
+  }
+  if (entry->revdata)
+  {
+    char *tcppay = ((char*)tcp) + tcp_data_offset(tcp);
+    memcpy(tcppay, http_connect_revdatabuf, rsz);
+  }
+  tcp46_set_cksum_calc(ip);
+
+  pktstruct = ll_alloc_st(st, packet_size(sz));
+  pktstruct->data = packet_calc_data(pktstruct);
+  pktstruct->direction = PACKET_DIRECTION_UPLINK;
+  pktstruct->sz = sz;
+  memcpy(pktstruct->data, windowupdate, sz);
+#ifdef ENABLE_ARP
+  if (send_via_arp(pktstruct, local, airwall, st, port, PACKET_DIRECTION_UPLINK))
+  {
+    ll_free_st(st, pktstruct);
+    return;
+  }
+#endif
+  port->portfunc(pktstruct, port->userdata);
+}
+
 static void send_ack_and_window_update(
   void *orig, struct airwall_hash_entry *entry, struct port *port,
-  struct ll_alloc_st *st, struct airwall *airwall, struct worker_local *local)
+  struct ll_alloc_st *st, struct airwall *airwall, struct worker_local *local,
+  uint64_t time64)
 {
   char windowupdate[14+40+20+12+sizeof(http_connect_revdatabuf)] = {0};
   const size_t rsz = sizeof(http_connect_revdatabuf);
@@ -2031,6 +2158,8 @@ static void send_ack_and_window_update(
   {
     tcp_set_ack_number(tcp, tcp_ack_number(origtcp));
   }
+  entry->state_data.established.retx_seq = tcp_seq_number(tcp);
+  entry->state_data.established.retx_ack = tcp_ack_number(tcp);
   if (entry->wscalediff >= 0)
   {
     tcp_set_window(tcp, tcp_window(origtcp)>>entry->wscalediff);
@@ -2044,6 +2173,7 @@ static void send_ack_and_window_update(
     }
     tcp_set_window(tcp, win64);
   }
+  entry->state_data.established.retx_win = tcp_window(tcp);
   tcpopts = &((unsigned char*)tcp)[20];
   if (tcpinfo.options_valid && tcpinfo.ts_present)
   {
@@ -2053,10 +2183,14 @@ static void send_ack_and_window_update(
     tcpopts[3] = 10;
     hdr_set32n(&tcpopts[4], tcpinfo.ts+entry->tsoffset);
     hdr_set32n(&tcpopts[8], tcpinfo.tsecho);
+    entry->state_data.established.retx_ts = tcpinfo.ts+entry->tsoffset;
+    entry->state_data.established.retx_tsecho = tcpinfo.tsecho;
+    entry->state_data.established.retx_ts_present = 1;
   }
   else
   {
     memset(&tcpopts[0], 0, 12);
+    entry->state_data.established.retx_ts_present = 0;
   }
   if (entry->revdata)
   {
@@ -2064,6 +2198,12 @@ static void send_ack_and_window_update(
     char *tcppay = ((char*)tcp) + tcp_data_offset(tcp);
     memcpy(tcppay, http_connect_revdatabuf, rsz);
     entry->seqoffset += rsz;
+
+    entry->retx_timer.time64 = time64 + 1000ULL*1000ULL;
+    entry->retx_timer.fn = airwall_retx_fn;
+    entry->retx_timer.userdata = local;
+    timer_linkheap_add(&local->timers, &entry->retx_timer);
+    entry->retxtimer_set = 1;
   }
   tcp46_set_cksum_calc(ip);
 
@@ -3095,6 +3235,14 @@ int downlink(
     //airwall_hash_unlock(local, &ctx);
     return 1;
   }
+  if (entry->retxtimer_set && entry->flag_state == FLAG_STATE_ESTABLISHED &&
+      seq_cmp(tcp_ack_number(ippay),
+              entry->state_data.established.retx_seq +
+              sizeof(http_connect_revdatabuf)) >= 0)
+  {
+    log_log(LOG_LEVEL_NOTICE, "WORKERDOWNLINK", "removing retx timer");
+    retx_timer_del(entry, local);
+  }
   if (!between(
     entry->wan_acked - (entry->wan_max_window_unscaled<<entry->wan_wscale),
     tcp_ack_number(ippay),
@@ -3855,7 +4003,7 @@ int uplink(
       entry->timer.time64 = time64 + 86400ULL*1000ULL*1000ULL;
       timer_linkheap_modify(&local->timers, &entry->timer);
       worker_local_wrunlock(local);
-      send_ack_and_window_update(ether, entry, port, st, airwall, local);
+      send_ack_and_window_update(ether, entry, port, st, airwall, local, time64);
       //airwall_hash_unlock(local, &ctx);
       return 1;
     }

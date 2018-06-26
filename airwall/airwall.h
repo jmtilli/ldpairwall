@@ -64,6 +64,7 @@ struct airwall_hash_entry {
   struct hash_list_node local_node;
   struct hash_list_node nat_node;
   struct timer_link timer;
+  struct timer_link retx_timer;
   union {
     uint32_t ipv4;
     char ipv6[16];
@@ -88,7 +89,8 @@ struct airwall_hash_entry {
   uint8_t wan_wscale;
   uint8_t was_synproxied;
   uint8_t lan_sack_was_supported;
-  uint8_t revdata;
+  uint8_t revdata:1;
+  uint8_t retxtimer_set:1;
   uint32_t seqoffset;
   uint32_t tsoffset;
   uint32_t lan_sent; // what LAN has sent plus 1
@@ -124,6 +126,12 @@ struct airwall_hash_entry {
     struct {
       uint32_t upfin; // valid if FLAG_STATE_UPLINK_FIN
       uint32_t downfin; // valid if FLAG_STATE_DOWNLINK_FIN
+      uint32_t retx_seq;
+      uint32_t retx_ack;
+      uint16_t retx_win;
+      uint32_t retx_ts;
+      uint32_t retx_tsecho;
+      uint8_t retx_ts_present:1;
     } established;
     struct {
       struct linked_list_node listnode;
@@ -366,6 +374,11 @@ static inline void worker_local_free(struct worker_local *local)
     }
     hash_table_delete(&local->nat_hash, &e->nat_node, airwall_hash_nat(e));
     timer_linkheap_remove(&local->timers, &e->timer);
+    if (e->retxtimer_set)
+    {
+      timer_linkheap_remove(&local->timers, &e->retx_timer);
+      e->retxtimer_set = 0;
+    }
     deallocate_udp_port(local->airwall->porter, e->nat_port, !e->was_synproxied);
     free(e->detect);
     e->detect = NULL;
@@ -657,6 +670,11 @@ static inline void airwall_hash_del(
   hash_table_delete(&local->local_hash, &e->local_node, airwall_hash_local(e));
   hash_table_delete(&local->nat_hash, &e->nat_node, airwall_hash_nat(e));
   timer_linkheap_remove(&local->timers, &e->timer);
+  if (e->retxtimer_set)
+  {
+    timer_linkheap_remove(&local->timers, &e->retx_timer);
+    e->retxtimer_set = 0;
+  }
   if (e->was_synproxied)
   {
     local->synproxied_connections--;
@@ -675,6 +693,9 @@ static inline void airwall_hash_del(
   e->detect = NULL;
   free(e);
 }
+
+extern __thread struct port *thread_port;
+extern __thread struct ll_alloc_st *thread_st;
 
 int downlink(
   struct airwall *airwall, struct worker_local *local, struct packet *pkt,

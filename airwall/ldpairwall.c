@@ -252,6 +252,8 @@ int main(int argc, char **argv)
         struct timer_link *timer = timer_linkheap_next_expiry_timer(&local->timers);
         timer_linkheap_remove(&local->timers, timer);
         worker_local_wrunlock(local);
+        thread_port = &outport;
+        thread_st = &st;
         timer->fn(timer, &local->timers, timer->userdata);
         worker_local_wrlock(local);
       }
