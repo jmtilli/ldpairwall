@@ -118,7 +118,7 @@ struct airwall_hash_entry {
       uint8_t timestamp_present;
       uint32_t local_timestamp;
       uint32_t remote_timestamp;
-    } downlink_syn_sent;
+    } downlink_syn_sent; // and also FLAG_STATE_WINDOW_UPDATE_SENT uses this
     struct {
       uint32_t upfin; // valid if FLAG_STATE_UPLINK_FIN
       uint32_t downfin; // valid if FLAG_STATE_DOWNLINK_FIN
