@@ -979,6 +979,7 @@ static void process_data(
   uint32_t acked;
   uint32_t seqdiff;
   int res;
+  char *strr = NULL;
 
   if (entry->flag_state != FLAG_STATE_WINDOW_UPDATE_SENT)
   {
@@ -1034,12 +1035,13 @@ static void process_data(
     }
     if (entry->detect->hostctx.is_http_connect_num_bytes)
     {
-      char *strr = strrchr(entry->detect->hostctx.hostname, ':');
+      // FIXME should use a local buffer; this overwrites it!
+      strr = strrchr(entry->detect->hostctx.hostname, ':');
       if (strr != NULL)
       {
         unsigned long int portul;
         char *endptr;
-        *strr = '\0';
+        *strr = '\0'; // A bit unsafe: every return path must revert this
         portul = strtoul(strr+1, &endptr, 10);
         if (*endptr != '\0' || portul >= 65536 || portul == 0)
         {
@@ -1048,6 +1050,7 @@ static void process_data(
           entry->timer.time64 = time64 + 45ULL*1000ULL*1000ULL;
           entry->flag_state = FLAG_STATE_RESETED;
           timer_linkheap_modify(&local->timers, &entry->timer);
+          *strr = ':';
           return;
         }
         proxied_port = portul;
@@ -1056,11 +1059,13 @@ static void process_data(
       {
         proxied_port = 80;
       }
+#if 0 // Best not to ACK it now so that client will try re-TX if packets lost
       if (airwall->conf->enable_ack)
       {
         ack_data(orig, local, airwall, port, st, time64, entry,
                  entry->detect->hostctx.is_http_connect_num_bytes);
       }
+#endif
     }
     else
     {
@@ -1075,6 +1080,10 @@ static void process_data(
     uint32_t loc =
       host_hash_get(&airwall->conf->hosts, entry->detect->hostctx.hostname);
     char ipv4[4];
+    if (strr)
+    {
+      *strr = ':';
+    }
     if (loc == 0)
     {
       log_log(LOG_LEVEL_ERR, "AIRWALL", "host %s not found",
