@@ -497,7 +497,7 @@ static inline int resend_request_is_valid(uint32_t seq, uint32_t ref_seq)
 // caller must not have worker_local lock
 // caller must not have bucket lock
 static void airwall_expiry_fn(
-  struct timer_link *timer, struct timer_linkheap *heap, void *ud)
+  struct timer_link *timer, struct timer_linkheap *heap, void *ud, void *td)
 {
   struct worker_local *local = ud;
   struct airwall_hash_entry *e;
@@ -544,18 +544,19 @@ static void retx_http_connect_response(
   struct ll_alloc_st *st, struct airwall *airwall, struct worker_local *local);
 
 static void airwall_retx_fn(
-  struct timer_link *timer, struct timer_linkheap *heap, void *ud)
+  struct timer_link *timer, struct timer_linkheap *heap, void *ud, void *vtd)
 {
   struct worker_local *local = ud;
   struct airwall_hash_entry *e;
+  struct timer_thread_data *td = vtd;
   e = CONTAINER_OF(timer, struct airwall_hash_entry, retx_timer);
-  retx_http_connect_response(e, thread_port, thread_st, local->airwall, local);
+  retx_http_connect_response(e, td->port, td->st, local->airwall, local);
   e->retx_timer.time64 += 1000ULL*1000ULL;
   timer_linkheap_add(&local->timers, &e->retx_timer);
 }
 
 static void airwall_udp_expiry_fn(
-  struct timer_link *timer, struct timer_linkheap *heap, void *ud)
+  struct timer_link *timer, struct timer_linkheap *heap, void *ud, void *td)
 {
   struct worker_local *local = ud;
   struct airwall_udp_entry *e;
@@ -1991,9 +1992,6 @@ static void send_window_update(
   memcpy(pktstruct->data, windowupdate, sz);
   port->portfunc(pktstruct, port->userdata);
 }
-
-__thread struct port *thread_port = NULL;
-__thread struct ll_alloc_st *thread_st = NULL;
 
 static void retx_http_connect_response(
   struct airwall_hash_entry *entry, struct port *port,

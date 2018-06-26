@@ -111,6 +111,10 @@ int main(int argc, char **argv)
   struct conf conf = {};
   int opt;
   struct timer_link revotimer;
+  struct timer_thread_data ttd;
+
+  ttd.port = &outport;
+  ttd.st = &st;
 
   log_open("LDPAIRWALL", LOG_LEVEL_DEBUG, LOG_LEVEL_INFO);
 
@@ -252,9 +256,7 @@ int main(int argc, char **argv)
         struct timer_link *timer = timer_linkheap_next_expiry_timer(&local->timers);
         timer_linkheap_remove(&local->timers, timer);
         worker_local_wrunlock(local);
-        thread_port = &outport;
-        thread_st = &st;
-        timer->fn(timer, &local->timers, timer->userdata);
+        timer->fn(timer, &local->timers, timer->userdata, &ttd);
         worker_local_wrlock(local);
       }
       worker_local_wrunlock(local);

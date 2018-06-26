@@ -694,8 +694,10 @@ static inline void airwall_hash_del(
   free(e);
 }
 
-extern __thread struct port *thread_port;
-extern __thread struct ll_alloc_st *thread_st;
+struct timer_thread_data {
+  struct port *port;
+  struct ll_alloc_st *st;
+};
 
 int downlink(
   struct airwall *airwall, struct worker_local *local, struct packet *pkt,
