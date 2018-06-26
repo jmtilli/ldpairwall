@@ -258,6 +258,7 @@ int http_ctx_feed(struct http_ctx *ctx, const void *data, size_t sz,
         return ctx->verdict;
       }
       ctx->lf_seen = 1;
+      ctx->crlfcrlf_lfcnt = 1;
       sz--;
       ctx->total_num++;
       udata++;
@@ -275,7 +276,6 @@ int http_ctx_feed(struct http_ctx *ctx, const void *data, size_t sz,
       return ctx->verdict;
     }
   }
-  ctx->crlfcrlf_lfcnt = 1;
   while (ctx->crlfcrlf_lfcnt < 2)
   {
     while (ctx->host_num_seen < 5)
@@ -299,6 +299,10 @@ int http_ctx_feed(struct http_ctx *ctx, const void *data, size_t sz,
             udata++;
             goto end;
           }
+        }
+        if (uch != '\r' && uch != '\n')
+        {
+          ctx->crlfcrlf_lfcnt = 0;
         }
         sz--;
         ctx->total_num++;
