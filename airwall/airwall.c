@@ -51,7 +51,8 @@ static int send_via_arp(struct packet *pkt,
                         struct airwall *airwall,
                         struct ll_alloc_st *st,
                         struct port *port,
-                        enum packet_direction dir)
+                        enum packet_direction dir,
+                        uint64_t time64)
 {
   void *ether = packet_data(pkt);
   struct arp_entry *arpe;
@@ -96,7 +97,7 @@ static int send_via_arp(struct packet *pkt,
     pktstruct->direction = dir;
     pktstruct->sz = pkt->sz;
     memcpy(pktstruct->data, ether, pkt->sz);
-    arp_cache_put_packet(cache, dst, pktstruct);
+    arp_cache_put_packet(cache, dst, pktstruct, &local->timers, time64);
     send_arp(port, dst, dir, addr, mac, st);
     return 1;
   }
@@ -1481,7 +1482,8 @@ static void send_or_resend_syn(
   void *orig, struct worker_local *local, struct port *port,
   struct ll_alloc_st *st,
   struct airwall_hash_entry *entry,
-  struct airwall *airwall)
+  struct airwall *airwall,
+  uint64_t time64)
 {
   char syn[14+20+40+12+12] = {0};
   void *ip, *origip;
@@ -1587,7 +1589,7 @@ static void send_or_resend_syn(
   pktstruct->sz = sz;
   memcpy(pktstruct->data, syn, sz);
 #ifdef ENABLE_ARP
-  if (send_via_arp(pktstruct, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK))
+  if (send_via_arp(pktstruct, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
   {
     ll_free_st(st, pktstruct);
     return;
@@ -1636,7 +1638,7 @@ static void resend_syn(
   entry->timer.time64 = time64 + 120ULL*1000ULL*1000ULL;
   timer_linkheap_modify(&local->timers, &entry->timer);
 
-  send_or_resend_syn(orig, local, port, st, entry, airwall);
+  send_or_resend_syn(orig, local, port, st, entry, airwall, time64);
 }
 
 static void send_syn(
@@ -1669,12 +1671,13 @@ static void send_syn(
   entry->timer.time64 = time64 + 120ULL*1000ULL*1000ULL;
   timer_linkheap_modify(&local->timers, &entry->timer);
 
-  send_or_resend_syn(orig, local, port, st, entry, airwall);
+  send_or_resend_syn(orig, local, port, st, entry, airwall, time64);
 }
 
 static void send_data_only(
   void *orig, struct airwall_hash_entry *entry, struct port *port,
-  struct ll_alloc_st *st, struct worker_local *local, struct airwall *airwall)
+  struct ll_alloc_st *st, struct worker_local *local, struct airwall *airwall,
+  uint64_t time64)
 {
   const size_t maxpay = 1208;
   char data[14+40+20+12+1208] = {0};
@@ -1768,7 +1771,7 @@ static void send_data_only(
     pktstruct->sz = sz;
     memcpy(pktstruct->data, data, sz);
 #ifdef ENABLE_ARP
-    if (send_via_arp(pktstruct, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK))
+    if (send_via_arp(pktstruct, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
     {
       ll_free_st(st, pktstruct);
       return;
@@ -2070,7 +2073,7 @@ static void retx_http_connect_response(
   pktstruct->sz = sz;
   memcpy(pktstruct->data, windowupdate, sz);
 #ifdef ENABLE_ARP
-  if (send_via_arp(pktstruct, local, airwall, st, port, PACKET_DIRECTION_UPLINK))
+  if (send_via_arp(pktstruct, local, airwall, st, port, PACKET_DIRECTION_UPLINK, gettime64()))
   {
     ll_free_st(st, pktstruct);
     return;
@@ -2109,7 +2112,7 @@ static void send_ack_and_window_update(
 
   if (airwall->conf->enable_ack && entry->detect)
   {
-    send_data_only(orig, entry, port, st, local, airwall); // XXX send_data_only reparses opts
+    send_data_only(orig, entry, port, st, local, airwall, time64); // XXX send_data_only reparses opts
   }
 
   memcpy(ether_src(windowupdate), airwall->ul_mac, 6);
@@ -2213,7 +2216,7 @@ static void send_ack_and_window_update(
   pktstruct->sz = sz;
   memcpy(pktstruct->data, windowupdate, sz);
 #ifdef ENABLE_ARP
-  if (send_via_arp(pktstruct, local, airwall, st, port, PACKET_DIRECTION_UPLINK))
+  if (send_via_arp(pktstruct, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
   {
     ll_free_st(st, pktstruct);
     return;
@@ -2298,7 +2301,7 @@ static int uplink_udp(
     worker_local_wrunlock(local);
   }
 
-  if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK))
+  if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
   {
     return 1;
   }
@@ -2365,7 +2368,7 @@ static int downlink_udp(
     worker_local_wrunlock(local);
   }
 
-  if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK))
+  if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
   {
     return 1;
   }
@@ -2438,7 +2441,7 @@ int downlink(
                 "%d.%d.%d.%d is at %.2x:%.2x:%.2x:%.2x:%.2x:%.2x",
                 (spa>>24)&0xFF, (spa>>16)&0xFF, (spa>>8)&0xFF, (spa>>0)&0xFF,
                 sha[0], sha[1], sha[2], sha[3], sha[4], sha[5]);
-        arp_cache_put(&local->ul_arp_cache, port, arp_spa(arp), arp_const_sha(arp));
+        arp_cache_put(&local->ul_arp_cache, port, arp_spa(arp), arp_const_sha(arp), &local->timers, time64);
       }
       if (arp_tpa(arp) != airwall->conf->ul_addr)
       {
@@ -2475,7 +2478,7 @@ int downlink(
                 "%d.%d.%d.%d is at %.2x:%.2x:%.2x:%.2x:%.2x:%.2x",
                 (spa>>24)&0xFF, (spa>>16)&0xFF, (spa>>8)&0xFF, (spa>>0)&0xFF,
                 sha[0], sha[1], sha[2], sha[3], sha[4], sha[5]);
-        arp_cache_put(&local->ul_arp_cache, port, arp_spa(arp), arp_const_sha(arp));
+        arp_cache_put(&local->ul_arp_cache, port, arp_spa(arp), arp_const_sha(arp), &local->timers, time64);
       }
       else
       {
@@ -2583,7 +2586,7 @@ int downlink(
     {
       //port->portfunc(pkt, port->userdata);
 #ifdef ENABLE_ARP
-      if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK))
+      if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
       {
         return 1;
       }
@@ -2721,7 +2724,7 @@ int downlink(
           abort();
         }
 #ifdef ENABLE_ARP
-        if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK))
+        if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
         {
           return 1;
         }
@@ -2763,7 +2766,7 @@ int downlink(
           abort();
         }
 #ifdef ENABLE_ARP
-        if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK))
+        if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
         {
           return 1;
         }
@@ -2831,7 +2834,7 @@ int downlink(
         abort();
       }
 #ifdef ENABLE_ARP
-      if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK))
+      if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
       {
         return 1;
       }
@@ -3199,7 +3202,7 @@ int downlink(
       abort();
     }
 #ifdef ENABLE_ARP
-    if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK))
+    if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
     {
       return 1;
     }
@@ -3433,7 +3436,7 @@ int downlink(
     abort();
   }
 #ifdef ENABLE_ARP
-  if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK))
+  if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
   {
     return 1;
   }
@@ -3529,7 +3532,7 @@ int uplink(
                 "%d.%d.%d.%d is at %.2x:%.2x:%.2x:%.2x:%.2x:%.2x",
                 (spa>>24)&0xFF, (spa>>16)&0xFF, (spa>>8)&0xFF, (spa>>0)&0xFF,
                 sha[0], sha[1], sha[2], sha[3], sha[4], sha[5]);
-        arp_cache_put(&local->dl_arp_cache, port, arp_spa(arp), arp_const_sha(arp));
+        arp_cache_put(&local->dl_arp_cache, port, arp_spa(arp), arp_const_sha(arp), &local->timers, time64);
       }
       if (arp_tpa(arp) != airwall->conf->dl_addr)
       {
@@ -3566,7 +3569,7 @@ int uplink(
                 "%d.%d.%d.%d is at %.2x:%.2x:%.2x:%.2x:%.2x:%.2x",
                 (spa>>24)&0xFF, (spa>>16)&0xFF, (spa>>8)&0xFF, (spa>>0)&0xFF,
                 sha[0], sha[1], sha[2], sha[3], sha[4], sha[5]);
-        arp_cache_put(&local->dl_arp_cache, port, arp_spa(arp), arp_const_sha(arp));
+        arp_cache_put(&local->dl_arp_cache, port, arp_spa(arp), arp_const_sha(arp), &local->timers, time64);
       }
       return 1;
     }
@@ -3667,7 +3670,7 @@ int uplink(
     {
       //port->portfunc(pkt, port->userdata);
 #ifdef ENABLE_ARP
-      if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK))
+      if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
       {
         return 1;
       }
@@ -3750,7 +3753,7 @@ int uplink(
           abort();
         }
 #ifdef ENABLE_ARP
-        if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK))
+        if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
         {
           return 1;
         }
@@ -3854,7 +3857,7 @@ int uplink(
       worker_local_wrunlock(local);
       //airwall_hash_unlock(local, &ctx);
 #ifdef ENABLE_ARP
-      if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK))
+      if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
       {
         return 1;
       }
@@ -4064,7 +4067,7 @@ int uplink(
       //port->portfunc(pkt, port->userdata);
       //airwall_hash_unlock(local, &ctx);
 #ifdef ENABLE_ARP
-      if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK))
+      if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
       {
         return 1;
       }
@@ -4118,7 +4121,7 @@ int uplink(
       //port->portfunc(pkt, port->userdata);
       //airwall_hash_unlock(local, &ctx);
 #ifdef ENABLE_ARP
-      if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK))
+      if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
       {
         return 1;
       }
@@ -4194,7 +4197,7 @@ int uplink(
       //port->portfunc(pkt, port->userdata);
       //airwall_hash_unlock(local, &ctx);
 #ifdef ENABLE_ARP
-      if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK))
+      if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
       {
         return 1;
       }
@@ -4236,7 +4239,7 @@ int uplink(
     //port->portfunc(pkt, port->userdata);
     //airwall_hash_unlock(local, &ctx);
 #ifdef ENABLE_ARP
-    if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK))
+    if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
     {
       return 1;
     }
@@ -4395,7 +4398,7 @@ int uplink(
       {
         if (airwall->conf->enable_ack)
         {
-          send_data_only(ether, entry, port, st, local, airwall);
+          send_data_only(ether, entry, port, st, local, airwall, time64);
           tcp_set_ack_number_cksum_update(ippay, tcp_len, acked_seq);
         }
       }
@@ -4460,7 +4463,7 @@ int uplink(
     abort();
   }
 #ifdef ENABLE_ARP
-  if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK))
+  if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
   {
     return 1;
   }
