@@ -14,6 +14,8 @@ struct host_hash_entry {
   struct hash_list_node node;
   char *hostname;
   uint32_t local_ip;
+  uint8_t protocol;
+  uint16_t port;
 };
 
 static inline uint32_t str_hash(const char *name)
@@ -40,17 +42,20 @@ static inline void host_hash_init(struct host_hash *hash)
 }
 
 static inline void
-host_hash_add(struct host_hash *hash, const char *name, uint32_t ip)
+host_hash_add(struct host_hash *hash, const char *name, uint32_t ip,
+              uint8_t protocol, uint16_t port)
 {
   struct host_hash_entry *e;
   e = malloc(sizeof(*e));
   e->local_ip = ip;
   e->hostname = strdup(name);
+  e->protocol = protocol;
+  e->port = port;
   hash_table_add_nogrow_already_bucket_locked(&hash->tbl, &e->node, host_hash(e));
 }
 
-static inline uint32_t
-host_hash_get(struct host_hash *hash, const char *name)
+static inline struct host_hash_entry *
+host_hash_get_entry(struct host_hash *hash, const char *name)
 {
   uint32_t hashval = str_hash(name);
   struct hash_list_node *node;
@@ -62,9 +67,20 @@ host_hash_get(struct host_hash *hash, const char *name)
     {
       continue;
     }
-    return e->local_ip;
+    return e;
   }
-  return 0;
+  return NULL;
+}
+
+static inline uint32_t
+host_hash_get(struct host_hash *hash, const char *name)
+{
+  struct host_hash_entry *e = host_hash_get_entry(hash, name);
+  if (e == NULL)
+  {
+    return 0;
+  }
+  return e->local_ip;
 }
 
 

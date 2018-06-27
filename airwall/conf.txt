@@ -23,8 +23,9 @@ airwallconf = {
     network_prefix6 = 64;
   };
   hosts = {
-    {"www1.example.com", 10.150.1.101},
-    {"www2.example.com", 10.150.1.102},
+    {"www1.example.com", 10.150.1.101, norgw, 0},
+    {"www2.example.com", 10.150.1.102, norgw, 0},
+    {"ssh.example.com", 10.150.1.101, tcp, 22},
   };
   enable_ack;
   dl_addr = 10.150.1.1;
