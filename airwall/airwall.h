@@ -832,11 +832,11 @@ static inline void airwall_init(
 }
 
 static inline void airwall_free(
-  struct airwall *airwall)
+  struct airwall *airwall, struct worker_local *local)
 {
   airwall->conf = NULL;
   //sack_ip_port_hash_free(&airwall->autolearn);
-  threetuplectx_free(&airwall->threetuplectx);
+  threetuplectx_free(&airwall->threetuplectx, &local->timers);
 }
 
 static inline void airwall_hash_del(

@@ -2033,6 +2033,24 @@ static void send_window_update(
   entry->timer.time64 = time64 + 120ULL*1000ULL*1000ULL;
   timer_linkheap_modify(&local->timers, &entry->timer);
 
+  if (version == 4)
+  {
+    struct threetuplepayload threetuplepayload;
+    if (threetuplectx_consume(&airwall->threetuplectx, &local->timers, ip_dst(origip), tcp_dst_port(origtcp), 6, &threetuplepayload) == 0)
+    {
+      entry->local_port = entry->nat_port;
+      entry->local_ip.ipv4 = htonl(threetuplepayload.local_ip);
+      hash_table_add_nogrow_already_bucket_locked(
+        &local->local_hash, &entry->local_node, airwall_hash_local(entry));
+      send_syn(triggerpkt, local, port, st, mss, wscale, sack_permitted, entry, time64, was_keepalive, airwall);
+      return;
+    }
+  }
+  else
+  {
+    abort(); // FIXME
+  }
+
   version = entry->version;
   sz = (version == 4) ? (sizeof(windowupdate) - 20) : sizeof(windowupdate);
 
@@ -2816,13 +2834,31 @@ static int downlink_dns(
   dns_next_init_qd(origudppay, &off, &remcnt, udp_len);
   while (dns_next(origudppay, &off, &remcnt, udp_len, nambuf, udppay_maxlen, &qtype, &qclass) == 0)
   {
-    if (qclass == 1 && qtype == 1 && host_hash_get_entry(&airwall->conf->hosts, nambuf))
+    struct host_hash_entry *host;
+    host = host_hash_get_entry(&airwall->conf->hosts, nambuf);
+    if (qclass == 1 && qtype == 1 && host != NULL)
     {
       char ipv4[4];
       hdr_set32n(ipv4, airwall->conf->ul_addr);
       dns_set_ancount(udppay, dns_ancount(udppay) + 1);
       dns_put_next(udppay, &aoff, &aremcnt, udppay_maxlen, nambuf, qtype, qclass, 0,
                    4, ipv4);
+      if (host->protocol != 255)
+      {
+        struct threetuplepayload payload;
+        payload.mss = 1460;
+        payload.wscaleshift = 7;
+        payload.sack_supported = 0;
+        payload.mss_set = 0;
+        payload.sack_set = 0;
+        payload.wscaleshift_set = 0;
+        payload.local_ip = host->local_ip;
+        log_log(LOG_LEVEL_NOTICE, "WORKERDOWNLINK", "adding threetuple match");
+        threetuplectx_add(&airwall->threetuplectx, &local->timers,
+                          airwall->conf->ul_addr, host->port, host->protocol,
+                          (host->port != 0), (host->protocol != 0),
+                          &payload, time64);
+      }
     }
   }
   udp_set_total_len(udp, 8 + aoff);

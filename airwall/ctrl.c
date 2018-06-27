@@ -3,6 +3,7 @@
 #include "read.h"
 #include <fcntl.h>
 #include <arpa/inet.h>
+#include "time64.h"
 
 static void set_nonblock(int fd)
 {
@@ -220,8 +221,9 @@ void *ctrl_func(void *userdata)
              (uint8_t)proto,
              port != 0,
              proto != 0);
-      if (threetuplectx_delete6(&args->airwall->threetuplectx, ip6,
-                                port, proto, (port != 0), (proto != 0))
+      if (threetuplectx_delete6(&args->airwall->threetuplectx,
+                                &args->local->timers,
+                                ip6, port, proto, (port != 0), (proto != 0))
           == 0)
       {
         if (write(fd2, "1\n", 2) != 2)
@@ -270,7 +272,9 @@ void *ctrl_func(void *userdata)
              (uint8_t)proto,
              port != 0,
              proto != 0);
-      if (threetuplectx_delete(&args->airwall->threetuplectx, ip, port, proto,
+      if (threetuplectx_delete(&args->airwall->threetuplectx,
+                               &args->local->timers,
+                               ip, port, proto,
                                (port != 0), (proto != 0))
           == 0)
       {
@@ -321,9 +325,10 @@ void *ctrl_func(void *userdata)
              payload.mss,
              payload.sack_supported,
              payload.wscaleshift);
-      if (threetuplectx_modify6(&args->airwall->threetuplectx, ip6,
-                                port, proto, (port != 0), (proto != 0),
-                                &payload) == 0)
+      if (threetuplectx_modify6(&args->airwall->threetuplectx,
+                                &args->local->timers,
+                                ip6, port, proto, (port != 0), (proto != 0),
+                                &payload, gettime64()) == 0)
       {
         if (write(fd2, "1\n", 2) != 2)
         {
@@ -375,9 +380,11 @@ void *ctrl_func(void *userdata)
              payload.mss,
              payload.sack_supported,
              payload.wscaleshift);
-      if (threetuplectx_modify(&args->airwall->threetuplectx, ip, port, proto,
+      if (threetuplectx_modify(&args->airwall->threetuplectx,
+                               &args->local->timers,
+                               ip, port, proto,
                                (port != 0), (proto != 0),
-                               &payload) == 0)
+                               &payload, gettime64()) == 0)
       {
         if (write(fd2, "1\n", 2) != 2)
         {
@@ -417,7 +424,8 @@ void *ctrl_func(void *userdata)
       log_log(
              LOG_LEVEL_NOTICE, "CTRL",
              "flush [%s]", str6);
-      threetuplectx_flush_ip6(&args->airwall->threetuplectx, ip6);
+      threetuplectx_flush_ip6(&args->airwall->threetuplectx,
+                              &args->local->timers, ip6);
       if (write(fd2, "1\n", 2) != 2)
       {
         close(fd2);
@@ -440,7 +448,8 @@ void *ctrl_func(void *userdata)
         log_log(
                LOG_LEVEL_NOTICE, "CTRL",
                "flush all");
-        threetuplectx_flush(&args->airwall->threetuplectx);
+        threetuplectx_flush(&args->airwall->threetuplectx,
+                            &args->local->timers);
       }
       else
       {
@@ -451,7 +460,8 @@ void *ctrl_func(void *userdata)
                (uint8_t)(ip>>16),
                (uint8_t)(ip>>8),
                (uint8_t)(ip>>0));
-        threetuplectx_flush_ip(&args->airwall->threetuplectx, ip);
+        threetuplectx_flush_ip(&args->airwall->threetuplectx,
+                               &args->local->timers, ip);
       }
       if (write(fd2, "1\n", 2) != 2)
       {
@@ -482,9 +492,11 @@ void *ctrl_func(void *userdata)
              payload.mss,
              payload.sack_supported,
              payload.wscaleshift);
-      if (threetuplectx_add6(&args->airwall->threetuplectx, ip6,
+      if (threetuplectx_add6(&args->airwall->threetuplectx,
+                             &args->local->timers,
+                             ip6,
                              port, proto, (port != 0), (proto != 0),
-                             &payload) == 0)
+                             &payload, gettime64()) == 0)
       {
         if (write(fd2, "1\n", 2) != 2)
         {
@@ -536,9 +548,11 @@ void *ctrl_func(void *userdata)
              payload.mss,
              payload.sack_supported,
              payload.wscaleshift);
-      if (threetuplectx_add(&args->airwall->threetuplectx, ip, port, proto,
+      if (threetuplectx_add(&args->airwall->threetuplectx,
+                            &args->local->timers,
+                            ip, port, proto,
                             (port != 0), (proto != 0),
-                            &payload) == 0)
+                            &payload, gettime64()) == 0)
       {
         if (write(fd2, "1\n", 2) != 2)
         {
