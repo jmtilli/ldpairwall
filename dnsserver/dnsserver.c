@@ -212,6 +212,10 @@ static inline int dns_put_next(void *vdns, uint16_t *off, uint16_t *remcnt,
 {
   unsigned char *cdns = vdns;
   char *chr;
+  if (*off + strlen(buf)+2 + 10 + rdlength > plen)
+  {
+    return -EFAULT;
+  }
   for (;;)
   {
     chr = strchr(buf, '.');
@@ -259,6 +263,10 @@ static inline int dns_put_next_qr(void *vdns, uint16_t *off, uint16_t *remcnt,
 {
   unsigned char *cdns = vdns;
   char *chr;
+  if (*off + strlen(buf)+2 + 4 > plen)
+  {
+    return -EFAULT;
+  }
   for (;;)
   {
     chr = strchr(buf, '.');
@@ -442,12 +450,7 @@ int main(int argc, char **argv)
       printf("sendto failed\n");
     }
 
-    printf("Recvd %zu bytes\n", (size_t)pktsize);
-    for (i = 0; i < pktsize; i++)
-    {
-      printf("\\x%.2x", (unsigned char)pkt[i]);
-    }
-    printf("\n");
+    printf("Recvd and responded\n");
   }
   return 0;
 }
