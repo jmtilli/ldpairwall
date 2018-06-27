@@ -2316,6 +2316,248 @@ static int uplink_udp(
   return 0;
 }
 
+static int downlink_icmp(
+  struct airwall *airwall, struct worker_local *local, struct packet *pkt,
+  struct port *port, uint64_t time64, struct ll_alloc_st *st)
+{
+  void *ether = pkt->data;
+  void *ip = ether_payload(ether);
+  void *ippay = ip46_payload(ip);
+  struct airwall_hash_entry *e;
+  struct airwall_udp_entry *ue;
+  int version = ip_version(ip);
+  struct airwall_hash_ctx ctx;
+  void *lan_ip, *remote_ip;
+  uint16_t lan_port, remote_port;
+  //size_t ether_len = pkt->sz;
+  //size_t ip_len = ether_len - ETHER_HDR_LEN;
+  uint16_t icmp_len = ip46_payload_len(ip);
+  uint16_t ipin_len = icmp_len - ICMP_HEADER_MINLEN;
+  void *ipin = icmp_payload(ippay);
+  void *ipinpay;
+  int inprotocol;
+
+  if (version != 4)
+  {
+    abort();
+  }
+
+  if (icmp_len < ICMP_HEADER_MINLEN)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "too short ICMP packet 1");
+    return 1;
+  }
+  if (ipin_len < IP_HDR_MINLEN + ICMP_L4_PAYLOAD_PORTS_MINLEN)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "too short ICMP packet 2");
+    return 1;
+  }
+  if (ip_version(ipin) != 4)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "inner packet not IPv4");
+    return 1;
+  }
+  if (ipin_len < ip_hdr_len(ipin) + ICMP_L4_PAYLOAD_PORTS_MINLEN)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "too short ICMP packet 3");
+    return 1;
+  }
+  ipinpay = ip_payload(ipin);
+  inprotocol = ip_proto(ipin);
+  if (inprotocol != 6 && inprotocol != 17)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "ICMP inprotocol not supported");
+    return 1;
+  }
+  lan_ip = ip_src_ptr(ipin);
+  remote_ip = ip_dst_ptr(ipin);
+  if (inprotocol == 6)
+  {
+    lan_port = tcp_src_port(ipinpay);
+    remote_port = tcp_dst_port(ipinpay);
+  }
+  else if (inprotocol == 17)
+  {
+    lan_port = udp_src_port(ipinpay);
+    remote_port = udp_dst_port(ipinpay);
+  }
+  else
+  {
+    abort();
+  }
+  if (remote_ip == 0 || remote_port == 0 || lan_ip == 0 || lan_port == 0)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "some of UDP addresses and ports were zero");
+    return 1;
+  }
+  if (inprotocol == 6)
+  {
+    e = airwall_hash_get_nat(local, version, lan_ip, lan_port, remote_ip, remote_port, &ctx);
+    if (e == NULL)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "TCP entry not found");
+      return 1;
+    }
+    if (ipin_len < ip_hdr_len(ipin) + 18)
+    {
+      ip_set_src_cksum_update(ipin, ipin_len, inprotocol, ipinpay, 8, hdr_get32n(&e->local_ip));
+      tcp_set_src_port(ipinpay, e->local_port);
+    }
+    else
+    {
+      ip_set_src_cksum_update(ipin, ipin_len, 0, NULL, 0, hdr_get32n(&e->local_ip));
+      tcp_set_src_port_cksum_update(ipinpay, 8, e->local_port);
+    }
+  }
+  else if (inprotocol == 17)
+  {
+    ue = airwall_hash_get_nat_udp(local, version, lan_ip, lan_port, remote_ip, remote_port, &ctx);
+    if (ue == NULL)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "UDP entry not found");
+      return 1;
+    }
+    if (ipin_len < ip_hdr_len(ipin) + 8)
+    {
+      ip_set_src_cksum_update(ipin, ipin_len, inprotocol, ipinpay, 8, hdr_get32n(&ue->local_ip));
+      udp_set_src_port(ipinpay, ue->local_port);
+    }
+    else
+    {
+      ip_set_src_cksum_update(ipin, ipin_len, 0, NULL, 0, hdr_get32n(&ue->local_ip));
+      udp_set_src_port_cksum_update(ipinpay, 8, ue->local_port);
+    }
+  }
+
+  if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
+  {
+    return 1;
+  }
+
+  return 0;
+}
+
+static int uplink_icmp(
+  struct airwall *airwall, struct worker_local *local, struct packet *pkt,
+  struct port *port, uint64_t time64, struct ll_alloc_st *st)
+{
+  void *ether = pkt->data;
+  void *ip = ether_payload(ether);
+  void *ippay = ip46_payload(ip);
+  struct airwall_hash_entry *e;
+  struct airwall_udp_entry *ue;
+  int version = ip_version(ip);
+  struct airwall_hash_ctx ctx;
+  void *lan_ip, *remote_ip;
+  uint16_t lan_port, remote_port;
+  //size_t ether_len = pkt->sz;
+  //size_t ip_len = ether_len - ETHER_HDR_LEN;
+  uint16_t icmp_len = ip46_payload_len(ip);
+  uint16_t ipin_len = icmp_len - ICMP_HEADER_MINLEN;
+  void *ipin = icmp_payload(ippay);
+  void *ipinpay;
+  int inprotocol;
+
+  if (version != 4)
+  {
+    abort();
+  }
+
+  if (icmp_len < ICMP_HEADER_MINLEN)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "too short ICMP packet 1");
+    return 1;
+  }
+  if (ipin_len < IP_HDR_MINLEN + ICMP_L4_PAYLOAD_PORTS_MINLEN)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "too short ICMP packet 2");
+    return 1;
+  }
+  if (ip_version(ipin) != 4)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "inner packet not IPv4");
+    return 1;
+  }
+  if (ipin_len < ip_hdr_len(ipin) + ICMP_L4_PAYLOAD_PORTS_MINLEN)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "too short ICMP packet 3");
+    return 1;
+  }
+  ipinpay = ip_payload(ipin);
+  inprotocol = ip_proto(ipin);
+  if (inprotocol != 6 && inprotocol != 17)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "ICMP inprotocol not supported");
+    return 1;
+  }
+  lan_ip = ip_src_ptr(ipin);
+  remote_ip = ip_dst_ptr(ipin);
+  if (inprotocol == 6)
+  {
+    lan_port = tcp_src_port(ipinpay);
+    remote_port = tcp_dst_port(ipinpay);
+  }
+  else if (inprotocol == 17)
+  {
+    lan_port = udp_src_port(ipinpay);
+    remote_port = udp_dst_port(ipinpay);
+  }
+  else
+  {
+    abort();
+  }
+  if (remote_ip == 0 || remote_port == 0 || lan_ip == 0 || lan_port == 0)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "some of UDP addresses and ports were zero");
+    return 1;
+  }
+  if (inprotocol == 6)
+  {
+    e = airwall_hash_get_local(local, version, lan_ip, lan_port, remote_ip, remote_port, &ctx);
+    if (e == NULL)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "TCP entry not found");
+      return 1;
+    }
+    if (ipin_len < ip_hdr_len(ipin) + 18)
+    {
+      ip_set_dst_cksum_update(ipin, ipin_len, inprotocol, ipinpay, 8, hdr_get32n(&e->nat_ip));
+      tcp_set_dst_port(ipinpay, e->nat_port);
+    }
+    else
+    {
+      ip_set_dst_cksum_update(ipin, ipin_len, 0, NULL, 0, hdr_get32n(&e->nat_ip));
+      tcp_set_dst_port_cksum_update(ipinpay, 8, e->nat_port);
+    }
+  }
+  else if (inprotocol == 17)
+  {
+    ue = airwall_hash_get_local_udp(local, version, lan_ip, lan_port, remote_ip, remote_port, &ctx);
+    if (ue == NULL)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "UDP entry not found");
+      return 1;
+    }
+    if (ipin_len < ip_hdr_len(ipin) + 8)
+    {
+      ip_set_dst_cksum_update(ipin, ipin_len, inprotocol, ipinpay, 8, hdr_get32n(&ue->nat_ip));
+      udp_set_dst_port(ipinpay, ue->nat_port);
+    }
+    else
+    {
+      ip_set_dst_cksum_update(ipin, ipin_len, 0, NULL, 0, hdr_get32n(&ue->nat_ip));
+      udp_set_dst_port_cksum_update(ipinpay, 8, ue->nat_port);
+    }
+  }
+
+  if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
+  {
+    return 1;
+  }
+
+  return 0;
+}
+
 static int downlink_udp(
   struct airwall *airwall, struct worker_local *local, struct packet *pkt,
   struct port *port, uint64_t time64, struct ll_alloc_st *st)
@@ -2556,6 +2798,10 @@ int downlink(
     if (ip_proto(ip) == 17)
     {
       return downlink_udp(airwall, local, pkt, port, time64, st);
+    }
+    else if (ip_proto(ip) == 1)
+    {
+      return downlink_icmp(airwall, local, pkt, port, time64, st);
     }
     else if (ip_proto(ip) != 6)
     {
@@ -3640,6 +3886,10 @@ int uplink(
     if (ip_proto(ip) == 17)
     {
       return uplink_udp(airwall, local, pkt, port, time64, st);
+    }
+    else if (ip_proto(ip) == 1)
+    {
+      return uplink_icmp(airwall, local, pkt, port, time64, st);
     }
     else if (ip_proto(ip) != 6)
     {
