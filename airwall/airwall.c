@@ -2347,6 +2347,17 @@ static int downlink_icmp(
     log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "too short ICMP packet 1");
     return 1;
   }
+  if (icmp_type(ippay) == 5)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "dropping ICMP redirect");
+    return 1;
+  }
+  if (icmp_type(ippay) != 3 && icmp_type(ippay) != 11 &&
+      icmp_type(ippay) != 12 && icmp_type(ippay) != 4)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "not a supported ICMP type");
+    return 1;
+  }
   if (ipin_len < IP_HDR_MINLEN + ICMP_L4_PAYLOAD_PORTS_MINLEN)
   {
     log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "too short ICMP packet 2");
@@ -2466,6 +2477,17 @@ static int uplink_icmp(
   if (icmp_len < ICMP_HEADER_MINLEN)
   {
     log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "too short ICMP packet 1");
+    return 1;
+  }
+  if (icmp_type(ippay) == 5)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "dropping ICMP redirect");
+    return 1;
+  }
+  if (icmp_type(ippay) != 3 && icmp_type(ippay) != 11 &&
+      icmp_type(ippay) != 12 && icmp_type(ippay) != 4)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "not a supported ICMP type");
     return 1;
   }
   if (ipin_len < IP_HDR_MINLEN + ICMP_L4_PAYLOAD_PORTS_MINLEN)
