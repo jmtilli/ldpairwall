@@ -3912,8 +3912,6 @@ int uplink(
   char packetbuf[8192];
   int version;
 
-  log_log(LOG_LEVEL_NOTICE, "WORKERUPLINK", "uplink packet");
-
   if (ether_len < ETHER_HDR_LEN)
   {
     log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "pkt does not have full Ether hdr");
