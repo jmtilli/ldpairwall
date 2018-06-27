@@ -11,6 +11,5 @@ IPv6
 multithreading
 fragmented traffic
 ICMP ping
-ICMP unreachable / time exceeded packets
+testing ICMP unreachable / time exceeded packets
 don't apply window scaling unless both endpoint support it? applies to SYNs.
-treat UDP checksum zero separately
