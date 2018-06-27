@@ -7,6 +7,10 @@ DIRAIRWALL := airwall
 LCAIRWALL := airwall
 MODULES += AIRWALL
 
+DIRTHREETUPLE := threetuple
+LCTHREETUPLE := threetuple
+MODULES += THREETUPLE
+
 #DIRSACKHASH := sackhash
 #LCSACKHASH := sackhash
 #MODULES += SACKHASH
