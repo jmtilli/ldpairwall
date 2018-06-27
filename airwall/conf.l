@@ -70,6 +70,11 @@ ul_defaultgw return UL_DEFAULTGW;
 \"([^\\\"]|\\.)*\"  yylval->s=yy_escape_string(yytext); return STRING_LITERAL;
 [0-9]+\.[0-9]+\.[0-9]+\.[0-9]+ yylval->i = yy_get_ip(yytext); return IP_LITERAL;
 
+tcp          return TCP;
+udp          return UDP;
+tcpudp       return TCPUDP;
+norgw        return NORGW;
+
 [0-9]+       {
   char *endptr;
   long l;

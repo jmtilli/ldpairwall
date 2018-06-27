@@ -2033,6 +2033,24 @@ static void send_window_update(
   entry->timer.time64 = time64 + 120ULL*1000ULL*1000ULL;
   timer_linkheap_modify(&local->timers, &entry->timer);
 
+  if (version == 4)
+  {
+    struct threetuplepayload threetuplepayload;
+    if (threetuplectx_consume(&airwall->threetuplectx, &local->timers, ip_dst(origip), tcp_dst_port(origtcp), 6, &threetuplepayload) == 0)
+    {
+      entry->local_port = entry->nat_port;
+      entry->local_ip.ipv4 = htonl(threetuplepayload.local_ip);
+      hash_table_add_nogrow_already_bucket_locked(
+        &local->local_hash, &entry->local_node, airwall_hash_local(entry));
+      send_syn(triggerpkt, local, port, st, mss, wscale, sack_permitted, entry, time64, was_keepalive, airwall);
+      return;
+    }
+  }
+  else
+  {
+    abort(); // FIXME
+  }
+
   version = entry->version;
   sz = (version == 4) ? (sizeof(windowupdate) - 20) : sizeof(windowupdate);
 
@@ -2730,6 +2748,141 @@ static int uplink_icmp(
   return 0;
 }
 
+static int downlink_dns(
+  struct airwall *airwall, struct worker_local *local, struct packet *pkt,
+  struct port *port, uint64_t time64, struct ll_alloc_st *st)
+{
+  void *origether = pkt->data;
+  void *origip = ether_payload(origether);
+  char *origudp = ip46_payload(origip);
+  void *origudppay = origudp + 8;
+  char *ip, *udp, *udppay;
+  int version = ip_version(origip);
+  void *lan_ip, *remote_ip;
+  uint16_t lan_port, remote_port;
+  uint16_t udp_len = ip46_payload_len(origip);
+  char dnspkt[1514] = {0};
+  const size_t udppay_maxlen = sizeof(dnspkt) - 14 - 20 - 8;
+  uint16_t off, aoff, qtype, qclass;
+  uint16_t remcnt, aremcnt;
+  char nambuf[1514-14-20-8] = {0};
+  struct packet *pktstruct;
+
+  if (version != 4)
+  {
+    abort();
+  }
+  lan_ip = ip_dst_ptr(origip);
+  remote_ip = ip_src_ptr(origip);
+  lan_port = udp_dst_port(origudp);
+  remote_port = udp_src_port(origudp);
+  if (remote_ip == 0 || remote_port == 0 || lan_ip == 0 || lan_port == 0)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "some of UDP addresses and ports were zero");
+    return 1;
+  }
+
+  memcpy(ether_src(dnspkt), ether_dst(origether), 6);
+  memcpy(ether_dst(dnspkt), ether_src(origether), 6);
+  ether_set_type(dnspkt, (version == 4) ? ETHER_TYPE_IP : ETHER_TYPE_IPV6);
+  ip = ether_payload(dnspkt);
+  ip_set_version(ip, version);
+#if 0 // FIXME this needs to be thought carefully
+  if (version == 6)
+  {
+    ipv6_set_flow_label(ip, entry->ulflowlabel);
+  }
+#endif
+  ip46_set_min_hdr_len(ip);
+  //ip46_set_payload_len(ip, sizeof(dns) - 14 - 40);
+  ip46_set_dont_frag(ip, 1);
+  ip46_set_id(ip, 0); // XXX
+  ip46_set_ttl(ip, 64);
+  ip46_set_proto(ip, 17);
+  ip46_set_src(ip, ip46_dst(origip));
+  ip46_set_dst(ip, ip46_src(origip));
+  udp = ip46_payload(ip);
+  udp_set_src_port(udp, udp_dst_port(origudp));
+  udp_set_dst_port(udp, udp_src_port(origudp));
+  udppay = udp+8;
+
+  dns_set_id(udppay, dns_id(origudppay));
+  dns_set_qr(udppay, 1);
+  dns_set_opcode(udppay, dns_opcode(origudppay));
+  dns_set_aa(udppay, 1);
+  dns_set_aa(udppay, 1);
+  dns_set_tc(udppay, 0);
+  dns_set_rd(udppay, 0);
+  dns_set_ra(udppay, 0);
+  dns_set_z(udppay);
+  dns_set_rcode(udppay, 0);
+  dns_set_qdcount(udppay, 0);
+  dns_set_ancount(udppay, 0);
+  dns_set_nscount(udppay, 0);
+  dns_set_arcount(udppay, 0);
+
+  dns_next_init_qd(udppay, &aoff, &remcnt, udppay_maxlen);
+
+  dns_next_init_qd(origudppay, &off, &remcnt, udp_len);
+
+  while (dns_next(origudppay, &off, &remcnt, udp_len, nambuf, sizeof(nambuf), &qtype, &qclass) == 0)
+  {
+    dns_set_qdcount(udppay, dns_qdcount(udppay) + 1);
+    dns_put_next_qr(udppay, &aoff, &aremcnt, udppay_maxlen, nambuf, qtype, qclass);
+  }
+
+  dns_next_init_qd(origudppay, &off, &remcnt, udp_len);
+  while (dns_next(origudppay, &off, &remcnt, udp_len, nambuf, udppay_maxlen, &qtype, &qclass) == 0)
+  {
+    struct host_hash_entry *host;
+    host = host_hash_get_entry(&airwall->conf->hosts, nambuf);
+    if (qclass == 1 && qtype == 1 && host != NULL)
+    {
+      char ipv4[4];
+      hdr_set32n(ipv4, airwall->conf->ul_addr);
+      dns_set_ancount(udppay, dns_ancount(udppay) + 1);
+      dns_put_next(udppay, &aoff, &aremcnt, udppay_maxlen, nambuf, qtype, qclass, 0,
+                   4, ipv4);
+      if (host->protocol != 255)
+      {
+        struct threetuplepayload payload;
+        payload.mss = 1460;
+        payload.wscaleshift = 7;
+        payload.sack_supported = 0;
+        payload.mss_set = 0;
+        payload.sack_set = 0;
+        payload.wscaleshift_set = 0;
+        payload.local_ip = host->local_ip;
+        log_log(LOG_LEVEL_NOTICE, "WORKERDOWNLINK", "adding threetuple match");
+        threetuplectx_add(&airwall->threetuplectx, &local->timers,
+                          airwall->conf->ul_addr, host->port, host->protocol,
+                          (host->port != 0), (host->protocol != 0),
+                          &payload, time64);
+      }
+    }
+  }
+  udp_set_total_len(udp, 8 + aoff);
+  udp_set_cksum(udp, 0); // FIXME
+  ip46_set_payload_len(ip, 8 + aoff);
+  ip46_set_hdr_cksum_calc(ip);
+
+  pktstruct = ll_alloc_st(st, packet_size(14+20+8+aoff));
+  pktstruct->data = packet_calc_data(pktstruct);
+  pktstruct->direction = PACKET_DIRECTION_UPLINK;
+  pktstruct->sz = 14+20+8+aoff;
+  memcpy(pktstruct->data, dnspkt, 14+20+8+aoff);
+#ifdef ENABLE_ARP
+  if (send_via_arp(pktstruct, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
+  {
+    ll_free_st(st, pktstruct);
+    return 1;
+  }
+#endif
+  port->portfunc(pktstruct, port->userdata);
+
+  return 1;
+}
+
 static int downlink_udp(
   struct airwall *airwall, struct worker_local *local, struct packet *pkt,
   struct port *port, uint64_t time64, struct ll_alloc_st *st)
@@ -2760,6 +2913,10 @@ static int downlink_udp(
   {
     log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "some of UDP addresses and ports were zero");
     return 1;
+  }
+  if (lan_port == 53)
+  {
+    return downlink_dns(airwall, local, pkt, port, time64, st);
   }
   ue = airwall_hash_get_nat_udp(local, version, lan_ip, lan_port, remote_ip, remote_port, &ctx);
   if (ue == NULL)

@@ -1160,9 +1160,9 @@ static void closed_port(int version)
   }
 
   ll_alloc_st_free(&st);
-  worker_local_free(&local);
   conf_free(&conf);
-  airwall_free(&airwall);
+  airwall_free(&airwall, &local);
+  worker_local_free(&local);
 }
 
 static void three_way_handshake_impl(
@@ -2407,9 +2407,9 @@ static void three_way_handshake_four_way_fin(int version)
     &airwall, &local, &st, version, src, dst, 12345, 54321, 1, 1);
 
   ll_alloc_st_free(&st);
-  worker_local_free(&local);
   conf_free(&conf);
-  airwall_free(&airwall);
+  airwall_free(&airwall, &local);
+  worker_local_free(&local);
 }
 
 static void established_rst_uplink(int version)
@@ -2561,9 +2561,9 @@ static void established_rst_uplink(int version)
   }
 
   ll_alloc_st_free(&st);
-  worker_local_free(&local);
   conf_free(&conf);
-  airwall_free(&airwall);
+  airwall_free(&airwall, &local);
+  worker_local_free(&local);
 }
 
 static void established_rst_downlink(int version)
@@ -2715,9 +2715,9 @@ static void established_rst_downlink(int version)
   }
 
   ll_alloc_st_free(&st);
-  worker_local_free(&local);
   conf_free(&conf);
-  airwall_free(&airwall);
+  airwall_free(&airwall, &local);
+  worker_local_free(&local);
 }
 
 static void syn_proxy_rst_uplink(int version)
@@ -2873,9 +2873,9 @@ static void syn_proxy_rst_uplink(int version)
   }
 
   ll_alloc_st_free(&st);
-  worker_local_free(&local);
   conf_free(&conf);
-  airwall_free(&airwall);
+  airwall_free(&airwall, &local);
+  worker_local_free(&local);
 }
 
 static void syn_proxy_rst_downlink(int version)
@@ -3029,9 +3029,9 @@ static void syn_proxy_rst_downlink(int version)
   }
 
   ll_alloc_st_free(&st);
-  worker_local_free(&local);
   conf_free(&conf);
-  airwall_free(&airwall);
+  airwall_free(&airwall, &local);
+  worker_local_free(&local);
 }
 
 static void three_way_handshake_ulretransmit(int version)
@@ -3080,9 +3080,9 @@ static void three_way_handshake_ulretransmit(int version)
     &airwall, &local, &st, version, src, dst, 12345, 54321, 1, 1);
 
   ll_alloc_st_free(&st);
-  worker_local_free(&local);
   conf_free(&conf);
-  airwall_free(&airwall);
+  airwall_free(&airwall, &local);
+  worker_local_free(&local);
 }
 
 static void three_way_handshake_dlretransmit(int version)
@@ -3131,9 +3131,9 @@ static void three_way_handshake_dlretransmit(int version)
     &airwall, &local, &st, version, src, dst, 12345, 54321, 1, 1);
 
   ll_alloc_st_free(&st);
-  worker_local_free(&local);
   conf_free(&conf);
-  airwall_free(&airwall);
+  airwall_free(&airwall, &local);
+  worker_local_free(&local);
 }
 
 static void three_way_handshake_findlretransmit(int version)
@@ -3182,9 +3182,9 @@ static void three_way_handshake_findlretransmit(int version)
     &airwall, &local, &st, version, src, dst, 12345, 54321, 1, 2);
 
   ll_alloc_st_free(&st);
-  worker_local_free(&local);
   conf_free(&conf);
-  airwall_free(&airwall);
+  airwall_free(&airwall, &local);
+  worker_local_free(&local);
 }
 
 static void three_way_handshake_finulretransmit(int version)
@@ -3233,9 +3233,9 @@ static void three_way_handshake_finulretransmit(int version)
     &airwall, &local, &st, version, src, dst, 12345, 54321, 2, 1);
 
   ll_alloc_st_free(&st);
-  worker_local_free(&local);
   conf_free(&conf);
-  airwall_free(&airwall);
+  airwall_free(&airwall, &local);
+  worker_local_free(&local);
 }
 
 static void syn_proxy_handshake(int version)
@@ -3290,9 +3290,9 @@ static void syn_proxy_handshake(int version)
     1, 1);
 
   ll_alloc_st_free(&st);
-  worker_local_free(&local);
   conf_free(&conf);
-  airwall_free(&airwall);
+  airwall_free(&airwall, &local);
+  worker_local_free(&local);
 }
 
 static void syn_proxy_uplink(int version)
@@ -3359,9 +3359,9 @@ static void syn_proxy_uplink(int version)
     1, 1);
 
   ll_alloc_st_free(&st);
-  worker_local_free(&local);
   conf_free(&conf);
-  airwall_free(&airwall);
+  airwall_free(&airwall, &local);
+  worker_local_free(&local);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
   init_udp_porter(&porter);
@@ -3396,9 +3396,9 @@ static void syn_proxy_uplink(int version)
     1, 1);
 
   ll_alloc_st_free(&st);
-  worker_local_free(&local);
   conf_free(&conf);
-  airwall_free(&airwall);
+  airwall_free(&airwall, &local);
+  worker_local_free(&local);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
   init_udp_porter(&porter);
@@ -3433,9 +3433,9 @@ static void syn_proxy_uplink(int version)
     1, 1);
 
   ll_alloc_st_free(&st);
-  worker_local_free(&local);
   conf_free(&conf);
-  airwall_free(&airwall);
+  airwall_free(&airwall, &local);
+  worker_local_free(&local);
 }
 
 static void syn_proxy_downlink(int version)
@@ -3502,9 +3502,9 @@ static void syn_proxy_downlink(int version)
     1, 1);
 
   ll_alloc_st_free(&st);
-  worker_local_free(&local);
   conf_free(&conf);
-  airwall_free(&airwall);
+  airwall_free(&airwall, &local);
+  worker_local_free(&local);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
   init_udp_porter(&porter);
@@ -3539,9 +3539,9 @@ static void syn_proxy_downlink(int version)
     1, 1);
 
   ll_alloc_st_free(&st);
-  worker_local_free(&local);
   conf_free(&conf);
-  airwall_free(&airwall);
+  airwall_free(&airwall, &local);
+  worker_local_free(&local);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
   init_udp_porter(&porter);
@@ -3576,9 +3576,9 @@ static void syn_proxy_downlink(int version)
     1, 1);
 
   ll_alloc_st_free(&st);
-  worker_local_free(&local);
   conf_free(&conf);
-  airwall_free(&airwall);
+  airwall_free(&airwall, &local);
+  worker_local_free(&local);
 }
 
 static void syn_proxy_uplink_downlink(int version)
@@ -3650,9 +3650,9 @@ static void syn_proxy_uplink_downlink(int version)
     1, 1);
 
   ll_alloc_st_free(&st);
-  worker_local_free(&local);
   conf_free(&conf);
-  airwall_free(&airwall);
+  airwall_free(&airwall, &local);
+  worker_local_free(&local);
 }
 
 static void syn_proxy_closed_port(int version)
@@ -3701,9 +3701,9 @@ static void syn_proxy_closed_port(int version)
     &isn, 1, 1, 1);
 
   ll_alloc_st_free(&st);
-  worker_local_free(&local);
   conf_free(&conf);
-  airwall_free(&airwall);
+  airwall_free(&airwall, &local);
+  worker_local_free(&local);
 }
 
 static void syn_proxy_handshake_2_1_1(int version)
@@ -3758,9 +3758,9 @@ static void syn_proxy_handshake_2_1_1(int version)
     1, 1);
 
   ll_alloc_st_free(&st);
-  worker_local_free(&local);
   conf_free(&conf);
-  airwall_free(&airwall);
+  airwall_free(&airwall, &local);
+  worker_local_free(&local);
 }
 
 static void syn_proxy_handshake_1_2_1(int version)
@@ -3815,9 +3815,9 @@ static void syn_proxy_handshake_1_2_1(int version)
     1, 1);
 
   ll_alloc_st_free(&st);
-  worker_local_free(&local);
   conf_free(&conf);
-  airwall_free(&airwall);
+  airwall_free(&airwall, &local);
+  worker_local_free(&local);
 }
 
 static void syn_proxy_handshake_1_1_2(int version)
@@ -3872,9 +3872,9 @@ static void syn_proxy_handshake_1_1_2(int version)
     1, 1);
 
   ll_alloc_st_free(&st);
-  worker_local_free(&local);
   conf_free(&conf);
-  airwall_free(&airwall);
+  airwall_free(&airwall, &local);
+  worker_local_free(&local);
 }
 
 static void syn_proxy_handshake_1_1_1_keepalive(int version)
@@ -3929,9 +3929,9 @@ static void syn_proxy_handshake_1_1_1_keepalive(int version)
     1, 1);
 
   ll_alloc_st_free(&st);
-  worker_local_free(&local);
   conf_free(&conf);
-  airwall_free(&airwall);
+  airwall_free(&airwall, &local);
+  worker_local_free(&local);
 }
 
 static void syn_proxy_handshake_1_1_1_zerowindowprobe(int version)
@@ -3986,9 +3986,9 @@ static void syn_proxy_handshake_1_1_1_zerowindowprobe(int version)
     1, 1);
 
   ll_alloc_st_free(&st);
-  worker_local_free(&local);
   conf_free(&conf);
-  airwall_free(&airwall);
+  airwall_free(&airwall, &local);
+  worker_local_free(&local);
 }
 
 int main(int argc, char **argv)

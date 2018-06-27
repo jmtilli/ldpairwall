@@ -62,6 +62,7 @@ int confyywrap(yyscan_t scanner)
 %token PORT
 %token HOSTS
 %token ENABLE_ACK
+%token TCP UDP TCPUDP NORGW
 
 %token DL_ADDR
 %token UL_ADDR
@@ -72,6 +73,7 @@ int confyywrap(yyscan_t scanner)
 
 %type<i> sackconflictval
 %type<i> own_sack
+%type<i> protocol
 %type<i> INT_LITERAL
 %type<i> IP_LITERAL
 %type<s> STRING_LITERAL
@@ -585,11 +587,37 @@ TEST_CONNECTIONS SEMICOLON
 | HOSTS EQUALS OPENBRACE hostslist_maybe CLOSEBRACE SEMICOLON
 ;
 
+protocol:
+TCP
+{
+  $$ = 6;
+}
+| UDP
+{
+  $$ = 17;
+}
+| TCPUDP
+{
+  $$ = 0;
+}
+| NORGW
+{
+  $$ = 255;
+}
+;
+
 hostslist_entry:
-OPENBRACE STRING_LITERAL COMMA IP_LITERAL CLOSEBRACE
+OPENBRACE STRING_LITERAL COMMA IP_LITERAL COMMA protocol COMMA INT_LITERAL CLOSEBRACE
 {
   uint32_t a = $4;
-  host_hash_add(&conf->hosts, $2, a);
+  if ($8 < 0 || $8 > 65535)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
+            "invalid port: %d at line %d col %d",
+            $8, @8.first_line, @8.first_column);
+    YYABORT;
+  }
+  host_hash_add(&conf->hosts, $2, a, $6, $8);
 #if 0
   printf("%s is at %d.%d.%d.%d\n", $2,
     (a>>24)&0xFF,

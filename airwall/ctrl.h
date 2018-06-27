@@ -5,6 +5,7 @@
 
 struct ctrl_args {
   struct airwall *airwall;
+  struct worker_local *local;
   int piperd;
 };
 
