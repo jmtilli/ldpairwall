@@ -577,6 +577,28 @@ static void airwall_udp_expiry_fn(
   free(e);
 }
 
+static void airwall_icmp_expiry_fn(
+  struct timer_link *timer, struct timer_linkheap *heap, void *ud, void *td)
+{
+  struct worker_local *local = ud;
+  struct airwall_icmp_entry *e;
+  e = CONTAINER_OF(timer, struct airwall_icmp_entry, timer);
+  hash_table_delete(&local->local_icmp_hash, &e->local_node, airwall_hash_local_icmp(e));
+  hash_table_delete(&local->nat_icmp_hash, &e->nat_node, airwall_hash_nat_icmp(e));
+  deallocate_udp_port(local->airwall->icmp_porter, e->nat_identifier, !e->was_incoming);
+  worker_local_wrlock(local);
+  if (e->was_incoming)
+  {
+    local->incoming_icmp_connections--;
+  }
+  else
+  {
+    local->direct_icmp_connections--;
+  }
+  worker_local_wrunlock(local);
+  free(e);
+}
+
 static inline int seq_cmp(uint32_t x, uint32_t y)
 {
   int32_t result = x-y;
@@ -741,6 +763,65 @@ struct airwall_udp_entry *airwall_hash_put_udp(
   return ue;
 }
 
+struct airwall_icmp_entry *airwall_hash_put_icmp(
+  struct worker_local *local,
+  int version,
+  const void *local_ip,
+  uint16_t local_identifier,
+  const void *nat_ip,
+  uint16_t nat_identifier,
+  const void *remote_ip,
+  uint8_t was_incoming,
+  uint64_t time64)
+{
+  struct airwall_icmp_entry *ue;
+  struct airwall_hash_ctx ctx;
+
+  if (airwall_hash_get_local_icmp(local, version, local_ip, remote_ip, local_identifier, &ctx))
+  {
+    return NULL;
+  }
+  if (airwall_hash_get_nat_icmp(local, version, nat_ip, remote_ip, nat_identifier, &ctx))
+  {
+    return NULL;
+  }
+  ue = malloc(sizeof(*ue));
+  if (ue == NULL)
+  {
+    return NULL;
+  }
+  memset(ue, 0, sizeof(*ue));
+  ue->version = version;
+  if (local_ip != NULL)
+  {
+    memcpy(&ue->local_ip, local_ip, (version == 4) ? 4 : 16);
+  }
+  memcpy(&ue->nat_ip, nat_ip, (version == 4) ? 4 : 16);
+  memcpy(&ue->remote_ip, remote_ip, (version == 4) ? 4 : 16);
+  ue->local_identifier = local_identifier;
+  ue->nat_identifier = nat_identifier;
+  ue->was_incoming = was_incoming;
+  ue->timer.time64 = time64 + 15ULL*1000ULL*1000ULL;
+  ue->timer.fn = airwall_icmp_expiry_fn;
+  ue->timer.userdata = local;
+  worker_local_wrlock(local);
+  timer_linkheap_add(&local->timers, &ue->timer);
+  hash_table_add_nogrow_already_bucket_locked(
+    &local->local_icmp_hash, &ue->local_node, airwall_hash_local_icmp(ue));
+  hash_table_add_nogrow_already_bucket_locked(
+    &local->nat_icmp_hash, &ue->nat_node, airwall_hash_nat_icmp(ue));
+  if (was_incoming)
+  {
+    local->incoming_icmp_connections++;
+  }
+  else
+  {
+    local->direct_icmp_connections++;
+  }
+  worker_local_wrunlock(local);
+  return ue;
+}
+
 
 uint32_t airwall_hash_fn_local(struct hash_list_node *node, void *userdata)
 {
@@ -758,6 +839,15 @@ uint32_t airwall_hash_fn_local_udp(struct hash_list_node *node, void *userdata)
 uint32_t airwall_hash_fn_nat_udp(struct hash_list_node *node, void *userdata)
 {
   return airwall_hash_nat_udp(CONTAINER_OF(node, struct airwall_udp_entry, nat_node));
+}
+
+uint32_t airwall_hash_fn_local_icmp(struct hash_list_node *node, void *userdata)
+{
+  return airwall_hash_local_icmp(CONTAINER_OF(node, struct airwall_icmp_entry, local_node));
+}
+uint32_t airwall_hash_fn_nat_icmp(struct hash_list_node *node, void *userdata)
+{
+  return airwall_hash_nat_icmp(CONTAINER_OF(node, struct airwall_icmp_entry, nat_node));
 }
 
 static void delete_closing_already_bucket_locked(
@@ -2325,6 +2415,7 @@ static int downlink_icmp(
   void *ippay = ip46_payload(ip);
   struct airwall_hash_entry *e;
   struct airwall_udp_entry *ue;
+  struct airwall_icmp_entry *ie;
   int version = ip_version(ip);
   struct airwall_hash_ctx ctx;
   void *lan_ip, *remote_ip;
@@ -2346,6 +2437,25 @@ static int downlink_icmp(
   {
     log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "too short ICMP packet 1");
     return 1;
+  }
+  if (icmp_type(ippay) == 0)
+  {
+    lan_ip = ip_dst_ptr(ip);
+    remote_ip = ip_src_ptr(ip);
+    ie = airwall_hash_get_nat_icmp(local, version, lan_ip, remote_ip, icmp_echo_identifier(ippay), &ctx);
+    if (ie == NULL)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "No ICMP entry");
+      return 1;
+    }
+    icmp_set_echo_identifier_cksum_update(ippay, icmp_len, ie->local_identifier);
+    ip_set_dst_cksum_update(ip, ip46_total_len(ip), 0, NULL, 0, hdr_get32n(&ie->local_ip));
+    if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
+    {
+      return 1;
+    }
+  
+    return 0;
   }
   if (icmp_type(ippay) == 5)
   {
@@ -2457,6 +2567,7 @@ static int uplink_icmp(
   void *ippay = ip46_payload(ip);
   struct airwall_hash_entry *e;
   struct airwall_udp_entry *ue;
+  struct airwall_icmp_entry *ie;
   int version = ip_version(ip);
   struct airwall_hash_ctx ctx;
   void *lan_ip, *remote_ip;
@@ -2479,15 +2590,50 @@ static int uplink_icmp(
     log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "too short ICMP packet 1");
     return 1;
   }
+  if (icmp_type(ippay) == 8)
+  {
+    lan_ip = ip_src_ptr(ip);
+    remote_ip = ip_dst_ptr(ip);
+    ie = airwall_hash_get_local_icmp(local, version, lan_ip, remote_ip, icmp_echo_identifier(ippay), &ctx);
+    if (ie == NULL)
+    {
+      char ipv4[4];
+      uint16_t nat_identifier;
+      if (version == 4)
+      {
+        uint32_t loc = airwall->conf->ul_addr;
+        hdr_set32n(ipv4, loc);
+        nat_identifier = get_udp_port(airwall->icmp_porter, hdr_get32n(lan_ip), icmp_echo_identifier(ippay));
+      }
+      else
+      {
+        abort();
+      }
+      ie = airwall_hash_put_icmp(local, version, lan_ip, icmp_echo_identifier(ippay), ipv4, nat_identifier, remote_ip, 0, time64);
+      if (ie == NULL)
+      {
+        log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "No memory for ICMP entry");
+        return 1;
+      }
+    }
+    icmp_set_echo_identifier_cksum_update(ippay, icmp_len, ie->nat_identifier);
+    ip_set_src_cksum_update(ip, ip46_total_len(ip), 0, NULL, 0, hdr_get32n(&ie->nat_ip));
+    if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
+    {
+      return 1;
+    }
+  
+    return 0;
+  }
   if (icmp_type(ippay) == 5)
   {
-    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "dropping ICMP redirect");
+    log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "dropping ICMP redirect");
     return 1;
   }
   if (icmp_type(ippay) != 3 && icmp_type(ippay) != 11 &&
       icmp_type(ippay) != 12 && icmp_type(ippay) != 4)
   {
-    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "not a supported ICMP type");
+    log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "not a supported ICMP type");
     return 1;
   }
   if (ipin_len < IP_HDR_MINLEN + ICMP_L4_PAYLOAD_PORTS_MINLEN)
@@ -2512,17 +2658,17 @@ static int uplink_icmp(
     log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "ICMP inprotocol not supported");
     return 1;
   }
-  lan_ip = ip_src_ptr(ipin);
-  remote_ip = ip_dst_ptr(ipin);
+  lan_ip = ip_dst_ptr(ipin);
+  remote_ip = ip_src_ptr(ipin);
   if (inprotocol == 6)
   {
-    lan_port = tcp_src_port(ipinpay);
-    remote_port = tcp_dst_port(ipinpay);
+    lan_port = tcp_dst_port(ipinpay);
+    remote_port = tcp_src_port(ipinpay);
   }
   else if (inprotocol == 17)
   {
-    lan_port = udp_src_port(ipinpay);
-    remote_port = udp_dst_port(ipinpay);
+    lan_port = udp_dst_port(ipinpay);
+    remote_port = udp_src_port(ipinpay);
   }
   else
   {

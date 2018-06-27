@@ -29,6 +29,7 @@ struct ldp_out_queue *uloutq[MAX_RX_TX];
 
 struct udp_porter porter;
 struct udp_porter udp_porter;
+struct udp_porter icmp_porter;
 
 atomic_int exit_threads = 0;
 
@@ -120,12 +121,13 @@ int main(int argc, char **argv)
 
   init_udp_porter(&porter);
   init_udp_porter(&udp_porter);
+  init_udp_porter(&icmp_porter);
 
   hash_seed_init();
 
   conf_init(&conf);
   confyydirparse(argv[0], "conf.txt", &conf, 0);
-  airwall_init(airwall, &conf, &porter, &udp_porter);
+  airwall_init(airwall, &conf, &porter, &udp_porter, &icmp_porter);
   worker_local_init(local, airwall, 1, 0, &intf); // FIXME change to non-deterministic
 
 
