@@ -2519,6 +2519,7 @@ static int downlink_icmp(
       log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "TCP entry not found");
       return 1;
     }
+    ip_set_dst_cksum_update(ip, ip46_total_len(ip), 1, ipin, ipin_len, hdr_get32n(&e->local_ip));
     if (ipin_len < ip_hdr_len(ipin) + 18)
     {
       ip_set_src_cksum_update(ipin, ipin_len, inprotocol, ipinpay, 8, hdr_get32n(&e->local_ip));
@@ -2538,6 +2539,7 @@ static int downlink_icmp(
       log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "UDP entry not found");
       return 1;
     }
+    ip_set_dst_cksum_update(ip, ip46_total_len(ip), 1, ipin, ipin_len, hdr_get32n(&ue->local_ip));
     if (ipin_len < ip_hdr_len(ipin) + 8)
     {
       ip_set_src_cksum_update(ipin, ipin_len, inprotocol, ipinpay, 8, hdr_get32n(&ue->local_ip));
@@ -2687,6 +2689,7 @@ static int uplink_icmp(
       log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "TCP entry not found");
       return 1;
     }
+    ip_set_src_cksum_update(ip, ip46_total_len(ip), 1, ipin, ipin_len, hdr_get32n(&e->nat_ip));
     if (ipin_len < ip_hdr_len(ipin) + 18)
     {
       ip_set_dst_cksum_update(ipin, ipin_len, inprotocol, ipinpay, 8, hdr_get32n(&e->nat_ip));
@@ -2706,6 +2709,7 @@ static int uplink_icmp(
       log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "UDP entry not found");
       return 1;
     }
+    ip_set_src_cksum_update(ip, ip46_total_len(ip), 1, ipin, ipin_len, hdr_get32n(&ue->nat_ip));
     if (ipin_len < ip_hdr_len(ipin) + 8)
     {
       ip_set_dst_cksum_update(ipin, ipin_len, inprotocol, ipinpay, 8, hdr_get32n(&ue->nat_ip));
