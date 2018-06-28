@@ -47,6 +47,7 @@ struct conf {
   DYNARR(uint16_t) tsmsslist;
   DYNARR(uint8_t) tswscalelist;
   uint32_t halfopen_cache_max;
+  uint32_t detect_cache_max;
   int msslist_present;
   int wscalelist_present;
   int tsmsslist_present;
@@ -118,6 +119,7 @@ static inline void conf_init(struct conf *conf)
   conf->mss_clamp = 1460;
   conf->ts_bits = 5;
   conf->halfopen_cache_max = 0;
+  conf->detect_cache_max = 8192;
   conf->threadcount = 1;
   conf->uid = 0;
   conf->gid = 0;

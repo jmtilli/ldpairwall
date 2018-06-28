@@ -523,6 +523,11 @@ static void airwall_expiry_fn(
     local->half_open_connections--;
   }
   worker_local_wrunlock(local);
+  if (e->detect)
+  {
+    local->detect_count--;
+    linked_list_delete(&e->detect_node);
+  }
   free(e->detect);
   e->detect = NULL;
   free(e);
@@ -890,6 +895,11 @@ static void delete_closing_already_bucket_locked(
     local->direct_connections--;
   }
   worker_local_wrunlock(local);
+  if (entry->detect)
+  {
+    local->detect_count--;
+    linked_list_delete(&entry->detect_node);
+  }
   free(entry->detect);
   entry->detect = NULL;
   free(entry);
@@ -1076,6 +1086,50 @@ static void process_data(
     abort();
   }
 
+  if (entry->detect == NULL)
+  {
+    while (local->detect_count &&
+           local->detect_count >= airwall->conf->detect_cache_max)
+    {
+      struct linked_list_node *node = local->detect_list.node.next;
+      //uint32_t hashval;
+      struct airwall_hash_entry *e =
+        CONTAINER_OF(node, struct airwall_hash_entry, detect_node);
+      //hashval = airwall_hash(e);
+      timer_linkheap_remove(&local->timers, &e->timer);
+      if (e->retxtimer_set)
+      {
+        timer_linkheap_remove(&local->timers, &e->retx_timer);
+        e->retxtimer_set = 0;
+      }
+      if (!e->detect)
+      {
+        abort();
+      }
+      if (!e->was_synproxied)
+      {
+        abort();
+      }
+      local->synproxied_connections--;
+      local->detect_count--;
+      linked_list_delete(&e->detect_node);
+      free(e->detect);
+      e->detect = NULL;
+      deallocate_udp_port(airwall->porter, e->nat_port, !e->was_synproxied);
+      if (e->local_port != 0)
+      {
+        hash_table_delete_already_bucket_locked(&local->local_hash, &e->local_node);
+      }
+      hash_table_delete_already_bucket_locked(&local->nat_hash, &e->nat_node);
+      free(e);
+    }
+    entry->detect = malloc(sizeof(*entry->detect));
+    proto_detect_ctx_init(entry->detect);
+    linked_list_add_tail(
+      &entry->detect_node, &local->detect_list);
+    local->detect_count++;
+  }
+
   origip = ether_payload(orig);
   //version = ip_version(origip);
   origtcp = ip46_payload(origip);
@@ -1195,6 +1249,11 @@ static void process_data(
     {
       entry->revdata = 1;
       entry->remote_isn += entry->detect->hostctx.is_http_connect_num_bytes;
+      if (entry->detect)
+      {
+        local->detect_count--;
+        linked_list_delete(&entry->detect_node);
+      }
       free(entry->detect);
       entry->detect = NULL;
     }
@@ -1511,6 +1570,11 @@ static void send_synack(
       {
         timer_linkheap_remove(&local->timers, &e->retx_timer);
         e->retxtimer_set = 0;
+      }
+      if (e->detect)
+      {
+        local->detect_count--;
+        linked_list_delete(&e->detect_node);
       }
       free(e->detect);
       e->detect = NULL;
@@ -2024,8 +2088,13 @@ static void send_window_update(
     entry->wan_max_window_unscaled = 1;
   }
 
+#if 0 // Not yet needed at this stage, only after first data arrives
   entry->detect = malloc(sizeof(*entry->detect));
   proto_detect_ctx_init(entry->detect);
+  linked_list_add_tail(
+    &entry->detect_node, &local->detect_list);
+  local->detect_count++;
+#endif
 
   entry->local_isn = tcp_ack_number(origtcp) - 1;
   entry->remote_isn = tcp_seq_number(origtcp) - 1 + (!!was_keepalive);
@@ -5010,6 +5079,8 @@ int uplink(
       cmp = seq_cmp(tcp_ack_number(ippay), acked_seq);
       if (cmp >= 0)
       {
+        local->detect_count--;
+        linked_list_delete(&entry->detect_node);
         free(entry->detect);
         entry->detect = NULL;
       }

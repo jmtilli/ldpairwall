@@ -57,6 +57,7 @@ int confyywrap(yyscan_t scanner)
 %token SACKCONFLICT REMOVE RETAIN
 %token MSS_CLAMP
 %token NETWORK_PREFIX NETWORK_PREFIX6 MSSMODE DEFAULT HALFOPEN_CACHE_MAX
+%token DETECT_CACHE_MAX
 %token USER GROUP
 %token TEST_CONNECTIONS
 %token PORT
@@ -598,6 +599,17 @@ TEST_CONNECTIONS SEMICOLON
     YYABORT;
   }
   conf->halfopen_cache_max = $3;
+}
+| DETECT_CACHE_MAX EQUALS INT_LITERAL SEMICOLON
+{
+  if ($3 < 0)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
+            "invalid detect_cache_max: %d at line %d col %d",
+            $3, @3.first_line, @3.first_column);
+    YYABORT;
+  }
+  conf->detect_cache_max = $3;
 }
 | RATEHASH EQUALS OPENBRACE ratehashlist CLOSEBRACE SEMICOLON
 | HOSTS EQUALS OPENBRACE hostslist_maybe CLOSEBRACE SEMICOLON

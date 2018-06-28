@@ -168,6 +168,7 @@ struct airwall_hash_entry {
       uint32_t local_isn;
     } downlink_half_open;
   } state_data;
+  struct linked_list_node detect_node;
   struct proto_detect_ctx *detect;
 };
 
@@ -337,6 +338,8 @@ struct worker_local {
   uint32_t incoming_icmp_connections;
   uint32_t direct_icmp_connections;
   struct linked_list_head half_open_list;
+  struct linked_list_head detect_list;
+  size_t detect_count;
   struct arp_cache dl_arp_cache;
   struct arp_cache ul_arp_cache;
   struct airwall *airwall;
@@ -439,11 +442,13 @@ static inline void worker_local_init(
   local->synproxied_connections = 0;
   local->direct_connections = 0;
   local->half_open_connections = 0;
+  local->detect_count = 0;
   local->airwall = airwall;
   arp_cache_init(&local->dl_arp_cache, intf);
   arp_cache_init(&local->ul_arp_cache, intf);
   ip_hash_init(&local->ratelimit, &local->timers, locked ? &local->rwlock : NULL);
   linked_list_head_init(&local->half_open_list);
+  linked_list_head_init(&local->detect_list);
 }
 
 static inline void worker_local_free(struct worker_local *local)
