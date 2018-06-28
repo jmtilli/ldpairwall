@@ -5,6 +5,7 @@ airwallconf = {
   threadcount = 1;
   conntablesize = 131072;
   halfopen_cache_max = 0;
+  detect_cache_max = 8192;
   mss = {216, 1200, 1400, 1460};
   wscale = {0, 2, 4, 7};
   tsmss = {216, 344, 536, 712, 940, 1360, 1440, 1452};

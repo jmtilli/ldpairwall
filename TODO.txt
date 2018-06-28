@@ -4,7 +4,6 @@ universal plug and play
 DHCP client
 DHCP server
 wildcard connection open
-some solution to protocol detection memory exhaustion
 QUIC
 IPv6
 multithreading
