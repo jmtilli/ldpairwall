@@ -64,6 +64,7 @@ hosts        return HOSTS;
 enable_ack   return ENABLE_ACK;
 dl_addr      return DL_ADDR;
 ul_addr      return UL_ADDR;
+ul_alternatives return UL_ALTERNATIVES;
 dl_mask      return DL_MASK;
 ul_mask      return UL_MASK;
 ul_defaultgw return UL_DEFAULTGW;
@@ -74,6 +75,7 @@ tcp          return TCP;
 udp          return UDP;
 tcpudp       return TCPUDP;
 norgw        return NORGW;
+allow_anyport_primary return ALLOW_ANYPORT_PRIMARY;
 
 [0-9]+       {
   char *endptr;

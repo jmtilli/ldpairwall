@@ -2767,7 +2767,7 @@ static int downlink_dns(
   uint16_t remcnt, aremcnt;
   char nambuf[1514-14-20-8] = {0};
   struct packet *pktstruct;
-  int has_errs;
+  int has_errs = 0;
 
   if (version != 4)
   {
@@ -2836,13 +2836,16 @@ static int downlink_dns(
   while (dns_next(origudppay, &off, &remcnt, udp_len, nambuf, udppay_maxlen, &qtype, &qclass) == 0)
   {
     struct host_hash_entry *host;
+    uint32_t addr;
     host = host_hash_get_entry(&airwall->conf->hosts, nambuf);
     if (qclass == 1 && qtype == 1 && host != NULL)
     {
       char ipv4[4];
-      int ret = 0;
+      int ret = -1;
       if (host->protocol != 255)
       {
+        struct hash_list_node *node;
+        unsigned bucket;
         struct threetuplepayload payload;
         payload.mss = 1460;
         payload.wscaleshift = 7;
@@ -2852,14 +2855,31 @@ static int downlink_dns(
         payload.wscaleshift_set = 0;
         payload.local_ip = host->local_ip;
         log_log(LOG_LEVEL_NOTICE, "WORKERDOWNLINK", "adding threetuple match");
-        ret = threetuplectx_add(&airwall->threetuplectx, &local->timers,
-                                airwall->conf->ul_addr, host->port, host->protocol,
-                                (host->port != 0), (host->protocol != 0),
-                                &payload, time64);
+        HASH_TABLE_FOR_EACH(&airwall->conf->ul_alternatives, bucket, node)
+        {
+          struct ul_addr *e = CONTAINER_OF(node, struct ul_addr, node);
+          addr = e->addr;
+          ret = threetuplectx_add(&airwall->threetuplectx, &local->timers,
+                                  addr, host->port, host->protocol,
+                                  (host->port != 0), (host->protocol != 0),
+                                  &payload, time64);
+          if (ret == 0)
+          {
+            break;
+          }
+        }
+        if (ret != 0 && (host->port != 0 || airwall->conf->allow_anyport_primary))
+        {
+          addr = airwall->conf->ul_addr;
+          ret = threetuplectx_add(&airwall->threetuplectx, &local->timers,
+                                  addr, host->port, host->protocol,
+                                  (host->port != 0), (host->protocol != 0),
+                                  &payload, time64);
+        }
       }
       if (ret == 0)
       {
-        hdr_set32n(ipv4, airwall->conf->ul_addr);
+        hdr_set32n(ipv4, addr);
         dns_set_ancount(udppay, dns_ancount(udppay) + 1);
         dns_put_next(udppay, &aoff, &aremcnt, udppay_maxlen, nambuf, qtype, qclass, 0,
                      4, ipv4);
@@ -3036,7 +3056,7 @@ int downlink(
                 sha[0], sha[1], sha[2], sha[3], sha[4], sha[5]);
         arp_cache_put(&local->ul_arp_cache, port, arp_spa(arp), arp_const_sha(arp), &local->timers, time64);
       }
-      if (arp_tpa(arp) != airwall->conf->ul_addr)
+      if (!ul_addr_is_mine(airwall->conf, arp_tpa(arp)))
       {
         log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "ARP is not to us");
         return 1;
@@ -3050,7 +3070,7 @@ int downlink(
       arp_set_resp(arp2);
       memcpy(arp_sha(arp2), airwall->ul_mac, 6);
       memcpy(arp_tha(arp2), arp_const_sha(arp), 6);
-      arp_set_spa(arp2, airwall->conf->ul_addr);
+      arp_set_spa(arp2, arp_tpa(arp));
       arp_set_tpa(arp2, arp_spa(arp));
 
       struct packet *pktstruct = ll_alloc_st(st, packet_size(sizeof(etherarp)));
@@ -3133,7 +3153,7 @@ int downlink(
     protocol = ip_proto(ip);
     ippay = ip_payload(ip);
 #ifdef ENABLE_ARP
-    if (hdr_get32n(lan_ip) != airwall->conf->ul_addr)
+    if (!ul_addr_is_mine(airwall->conf, hdr_get32n(lan_ip)))
     {
       log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "address of packet invalid");
       return 1;
