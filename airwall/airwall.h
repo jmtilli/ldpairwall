@@ -109,12 +109,12 @@ struct airwall_hash_entry {
   uint16_t nat_port;
   uint16_t remote_port;
   uint16_t flag_state;
-  uint8_t version; // 4 or 6, IPv4 or IPv6
   int8_t wscalediff;
   uint8_t lan_wscale;
   uint8_t wan_wscale;
-  uint8_t was_synproxied;
-  uint8_t lan_sack_was_supported;
+  uint8_t version:4; // 4 or 6, IPv4 or IPv6
+  uint8_t was_synproxied:1;
+  uint8_t lan_sack_was_supported:1;
   uint8_t revdata:1;
   uint8_t retxtimer_set:1;
   uint32_t seqoffset;
@@ -154,9 +154,9 @@ struct airwall_hash_entry {
       uint32_t downfin; // valid if FLAG_STATE_DOWNLINK_FIN
       uint32_t retx_seq;
       uint32_t retx_ack;
-      uint16_t retx_win;
       uint32_t retx_ts;
       uint32_t retx_tsecho;
+      uint16_t retx_win;
       uint8_t retx_ts_present:1;
     } established;
     struct {
