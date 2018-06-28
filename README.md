@@ -149,6 +149,8 @@ from the eth0 and eth1 interfaces.
 Execute:
 
 ```
+mkdir -p /etc/netns/ns1
+echo "nameserver 10.150.2.100" > /etc/netns/ns1/resolv.conf
 ip link add veth0 type veth peer name veth1
 ip link add veth2 type veth peer name veth3
 ifconfig veth0 up
@@ -226,3 +228,10 @@ HTTP/1.1 200 OK
 
 ...and now you have a HTTP connection to the machine's port 1234 even though
 you originally connected to a different port.
+
+Test also the RGW mode of operation by using SSH, a non-AL-NAT-friendly
+protocol:
+```
+ip netns exec ns2 nc -v -v -v -l -p 22
+ip netns exec ns1 nc -v -v -v ssh.example.com 22
+```
