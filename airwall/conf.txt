@@ -32,5 +32,7 @@ airwallconf = {
   dl_mask = 255.255.255.0;
   ul_addr = 10.150.2.100;
   ul_mask = 255.255.255.0;
+  ul_alternatives = {10.150.2.101, 10.150.2.102};
   ul_defaultgw = 10.150.2.1;
+  allow_anyport_primary;
 };

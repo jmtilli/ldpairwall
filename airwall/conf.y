@@ -66,9 +66,11 @@ int confyywrap(yyscan_t scanner)
 
 %token DL_ADDR
 %token UL_ADDR
+%token UL_ALTERNATIVES
 %token DL_MASK
 %token UL_MASK
 %token UL_DEFAULTGW
+%token ALLOW_ANYPORT_PRIMARY
 
 
 %type<i> sackconflictval
@@ -124,6 +126,11 @@ own_sack:
 
 ratehashlist:
 | ratehashlist ratehash_entry
+;
+
+ul_alternatives:
+ul_alternative_entry
+| ul_alternatives COMMA ul_alternative_entry
 ;
 
 hostslist:
@@ -235,6 +242,10 @@ hostslist_maybe:
 | hostslist maybe_comma
 ;
 
+ul_alternatives_maybe:
+| ul_alternatives maybe_comma
+;
+
 msslist_maybe:
 | msslist maybe_comma
 ;
@@ -260,6 +271,10 @@ TEST_CONNECTIONS SEMICOLON
 {
   conf->enable_ack = 1;
 }
+| ALLOW_ANYPORT_PRIMARY SEMICOLON
+{
+  conf->allow_anyport_primary = 1;
+}
 | DL_ADDR EQUALS IP_LITERAL SEMICOLON
 {
   conf->dl_addr = (uint32_t)$3;
@@ -268,6 +283,7 @@ TEST_CONNECTIONS SEMICOLON
 {
   conf->ul_addr = (uint32_t)$3;
 }
+| UL_ALTERNATIVES EQUALS OPENBRACE ul_alternatives_maybe CLOSEBRACE SEMICOLON
 | DL_MASK EQUALS IP_LITERAL SEMICOLON
 {
   conf->dl_mask = (uint32_t)$3;
@@ -626,6 +642,16 @@ OPENBRACE STRING_LITERAL COMMA IP_LITERAL COMMA protocol COMMA INT_LITERAL CLOSE
     (a>>0)&0xFF);
 #endif
   free($2);
+}
+;
+
+ul_alternative_entry:
+IP_LITERAL
+{
+  struct ul_addr *addr = malloc(sizeof(*addr));
+  addr->addr = $1;
+  hash_table_add_nogrow_already_bucket_locked(
+    &conf->ul_alternatives, &addr->node, ul_addr_hash(addr));
 }
 ;
 

@@ -22,6 +22,21 @@ struct ratehashconf {
   uint8_t network_prefix6;
 };
 
+struct ul_addr {
+  struct hash_list_node node;
+  uint32_t addr;
+};
+
+static inline uint32_t ul_addr_hash_separate(uint32_t addr)
+{
+  return siphash64(hash_seed_get(), addr);
+}
+static inline uint32_t ul_addr_hash(struct ul_addr *addr)
+{
+  return ul_addr_hash_separate(addr->addr);
+}
+uint32_t ul_addr_hash_fn(struct hash_list_node *node, void *ud);
+
 struct conf {
   enum sackconflict sackconflict;
   size_t conntablesize;
@@ -51,13 +66,35 @@ struct conf {
   int test_connections;
   uint16_t port;
   struct host_hash hosts;
+  struct hash_table ul_alternatives;
   int enable_ack;
   uint32_t dl_addr;
   uint32_t ul_addr;
   uint32_t dl_mask;
   uint32_t ul_mask;
   uint32_t ul_defaultgw;
+  int allow_anyport_primary;
 };
+
+static inline int ul_addr_is_mine(struct conf *conf, uint32_t addr)
+{
+  struct hash_list_node *node;
+  uint32_t hashval;
+  if (addr == conf->ul_addr)
+  {
+    return 1;
+  }
+  hashval = ul_addr_hash_separate(addr);
+  HASH_TABLE_FOR_EACH_POSSIBLE(&conf->ul_alternatives, node, hashval)
+  {
+    struct ul_addr *e = CONTAINER_OF(node, struct ul_addr, node);
+    if (e->addr == addr)
+    {
+      return 1;
+    }
+  }
+  return 0;
+}
 
 static inline void conf_init(struct conf *conf)
 {
@@ -87,26 +124,43 @@ static inline void conf_init(struct conf *conf)
   conf->test_connections = 0;
   conf->port = 12345;
   host_hash_init(&conf->hosts);
+  if (hash_table_init(&conf->ul_alternatives, 256, ul_addr_hash_fn, NULL) != 0)
+  {
+    abort();
+  }
   conf->enable_ack = 0;
   conf->dl_addr = 0;
   conf->ul_addr = 0;
   conf->dl_mask = 0;
   conf->ul_mask = 0;
   conf->ul_defaultgw = 0;
+  conf->allow_anyport_primary = 0;
 }
 
 static inline void conf_free(struct conf *conf)
 {
+  struct hash_list_node *n, *x;
+  unsigned bucket;
+
   DYNARR_FREE(&conf->msslist);
   DYNARR_FREE(&conf->wscalelist);
   DYNARR_FREE(&conf->tsmsslist);
   DYNARR_FREE(&conf->tswscalelist);
   host_hash_free(&conf->hosts);
+  HASH_TABLE_FOR_EACH_SAFE(&conf->ul_alternatives, bucket, n, x)
+  {
+    struct ul_addr *addr = CONTAINER_OF(n, struct ul_addr, node);
+    hash_table_delete_already_bucket_locked(&conf->ul_alternatives, &addr->node);
+    free(addr);
+  }
+  hash_table_free(&conf->ul_alternatives);
 }
 
 static inline int conf_postprocess(struct conf *conf)
 {
   uint8_t bits = 0;
+  unsigned bucket;
+  struct hash_list_node *node;
   if (!conf->wscalelist_present)
   {
     if (!DYNARR_PUSH_BACK(&conf->wscalelist, 0))
@@ -327,6 +381,25 @@ static inline int conf_postprocess(struct conf *conf)
   {
     log_log(LOG_LEVEL_CRIT, "CONFPARSER", "uplink default GW not set");
     return -EINVAL;
+  }
+  if (conf->ul_defaultgw == conf->ul_addr)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER", "uplink primary addr same as default GW");
+    return -EINVAL;
+  }
+  HASH_TABLE_FOR_EACH(&conf->ul_alternatives, bucket, node)
+  {
+    struct ul_addr *e = CONTAINER_OF(node, struct ul_addr, node);
+    if ((e->addr & conf->ul_mask) != (conf->ul_addr & conf->ul_mask))
+    {
+      log_log(LOG_LEVEL_CRIT, "CONFPARSER", "uplink addresses not in same subnet");
+      return -EINVAL;
+    }
+    if (e->addr == conf->ul_defaultgw)
+    {
+      log_log(LOG_LEVEL_CRIT, "CONFPARSER", "uplink alt addresses same as default GW");
+      return -EINVAL;
+    }
   }
   return 0;
 }
