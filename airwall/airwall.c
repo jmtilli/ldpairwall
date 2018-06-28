@@ -138,8 +138,8 @@ static size_t airwall_state_to_str(
     if (already)
     {
       off += snprintf(str + off, bufsiz - off, ",");
-      already = 1;
     }
+    already = 1;
     off += snprintf(str + off, bufsiz - off, "UPLINK_SYN_SENT");
   }
   if (e->flag_state & FLAG_STATE_UPLINK_SYN_RCVD)
@@ -147,8 +147,8 @@ static size_t airwall_state_to_str(
     if (already)
     {
       off += snprintf(str + off, bufsiz - off, ",");
-      already = 1;
     }
+    already = 1;
     off += snprintf(str + off, bufsiz - off, "UPLINK_SYN_RCVD");
   }
   if (e->flag_state & FLAG_STATE_WINDOW_UPDATE_SENT)
@@ -156,8 +156,8 @@ static size_t airwall_state_to_str(
     if (already)
     {
       off += snprintf(str + off, bufsiz - off, ",");
-      already = 1;
     }
+    already = 1;
     off += snprintf(str + off, bufsiz - off, "WINDOW_UPDATE_SENT");
   }
   if (e->flag_state & FLAG_STATE_DOWNLINK_SYN_SENT)
@@ -165,8 +165,8 @@ static size_t airwall_state_to_str(
     if (already)
     {
       off += snprintf(str + off, bufsiz - off, ",");
-      already = 1;
     }
+    already = 1;
     off += snprintf(str + off, bufsiz - off, "DOWNLINK_SYN_SENT");
   }
   if (e->flag_state & FLAG_STATE_ESTABLISHED)
@@ -174,8 +174,8 @@ static size_t airwall_state_to_str(
     if (already)
     {
       off += snprintf(str + off, bufsiz - off, ",");
-      already = 1;
     }
+    already = 1;
     off += snprintf(str + off, bufsiz - off, "ESTABLISHED");
   }
   if (e->flag_state & FLAG_STATE_UPLINK_FIN)
@@ -183,8 +183,8 @@ static size_t airwall_state_to_str(
     if (already)
     {
       off += snprintf(str + off, bufsiz - off, ",");
-      already = 1;
     }
+    already = 1;
     off += snprintf(str + off, bufsiz - off, "UPLINK_FIN");
   }
   if (e->flag_state & FLAG_STATE_UPLINK_FIN_ACK)
@@ -192,8 +192,8 @@ static size_t airwall_state_to_str(
     if (already)
     {
       off += snprintf(str + off, bufsiz - off, ",");
-      already = 1;
     }
+    already = 1;
     off += snprintf(str + off, bufsiz - off, "UPLINK_FIN_ACK");
   }
   if (e->flag_state & FLAG_STATE_DOWNLINK_FIN)
@@ -201,8 +201,8 @@ static size_t airwall_state_to_str(
     if (already)
     {
       off += snprintf(str + off, bufsiz - off, ",");
-      already = 1;
     }
+    already = 1;
     off += snprintf(str + off, bufsiz - off, "DOWNLINK_FIN");
   }
   if (e->flag_state & FLAG_STATE_DOWNLINK_FIN_ACK)
@@ -210,8 +210,8 @@ static size_t airwall_state_to_str(
     if (already)
     {
       off += snprintf(str + off, bufsiz - off, ",");
-      already = 1;
     }
+    already = 1;
     off += snprintf(str + off, bufsiz - off, "DOWNLINK_FIN_ACK");
   }
   if (e->flag_state & FLAG_STATE_TIME_WAIT)
@@ -219,8 +219,8 @@ static size_t airwall_state_to_str(
     if (already)
     {
       off += snprintf(str + off, bufsiz - off, ",");
-      already = 1;
     }
+    already = 1;
     off += snprintf(str + off, bufsiz - off, "TIME_WAIT");
   }
   if (e->flag_state & FLAG_STATE_DOWNLINK_HALF_OPEN)
@@ -228,8 +228,8 @@ static size_t airwall_state_to_str(
     if (already)
     {
       off += snprintf(str + off, bufsiz - off, ",");
-      already = 1;
     }
+    already = 1;
     off += snprintf(str + off, bufsiz - off, "DOWNLINK_HALF_OPEN");
   }
   if (e->flag_state & FLAG_STATE_RESETED)
@@ -237,8 +237,8 @@ static size_t airwall_state_to_str(
     if (already)
     {
       off += snprintf(str + off, bufsiz - off, ",");
-      already = 1;
     }
+    already = 1;
     off += snprintf(str + off, bufsiz - off, "RESETED");
   }
   off += snprintf(str + off, bufsiz - off, ">");
