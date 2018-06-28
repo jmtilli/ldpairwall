@@ -4002,6 +4002,13 @@ int downlink(
       }
     }
     entry->state_data.established.downfin = last_seq;
+    // We may receive downlink SYN on WINDOW_UPDATE_SENT state, move directly
+    // to ESTABLISHED and then add the DOWNLINK_FIN specifier.
+    if (entry->flag_state & FLAG_STATE_WINDOW_UPDATE_SENT)
+    {
+      entry->flag_state &= ~FLAG_STATE_WINDOW_UPDATE_SENT;
+      entry->flag_state |= FLAG_STATE_ESTABLISHED;
+    }
     entry->flag_state |= FLAG_STATE_DOWNLINK_FIN;
   }
   if (unlikely(entry->flag_state & FLAG_STATE_UPLINK_FIN))
