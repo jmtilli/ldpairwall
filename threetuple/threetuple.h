@@ -13,6 +13,7 @@ struct threetuplepayload {
   uint8_t sack_set:1;
   uint8_t wscaleshift_set:1;
   uint32_t local_ip;
+  uint16_t local_port;
 };
 
 struct threetupleentry {
