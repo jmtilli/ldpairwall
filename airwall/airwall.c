@@ -2767,6 +2767,7 @@ static int downlink_dns(
   uint16_t remcnt, aremcnt;
   char nambuf[1514-14-20-8] = {0};
   struct packet *pktstruct;
+  int has_errs;
 
   if (version != 4)
   {
@@ -2839,10 +2840,7 @@ static int downlink_dns(
     if (qclass == 1 && qtype == 1 && host != NULL)
     {
       char ipv4[4];
-      hdr_set32n(ipv4, airwall->conf->ul_addr);
-      dns_set_ancount(udppay, dns_ancount(udppay) + 1);
-      dns_put_next(udppay, &aoff, &aremcnt, udppay_maxlen, nambuf, qtype, qclass, 0,
-                   4, ipv4);
+      int ret = 0;
       if (host->protocol != 255)
       {
         struct threetuplepayload payload;
@@ -2854,10 +2852,21 @@ static int downlink_dns(
         payload.wscaleshift_set = 0;
         payload.local_ip = host->local_ip;
         log_log(LOG_LEVEL_NOTICE, "WORKERDOWNLINK", "adding threetuple match");
-        threetuplectx_add(&airwall->threetuplectx, &local->timers,
-                          airwall->conf->ul_addr, host->port, host->protocol,
-                          (host->port != 0), (host->protocol != 0),
-                          &payload, time64);
+        ret = threetuplectx_add(&airwall->threetuplectx, &local->timers,
+                                airwall->conf->ul_addr, host->port, host->protocol,
+                                (host->port != 0), (host->protocol != 0),
+                                &payload, time64);
+      }
+      if (ret == 0)
+      {
+        hdr_set32n(ipv4, airwall->conf->ul_addr);
+        dns_set_ancount(udppay, dns_ancount(udppay) + 1);
+        dns_put_next(udppay, &aoff, &aremcnt, udppay_maxlen, nambuf, qtype, qclass, 0,
+                     4, ipv4);
+      }
+      else
+      {
+        has_errs = 1;
       }
     }
   }
@@ -2865,6 +2874,12 @@ static int downlink_dns(
   udp_set_cksum(udp, 0); // FIXME
   ip46_set_payload_len(ip, 8 + aoff);
   ip46_set_hdr_cksum_calc(ip);
+
+  if (has_errs)
+  {
+    log_log(LOG_LEVEL_NOTICE, "WORKERDOWNLINK", "not DNS-responding due to addr shorage");
+    return 1;
+  }
 
   pktstruct = ll_alloc_st(st, packet_size(14+20+8+aoff));
   pktstruct->data = packet_calc_data(pktstruct);

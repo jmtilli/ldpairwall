@@ -86,9 +86,9 @@ int threetuplectx_add(
   {
     struct threetupleentry *e2 =
       CONTAINER_OF(node, struct threetupleentry, node);
-    if (e2->version == e->version &&
-        e2->ip.ipv4 == ip && e2->port == port && e2->proto == proto &&
-        e2->port_valid == port_valid && e2->proto_valid == proto_valid)
+    if (e2->version == e->version && e2->ip.ipv4 == ip &&
+        (e2->port == port || !e2->port_valid) &&
+        (e2->proto == proto || !e2->proto_valid))
     {
       hash_table_unlock_bucket(&ctx->tbl, hashval);
       free(e);
@@ -138,9 +138,9 @@ int threetuplectx_add6(
   {
     struct threetupleentry *e2 =
       CONTAINER_OF(node, struct threetupleentry, node);
-    if (e2->version == e->version && memcmp(&e2->ip, ipv6, 16) == 0 && 
-        e2->port == port && e2->proto == proto &&
-        e2->port_valid == port_valid && e2->proto_valid == proto_valid)
+    if (e2->version == e->version && memcmp(&e2->ip, ipv6, 16) == 0 &&
+        (e2->port == port || !e2->port_valid) &&
+        (e2->proto == proto || !e2->proto_valid))
     {
       hash_table_unlock_bucket(&ctx->tbl, hashval);
       free(e);
