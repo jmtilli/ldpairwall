@@ -2529,7 +2529,7 @@ static int uplink_pcp(
           break;
         }
       }
-      if (curloc + 4 != udp_len - 8)
+      if (curloc != udp_len - 8)
       {
         rcode = PCP_RCODE_MALFORMED_REQUEST;
       }
@@ -2539,7 +2539,11 @@ static int uplink_pcp(
       {
         rcode = PCP_RCODE_UNSUPP_PROTOCOL;
       }
-      else if (pcp_lifetime(origudppay) == 0)
+      if (pcp_req_get_ipv4(origudppay) != ip_src(origip))
+      {
+        rcode = PCP_RCODE_UNSUPP_PROTOCOL; // FIXME rethink
+      }
+      if (rcode == 0 && pcp_lifetime(origudppay) == 0)
       {
         // FIXME verify the user owns the mapping
         threetuplectx_delete(&airwall->threetuplectx,
@@ -2557,7 +2561,7 @@ static int uplink_pcp(
                               pcp_mapreq_sugg_ext_port(origudppay), 0);
         }
       }
-      else if (pcp_lifetime(origudppay) == 0)
+      else if (rcode == 0 && pcp_lifetime(origudppay) > 0)
       {
         if (pcp_mapreq_protocol(origudppay) == 6)
         {
@@ -2602,7 +2606,7 @@ static int uplink_pcp(
                                &local->timers, 0, ext_ipv4, ext_port,
                                pcp_mapreq_protocol(origudppay), 1, 1,
                                &payload,
-                               gettime64() - 2*1000ULL*1000ULL + pcp_lifetime(origudppay)); // FIXME make this prettier
+                               gettime64() - 2*1000ULL*1000ULL + pcp_lifetime(origudppay)*1000ULL*1000ULL); // FIXME make this prettier
         }
       }
       pcp_mapresp_set_nonce(udppay, pcp_mapreq_nonce(origudppay));
@@ -2619,9 +2623,14 @@ static int uplink_pcp(
   }
   pcp_resp_set_rcode(udppay, rcode);
 
+  udp_set_total_len(udp, 8 + outudppay);
+  udp_set_cksum(udp, 0); // FIXME
+  ip46_set_payload_len(ip, 8 + outudppay);
+  ip46_set_hdr_cksum_calc(ip);
+
   pktstruct = ll_alloc_st(st, packet_size(14+20+8+outudppay));
   pktstruct->data = packet_calc_data(pktstruct);
-  pktstruct->direction = PACKET_DIRECTION_UPLINK;
+  pktstruct->direction = PACKET_DIRECTION_DOWNLINK;
   pktstruct->sz = 14+20+8+outudppay;
   memcpy(pktstruct->data, dnspkt, 14+20+8+outudppay);
 #ifdef ENABLE_ARP
@@ -2668,7 +2677,7 @@ static int uplink_udp(
     log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "some of UDP addresses and ports were zero");
     return 1;
   }
-  if (lan_port == 5351)
+  if (remote_port == 5351)
   {
     return uplink_pcp(airwall, local, pkt, port, time64, st);
   }
@@ -4546,7 +4555,8 @@ int uplink(
     remote_ip = ip_dst_ptr(ip);
 #ifdef ENABLE_ARP
     if ((hdr_get32n(remote_ip) & airwall->conf->dl_mask) ==
-        (airwall->conf->dl_addr & airwall->conf->dl_mask))
+        (airwall->conf->dl_addr & airwall->conf->dl_mask) &&
+        hdr_get32n(remote_ip) != airwall->conf->dl_addr)
     {
       log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "address of packet internal");
       return 1;
