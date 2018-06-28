@@ -54,6 +54,7 @@ static void threetuplectx_expiry_fn(
 int threetuplectx_add(
   struct threetuplectx *ctx,
   struct timer_linkheap *heap,
+  int consumable,
   uint32_t ip, uint16_t port, uint8_t proto, int port_valid, int proto_valid,
   const struct threetuplepayload *payload, uint64_t time64)
 {
@@ -70,6 +71,7 @@ int threetuplectx_add(
   {
     proto = 0;
   }
+  e->consumable = consumable;
   e->version = 4;
   e->ip.ipv4 = ip;
   e->port = port;
@@ -105,6 +107,7 @@ int threetuplectx_add(
 int threetuplectx_add6(
   struct threetuplectx *ctx,
   struct timer_linkheap *heap,
+  int consumable,
   const void *ipv6,
   uint16_t port, uint8_t proto, int port_valid, int proto_valid,
   const struct threetuplepayload *payload, uint64_t time64)
@@ -122,6 +125,7 @@ int threetuplectx_add6(
   {
     proto = 0;
   }
+  e->consumable = consumable;
   e->version = 6;
   memcpy(&e->ip, ipv6, 16);
   e->port = port;
@@ -157,6 +161,7 @@ int threetuplectx_add6(
 int threetuplectx_modify(
   struct threetuplectx *ctx,
   struct timer_linkheap *heap,
+  int consumable,
   uint32_t ip, uint16_t port, uint8_t proto, int port_valid, int proto_valid,
   const struct threetuplepayload *payload, uint64_t time64)
 {
@@ -181,6 +186,7 @@ int threetuplectx_modify(
         e->port == port && e->proto == proto &&
         e->port_valid == port_valid && e->proto_valid == proto_valid)
     {
+      e->consumable = consumable;
       e->payload = *payload;
       e->timer.time64 = time64 + RGW_TIMEOUT_SECS*1000ULL*1000ULL;
       timer_linkheap_modify(heap, &e->timer);
@@ -189,6 +195,7 @@ int threetuplectx_modify(
     }
   }
   struct threetupleentry *e = malloc(sizeof(*e));
+  e->consumable = consumable;
   e->version = 4;
   e->ip.ipv4 = ip;
   e->port = port;
@@ -209,6 +216,7 @@ int threetuplectx_modify(
 int threetuplectx_modify6(
   struct threetuplectx *ctx,
   struct timer_linkheap *heap,
+  int consumable,
   const void *ipv6,
   uint16_t port, uint8_t proto, int port_valid, int proto_valid,
   const struct threetuplepayload *payload, uint64_t time64)
@@ -234,6 +242,7 @@ int threetuplectx_modify6(
         e->port == port && e->proto == proto &&
         e->port_valid == port_valid && e->proto_valid == proto_valid)
     {
+      e->consumable = consumable;
       e->payload = *payload;
       e->timer.time64 = time64 + RGW_TIMEOUT_SECS*1000ULL*1000ULL;
       timer_linkheap_modify(heap, &e->timer);
@@ -242,6 +251,7 @@ int threetuplectx_modify6(
     }
   }
   struct threetupleentry *e = malloc(sizeof(*e));
+  e->consumable = consumable;
   e->version = 6;
   memcpy(&e->ip, ipv6, 16);
   e->port = port;
@@ -308,10 +318,13 @@ int threetuplectx_consume(
       {
         *payload = e->payload;
       }
-      hash_table_delete_already_bucket_locked(&ctx->tbl, &e->node);
+      if (e->consumable)
+      {
+        hash_table_delete_already_bucket_locked(&ctx->tbl, &e->node);
+        timer_linkheap_remove(heap, &e->timer);
+        free(e);
+      }
       hash_table_unlock_bucket(&ctx->tbl, hashval);
-      timer_linkheap_remove(heap, &e->timer);
-      free(e);
       return 0;
     }
   }
@@ -368,10 +381,13 @@ int threetuplectx_consume6(
       {
         *payload = e->payload;
       }
-      hash_table_delete_already_bucket_locked(&ctx->tbl, &e->node);
+      if (e->consumable)
+      {
+        hash_table_delete_already_bucket_locked(&ctx->tbl, &e->node);
+        timer_linkheap_remove(heap, &e->timer);
+        free(e);
+      }
       hash_table_unlock_bucket(&ctx->tbl, hashval);
-      timer_linkheap_remove(heap, &e->timer);
-      free(e);
       return 0;
     }
   }

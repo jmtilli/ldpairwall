@@ -129,28 +129,28 @@ void deallocate_udp_port(struct udp_porter *porter, uint16_t port, int outgoing)
   }
 }
 
-uint16_t get_udp_port(struct udp_porter *porter, uint32_t local_ip, uint16_t preferred)
+uint16_t get_udp_port_different(struct udp_porter *porter, uint32_t local_ip, uint16_t preferred, uint16_t local_port)
 {
   uint16_t port = 0;
   size_t i;
-  uint32_t hashval = free_udp_port_hash_separate(local_ip, preferred);
+  uint32_t hashval = free_udp_port_hash_separate(local_ip, local_port);
   struct hash_list_node *node;
 
   HASH_TABLE_FOR_EACH_POSSIBLE(&porter->hash, node, hashval)
   {
     struct free_udp_port *freeport =
       CONTAINER_OF(node, struct free_udp_port, hashnode);
-    if (freeport->lan_ip == local_ip && freeport->lan_port == preferred &&
+    if (freeport->lan_ip == local_ip && freeport->lan_port == local_port &&
         freeport->available)
     {
-      allocate_udp_port(porter, freeport->port, local_ip, preferred, 1);
+      allocate_udp_port(porter, freeport->port, local_ip, local_port, 1);
       return freeport->port;
     }
   }
 
-  if ((porter->udpports[preferred].count == 0 || (porter->udpports[preferred].lan_ip == local_ip && porter->udpports[preferred].lan_port == preferred)) && porter->udpports[preferred].available)
+  if ((porter->udpports[preferred].count == 0 || (porter->udpports[preferred].lan_ip == local_ip && porter->udpports[preferred].lan_port == local_port)) && porter->udpports[preferred].available)
   {
-    allocate_udp_port(porter, preferred, local_ip, preferred, 1);
+    allocate_udp_port(porter, preferred, local_ip, local_port, 1);
     return preferred;
   }
   for (i = 0; i < 65536; i++)
@@ -162,6 +162,11 @@ uint16_t get_udp_port(struct udp_porter *porter, uint32_t local_ip, uint16_t pre
     port = CONTAINER_OF(porter->udpportcnts[i].node.next, struct free_udp_port, node)->port;
     break;
   }
-  allocate_udp_port(porter, port, local_ip, preferred, 1);
+  allocate_udp_port(porter, port, local_ip, local_port, 1);
   return port;
+}
+
+uint16_t get_udp_port(struct udp_porter *porter, uint32_t local_ip, uint16_t preferred)
+{
+  return get_udp_port_different(porter, local_ip, preferred, preferred);
 }
