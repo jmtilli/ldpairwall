@@ -5,7 +5,6 @@ DHCP client
 DHCP server
 wildcard connection open
 some solution to protocol detection memory exhaustion
-(P)RGW mode of operation
 QUIC
 IPv6
 multithreading
