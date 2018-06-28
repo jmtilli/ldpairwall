@@ -23,7 +23,7 @@ int main(int argc, char **argv)
   {
     abort();
   }
-  if (threetuplectx_add(&ctx, &heap, (10<<24) | 1, 12345, 17, 1, 1, &payload, gettime64()) != 0)
+  if (threetuplectx_add(&ctx, &heap, 1, (10<<24) | 1, 12345, 17, 1, 1, &payload, gettime64()) != 0)
   {
     abort();
   }
@@ -31,7 +31,7 @@ int main(int argc, char **argv)
   {
     abort();
   }
-  if (threetuplectx_add(&ctx, &heap, (10<<24) | 1, 12345, 17, 1, 1, &payload, gettime64())
+  if (threetuplectx_add(&ctx, &heap, 1, (10<<24) | 1, 12345, 17, 1, 1, &payload, gettime64())
       != -EEXIST)
   {
     abort();
@@ -44,11 +44,11 @@ int main(int argc, char **argv)
   {
     abort();
   }
-  if (threetuplectx_modify(&ctx, &heap, (10<<24) | 1, 12345, 17, 1, 1, &payload, gettime64()) != 0)
+  if (threetuplectx_modify(&ctx, &heap, 1, (10<<24) | 1, 12345, 17, 1, 1, &payload, gettime64()) != 0)
   {
     abort();
   }
-  if (threetuplectx_modify(&ctx, &heap, (10<<24) | 1, 12345, 17, 1, 1, &payload, gettime64()) != 0)
+  if (threetuplectx_modify(&ctx, &heap, 1, (10<<24) | 1, 12345, 17, 1, 1, &payload, gettime64()) != 0)
   {
     abort();
   }

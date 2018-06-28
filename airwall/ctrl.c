@@ -326,7 +326,7 @@ void *ctrl_func(void *userdata)
              payload.sack_supported,
              payload.wscaleshift);
       if (threetuplectx_modify6(&args->airwall->threetuplectx,
-                                &args->local->timers,
+                                &args->local->timers, 1,
                                 ip6, port, proto, (port != 0), (proto != 0),
                                 &payload, gettime64()) == 0)
       {
@@ -381,7 +381,7 @@ void *ctrl_func(void *userdata)
              payload.sack_supported,
              payload.wscaleshift);
       if (threetuplectx_modify(&args->airwall->threetuplectx,
-                               &args->local->timers,
+                               &args->local->timers, 1,
                                ip, port, proto,
                                (port != 0), (proto != 0),
                                &payload, gettime64()) == 0)
@@ -493,7 +493,7 @@ void *ctrl_func(void *userdata)
              payload.sack_supported,
              payload.wscaleshift);
       if (threetuplectx_add6(&args->airwall->threetuplectx,
-                             &args->local->timers,
+                             &args->local->timers, 1,
                              ip6,
                              port, proto, (port != 0), (proto != 0),
                              &payload, gettime64()) == 0)
@@ -549,7 +549,7 @@ void *ctrl_func(void *userdata)
              payload.sack_supported,
              payload.wscaleshift);
       if (threetuplectx_add(&args->airwall->threetuplectx,
-                            &args->local->timers,
+                            &args->local->timers, 1,
                             ip, port, proto,
                             (port != 0), (proto != 0),
                             &payload, gettime64()) == 0)

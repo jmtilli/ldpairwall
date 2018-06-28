@@ -2928,7 +2928,7 @@ static int downlink_dns(
         {
           struct ul_addr *e = CONTAINER_OF(node, struct ul_addr, node);
           addr = e->addr;
-          ret = threetuplectx_add(&airwall->threetuplectx, &local->timers,
+          ret = threetuplectx_add(&airwall->threetuplectx, &local->timers, 1,
                                   addr, host->port, host->protocol,
                                   (host->port != 0), (host->protocol != 0),
                                   &payload, time64);
@@ -2940,7 +2940,7 @@ static int downlink_dns(
         if (ret != 0 && (host->port != 0 || airwall->conf->allow_anyport_primary))
         {
           addr = airwall->conf->ul_addr;
-          ret = threetuplectx_add(&airwall->threetuplectx, &local->timers,
+          ret = threetuplectx_add(&airwall->threetuplectx, &local->timers, 1,
                                   addr, host->port, host->protocol,
                                   (host->port != 0), (host->protocol != 0),
                                   &payload, time64);

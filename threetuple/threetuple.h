@@ -23,6 +23,7 @@ struct threetupleentry {
   } ip;
   uint16_t port;
   uint8_t proto;
+  uint8_t consumable:1;
   uint8_t port_valid:1;
   uint8_t proto_valid:1;
   uint8_t version:4;
@@ -36,12 +37,14 @@ struct threetuplectx {
 int threetuplectx_add(
   struct threetuplectx *ctx,
   struct timer_linkheap *heap,
+  int consumable,
   uint32_t ip, uint16_t port, uint8_t proto, int port_valid, int proto_valid,
   const struct threetuplepayload *payload, uint64_t time64);
 
 int threetuplectx_add6(
   struct threetuplectx *ctx,
   struct timer_linkheap *heap,
+  int consumable,
   const void *ipv6,
   uint16_t port, uint8_t proto, int port_valid, int proto_valid,
   const struct threetuplepayload *payload, uint64_t time64);
@@ -49,12 +52,14 @@ int threetuplectx_add6(
 int threetuplectx_modify(
   struct threetuplectx *ctx,
   struct timer_linkheap *heap,
+  int consumable,
   uint32_t ip, uint16_t port, uint8_t proto, int port_valid, int proto_valid,
   const struct threetuplepayload *payload, uint64_t time64);
 
 int threetuplectx_modify6(
   struct threetuplectx *ctx,
   struct timer_linkheap *heap,
+  int consumable,
   const void *ipv6,
   uint16_t port, uint8_t proto, int port_valid, int proto_valid,
   const struct threetuplepayload *payload, uint64_t time64);
