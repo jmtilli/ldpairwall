@@ -115,8 +115,23 @@ static void http_test(void)
   char *str1 = "GET / HTTP/1.1\r\nHost: www.google.fi\r\n\r\n";
   char *str2 = "GET / HTTP/1.1\r\nA: B\r\nHost: www.google.fi\r\n\r\n";
   char *str3 = "GET / HTTP/1.1\r\nA: B\r\n\r\nHost: www.google.fi\r\n\r\n";
+  char *strnocr = "GET / HTTP/1.1\nHost: www.google.fi\n\n";
   size_t i;
   int ret;
+
+  http_ctx_init(&ctx);
+  hostname_ctx_init(&nam);
+  ret = http_ctx_feed(&ctx, strnocr, strlen(strnocr), &nam);
+  printf("nocr: %d\n", ret);
+  printf("%s\n", nam.hostname);
+  if (ret != 0)
+  {
+    abort();
+  }
+  if (strcmp(nam.hostname, "www.google.fi") != 0)
+  {
+    abort();
+  }
 
   http_ctx_init(&ctx);
   hostname_ctx_init(&nam);
