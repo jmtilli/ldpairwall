@@ -2,6 +2,7 @@
 #include "ipcksum.h"
 #include "branchpredict.h"
 #include <sys/time.h>
+#include <sys/sysinfo.h>
 #include <arpa/inet.h>
 #include "time64.h"
 #include "detect.h"
@@ -2107,7 +2108,14 @@ static void send_window_update(
     struct threetuplepayload threetuplepayload;
     if (threetuplectx_consume(&airwall->threetuplectx, &local->timers, ip_dst(origip), tcp_dst_port(origtcp), 6, &threetuplepayload) == 0)
     {
-      entry->local_port = entry->nat_port;
+      if (threetuplepayload.local_port != 0)
+      {
+        entry->local_port = threetuplepayload.local_port;
+      }
+      else
+      {
+        entry->local_port = entry->nat_port;
+      }
       entry->local_ip.ipv4 = htonl(threetuplepayload.local_ip);
       hash_table_add_nogrow_already_bucket_locked(
         &local->local_hash, &entry->local_node, airwall_hash_local(entry));
@@ -2411,6 +2419,267 @@ static void send_ack_and_window_update(
 
 const unsigned char bcast_mac[6] = {0xff,0xff,0xff,0xff,0xff,0xff};
 
+static int uplink_pcp(
+  struct airwall *airwall, struct worker_local *local, struct packet *pkt,
+  struct port *port, uint64_t time64, struct ll_alloc_st *st)
+{
+  void *origether = pkt->data;
+  void *origip = ether_payload(origether);
+  char *origudp = ip46_payload(origip);
+  void *origudppay = origudp + 8;
+  char *ip, *udp, *udppay;
+  int version = ip_version(origip);
+  void *lan_ip, *remote_ip;
+  uint16_t lan_port, remote_port;
+  uint16_t udp_len = ip46_payload_len(origip);
+  char dnspkt[1514] = {0};
+  struct packet *pktstruct;
+  uint8_t rcode = 0;
+  uint8_t outudppay = 0;
+  int prefer_failure = 0;
+
+  if (version != 4)
+  {
+    abort();
+  }
+  lan_ip = ip_src_ptr(origip);
+  remote_ip = ip_dst_ptr(origip);
+  lan_port = udp_src_port(origudp);
+  remote_port = udp_dst_port(origudp);
+  if (remote_ip == 0 || remote_port == 0 || lan_ip == 0 || lan_port == 0)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "some of UDP addresses and ports were zero");
+    return 1;
+  }
+
+  memcpy(ether_src(dnspkt), ether_dst(origether), 6);
+  memcpy(ether_dst(dnspkt), ether_src(origether), 6);
+  ether_set_type(dnspkt, (version == 4) ? ETHER_TYPE_IP : ETHER_TYPE_IPV6);
+  ip = ether_payload(dnspkt);
+  ip_set_version(ip, version);
+#if 0 // FIXME this needs to be thought carefully
+  if (version == 6)
+  {
+    ipv6_set_flow_label(ip, entry->ulflowlabel);
+  }
+#endif
+  ip46_set_min_hdr_len(ip);
+  //ip46_set_payload_len(ip, sizeof(dns) - 14 - 40);
+  ip46_set_dont_frag(ip, 1);
+  ip46_set_id(ip, 0); // XXX
+  ip46_set_ttl(ip, 64);
+  ip46_set_proto(ip, 17);
+  ip46_set_src(ip, ip46_dst(origip));
+  ip46_set_dst(ip, ip46_src(origip));
+  udp = ip46_payload(ip);
+  udp_set_src_port(udp, udp_dst_port(origudp));
+  udp_set_dst_port(udp, udp_src_port(origudp));
+  udppay = udp+8;
+
+  if (udp_len < 8 + 24)
+  {
+    return 1;
+  }
+  else if (pcp_opcode(origudppay) != PCP_OPCODE_MAP)
+  {
+    rcode = PCP_RCODE_UNSUPP_OPCODE;
+  }
+  else if (!pcp_req_is_ipv4(origudppay))
+  {
+    rcode = PCP_RCODE_UNSUPP_PROTOCOL;
+  }
+
+  outudppay = 24;
+  pcp_set_version(udppay, 2);
+  pcp_set_r(udppay, 1);
+  pcp_set_opcode(udppay, pcp_opcode(origudppay));
+  pcp_resp_set_reserved(udppay, 0);
+  pcp_set_lifetime(udppay, pcp_lifetime(origudppay));
+  struct sysinfo si;
+  sysinfo(&si);
+  pcp_resp_set_epoch_time(udppay, si.uptime);
+  pcp_resp_zero_reserved2(udppay);
+  if (pcp_opcode(origudppay) == PCP_OPCODE_MAP)
+  {
+    uint16_t ext_port;
+    uint32_t ext_ipv4 = airwall->conf->ul_addr;
+    if (udp_len >= 8 + 60)
+    {
+      const char *opts = pcp_mapreq_options(udppay);
+      int curloc = 60;
+      while (curloc+4 < udp_len - 8)
+      {
+        if (pcp_option_code(opts) == PCP_OPTION_PREFER_FAILURE)
+        {
+          prefer_failure = 1;
+        }
+        else
+        {
+          rcode = PCP_RCODE_MALFORMED_REQUEST;
+          break;
+        }
+        if (curloc + 4 + pcp_option_paylength(opts) < udp_len - 8)
+        {
+          opts += 4 + pcp_option_paylength(opts);
+          curloc += 4 + pcp_option_paylength(opts);
+        }
+        else
+        {
+          rcode = PCP_RCODE_MALFORMED_REQUEST;
+          break;
+        }
+      }
+      if (curloc != udp_len - 8)
+      {
+        rcode = PCP_RCODE_MALFORMED_REQUEST;
+      }
+      outudppay = 60;
+      if (pcp_mapreq_protocol(origudppay) != 6 &&
+          pcp_mapreq_protocol(origudppay) != 17)
+      {
+        rcode = PCP_RCODE_UNSUPP_PROTOCOL;
+      }
+      if (pcp_req_get_ipv4(origudppay) != ip_src(origip))
+      {
+        rcode = PCP_RCODE_UNSUPP_PROTOCOL; // FIXME rethink
+      }
+      if (rcode == 0 && pcp_lifetime(origudppay) == 0)
+      {
+        int status;
+        uint64_t old_expiry;
+        status = threetuplectx_delete_nonce(
+                             &airwall->threetuplectx,
+                             &local->timers, pcp_req_get_ipv4(origudppay),
+                             pcp_mapreq_sugg_ext_port(origudppay),
+                             pcp_mapreq_protocol(origudppay), 1, 1,
+                             ip_src(origip),
+                             pcp_mapreq_int_port(origudppay),
+                             pcp_mapreq_nonce(origudppay),
+                             &old_expiry);
+        if (status != 0)
+        {
+          int32_t secdiff = (old_expiry - gettime64()) / (1000*1000);
+          if (secdiff < 0)
+          {
+            secdiff = 0;
+          }
+          pcp_set_lifetime(udppay, secdiff);
+          rcode = PCP_RCODE_NOT_AUTHORIZED;
+        }
+#if 0
+        if (pcp_mapreq_protocol(origudppay) == 6)
+        {
+          deallocate_udp_port(airwall->porter, // FIXME only if prev ok
+                              pcp_mapreq_sugg_ext_port(origudppay), 0);
+        }
+        else
+        {
+          deallocate_udp_port(airwall->udp_porter, // FIXME only if prev ok
+                              pcp_mapreq_sugg_ext_port(origudppay), 0);
+        }
+#endif
+      }
+      else if (rcode == 0 && pcp_lifetime(origudppay) > 0)
+      {
+        if (pcp_mapreq_protocol(origudppay) == 6)
+        {
+          ext_port = get_udp_port_different(airwall->porter,
+                                            pcp_req_get_ipv4(origudppay),
+                                            pcp_mapreq_sugg_ext_port(origudppay),
+                                            pcp_mapreq_int_port(origudppay), 0);
+        }
+        else
+        {
+          ext_port = get_udp_port_different(airwall->udp_porter,
+                                            pcp_req_get_ipv4(origudppay),
+                                            pcp_mapreq_sugg_ext_port(origudppay),
+                                            pcp_mapreq_int_port(origudppay), 0);
+        }
+        // FIXME verify also ext_ip:
+        if (ext_port != pcp_mapreq_sugg_ext_port(origudppay) && prefer_failure)
+        {
+          if (pcp_mapreq_protocol(origudppay) == 6)
+          {
+            deallocate_udp_port(airwall->porter, ext_port, 0);
+          }
+          else
+          {
+            deallocate_udp_port(airwall->udp_porter, ext_port, 0);
+          }
+          rcode = PCP_RCODE_CANNOT_PROVIDE_EXTERNAL;
+        }
+        else
+        {
+          uint64_t old_expiry;
+          struct threetuplepayload payload;
+          int status;
+          payload.mss = 1460;
+          payload.wscaleshift = 7;
+          payload.sack_supported = 0;
+          payload.mss_set = 0;
+          payload.sack_set = 0;
+          payload.wscaleshift_set = 0;
+          payload.local_ip = ip_src(origip);
+          payload.local_port = pcp_mapreq_int_port(origudppay);
+          status = threetuplectx_modify_nonce(
+                       &airwall->threetuplectx,
+                       &local->timers, 0, 1, ext_ipv4, ext_port,
+                       pcp_mapreq_protocol(origudppay), 1, 1,
+                       &payload,
+                       gettime64() + pcp_lifetime(origudppay)*1000ULL*1000ULL,
+                       ip_src(origip),
+                       pcp_mapreq_int_port(origudppay),
+                       pcp_mapreq_nonce(origudppay),
+                       &old_expiry);
+          if (status != 0)
+          {
+            int32_t secdiff = (old_expiry - gettime64()) / (1000*1000);
+            if (secdiff < 0)
+            {
+              secdiff = 0;
+            }
+            pcp_set_lifetime(udppay, secdiff);
+            rcode = PCP_RCODE_NOT_AUTHORIZED;
+          }
+        }
+      }
+      pcp_mapresp_set_nonce(udppay, pcp_mapreq_nonce(origudppay));
+      pcp_mapresp_set_protocol(udppay, pcp_mapreq_protocol(origudppay));
+      pcp_mapresp_zero_reserved(udppay);
+      pcp_mapresp_set_int_port(udppay, pcp_mapreq_int_port(origudppay));
+      pcp_mapresp_set_ext_port(udppay, ext_port);
+      pcp_mapresp_set_ext_ipv4(udppay, ext_ipv4);
+    }
+    else
+    {
+      rcode = PCP_RCODE_MALFORMED_REQUEST;
+    }
+  }
+  pcp_resp_set_rcode(udppay, rcode);
+
+  udp_set_total_len(udp, 8 + outudppay);
+  udp_set_cksum(udp, 0); // FIXME
+  ip46_set_payload_len(ip, 8 + outudppay);
+  ip46_set_hdr_cksum_calc(ip);
+
+  pktstruct = ll_alloc_st(st, packet_size(14+20+8+outudppay));
+  pktstruct->data = packet_calc_data(pktstruct);
+  pktstruct->direction = PACKET_DIRECTION_DOWNLINK;
+  pktstruct->sz = 14+20+8+outudppay;
+  memcpy(pktstruct->data, dnspkt, 14+20+8+outudppay);
+#ifdef ENABLE_ARP
+  if (send_via_arp(pktstruct, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
+  {
+    ll_free_st(st, pktstruct);
+    return 1;
+  }
+#endif
+  port->portfunc(pktstruct, port->userdata);
+
+  return 1;
+}
+
+
 static int uplink_udp(
   struct airwall *airwall, struct worker_local *local, struct packet *pkt,
   struct port *port, uint64_t time64, struct ll_alloc_st *st)
@@ -2442,6 +2711,10 @@ static int uplink_udp(
     log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "some of UDP addresses and ports were zero");
     return 1;
   }
+  if (remote_port == 5351)
+  {
+    return uplink_pcp(airwall, local, pkt, port, time64, st);
+  }
   ue = airwall_hash_get_local_udp(local, version, lan_ip, lan_port, remote_ip, remote_port, &ctx);
   if (ue == NULL)
   {
@@ -2451,7 +2724,7 @@ static int uplink_udp(
     {
       uint32_t loc = airwall->conf->ul_addr;
       hdr_set32n(ipv4, loc);
-      nat_port = get_udp_port(airwall->udp_porter, hdr_get32n(lan_ip), lan_port);
+      nat_port = get_udp_port(airwall->udp_porter, hdr_get32n(lan_ip), lan_port, 1);
     }
     else
     {
@@ -2692,7 +2965,7 @@ static int uplink_icmp(
       {
         uint32_t loc = airwall->conf->ul_addr;
         hdr_set32n(ipv4, loc);
-        nat_identifier = get_udp_port(airwall->icmp_porter, hdr_get32n(lan_ip), icmp_echo_identifier(ippay));
+        nat_identifier = get_udp_port(airwall->icmp_porter, hdr_get32n(lan_ip), icmp_echo_identifier(ippay), 1);
       }
       else
       {
@@ -2923,12 +3196,13 @@ static int downlink_dns(
         payload.sack_set = 0;
         payload.wscaleshift_set = 0;
         payload.local_ip = host->local_ip;
+        payload.local_port = host->port;
         log_log(LOG_LEVEL_NOTICE, "WORKERDOWNLINK", "adding threetuple match");
         HASH_TABLE_FOR_EACH(&airwall->conf->ul_alternatives, bucket, node)
         {
           struct ul_addr *e = CONTAINER_OF(node, struct ul_addr, node);
           addr = e->addr;
-          ret = threetuplectx_add(&airwall->threetuplectx, &local->timers, 1,
+          ret = threetuplectx_add(&airwall->threetuplectx, &local->timers, 1, 0,
                                   addr, host->port, host->protocol,
                                   (host->port != 0), (host->protocol != 0),
                                   &payload, time64);
@@ -2939,11 +3213,41 @@ static int downlink_dns(
         }
         if (ret != 0 && (host->port != 0 || airwall->conf->allow_anyport_primary))
         {
+          int ok = 1;
           addr = airwall->conf->ul_addr;
-          ret = threetuplectx_add(&airwall->threetuplectx, &local->timers, 1,
-                                  addr, host->port, host->protocol,
-                                  (host->port != 0), (host->protocol != 0),
-                                  &payload, time64);
+          if (host->protocol == 0 && host->port != 0)
+          {
+            int gotten_tcp, gotten_udp;
+            gotten_tcp = get_exact_port_in(airwall->porter, host->local_ip, host->port);
+            if (gotten_tcp == host->port)
+            {
+              gotten_udp = get_exact_port_in(airwall->udp_porter, host->local_ip, host->port);
+              if (gotten_udp < 0)
+              {
+                deallocate_udp_port(airwall->porter, gotten_tcp, 0);
+              }
+            }
+            ok = (gotten_udp == host->port) && (gotten_tcp == host->port);
+          }
+          else if (host->protocol == 6 && host->port != 0)
+          {
+            int gotten;
+            gotten = get_exact_port_in(airwall->porter, host->local_ip, host->port);
+            ok = (gotten == host->port);
+          }
+          else if (host->protocol == 17 && host->port != 0)
+          {
+            int gotten;
+            gotten = get_exact_port_in(airwall->udp_porter, host->local_ip, host->port);
+            ok = (gotten == host->port);
+          }
+          if (ok)
+          {
+            ret = threetuplectx_add(&airwall->threetuplectx, &local->timers, 1, 1,
+                                    addr, host->port, host->protocol,
+                                    (host->port != 0), (host->protocol != 0),
+                                    &payload, time64);
+          }
         }
       }
       if (ret == 0)
@@ -4315,7 +4619,8 @@ int uplink(
     remote_ip = ip_dst_ptr(ip);
 #ifdef ENABLE_ARP
     if ((hdr_get32n(remote_ip) & airwall->conf->dl_mask) ==
-        (airwall->conf->dl_addr & airwall->conf->dl_mask))
+        (airwall->conf->dl_addr & airwall->conf->dl_mask) &&
+        hdr_get32n(remote_ip) != airwall->conf->dl_addr)
     {
       log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "address of packet internal");
       return 1;
@@ -4481,7 +4786,7 @@ int uplink(
       {
         uint32_t loc = airwall->conf->ul_addr;
         hdr_set32n(ipv4, loc);
-        tcp_port = get_udp_port(airwall->porter, hdr_get32n(lan_ip), lan_port);
+        tcp_port = get_udp_port(airwall->porter, hdr_get32n(lan_ip), lan_port, 1);
       }
       else
       {

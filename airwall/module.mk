@@ -1,5 +1,5 @@
 AIRWALL_SRC_LIB := airwall.c secret.c detect.c yyutils.c hosthash.c porter.c udpporter.c ctrl.c conf.c
-AIRWALL_SRC := $(AIRWALL_SRC_LIB) ldpairwall.c detecttest.c detectperf.c genchartbl.c unittest.c sz.c portertest.c udpportertest.c
+AIRWALL_SRC := $(AIRWALL_SRC_LIB) ldpairwall.c detecttest.c detectperf.c genchartbl.c unittest.c sz.c portertest.c udpportertest.c pcpclient.c
 
 AIRWALL_LEX_LIB := conf.l
 AIRWALL_LEX := $(AIRWALL_LEX_LIB)
@@ -37,7 +37,7 @@ AIRWALL_DEP := $(patsubst %.c,%.d,$(AIRWALL_SRC))
 AIRWALL_DEPGEN_LIB := $(patsubst %.c,%.d,$(AIRWALL_GEN_LIB))
 AIRWALL_DEPGEN := $(patsubst %.c,%.d,$(AIRWALL_GEN))
 
-CFLAGS_AIRWALL := -I$(DIRPACKET) -I$(DIRLINKEDLIST) -I$(DIRIPHDR) -I$(DIRMISC) -I$(DIRLOG) -I$(DIRHASHTABLE) -I$(DIRHASHLIST) -I$(DIRPORTS) -I$(DIRALLOC) -I$(DIRTIMERLINKHEAP) -I$(DIRMYPCAP) -I$(DIRDYNARR) -I$(DIRIPHASH) -I$(DIRTHREETUPLE) -I$(DIRDATABUF) -I$(DIRNETMAP) -I$(DIRLDP) -I$(DIRARP)
+CFLAGS_AIRWALL := -I$(DIRPACKET) -I$(DIRLINKEDLIST) -I$(DIRIPHDR) -I$(DIRMISC) -I$(DIRLOG) -I$(DIRHASHTABLE) -I$(DIRHASHLIST) -I$(DIRPORTS) -I$(DIRALLOC) -I$(DIRTIMERLINKHEAP) -I$(DIRMYPCAP) -I$(DIRDYNARR) -I$(DIRIPHASH) -I$(DIRTHREETUPLE) -I$(DIRDATABUF) -I$(DIRNETMAP) -I$(DIRLDP) -I$(DIRARP) -I$(DIRAIRWALL)
 
 MAKEFILES_AIRWALL := $(DIRAIRWALL)/module.mk
 
@@ -61,7 +61,7 @@ ifeq ($(WITH_ODP),yes)
 CFLAGS_AIRWALL += -I$(ODP_DIR)/include
 LIBS_AIRWALL_ODP := $(ODP_DIR)/lib/libodp-linux.a $(LIBS_ODPDEP)
 endif
-AIRWALL: $(DIRAIRWALL)/ldpairwall $(DIRAIRWALL)/detecttest $(DIRAIRWALL)/detectperf $(DIRAIRWALL)/genchartbl $(DIRAIRWALL)/unittest $(DIRAIRWALL)/sz $(DIRAIRWALL)/portertest $(DIRAIRWALL)/udpportertest
+AIRWALL: $(DIRAIRWALL)/ldpairwall $(DIRAIRWALL)/detecttest $(DIRAIRWALL)/detectperf $(DIRAIRWALL)/genchartbl $(DIRAIRWALL)/unittest $(DIRAIRWALL)/sz $(DIRAIRWALL)/portertest $(DIRAIRWALL)/udpportertest $(DIRAIRWALL)/pcpclient
 
 unit_AIRWALL: $(DIRAIRWALL)/detecttest $(DIRAIRWALL)/detectperf $(DIRAIRWALL)/unittest
 	$(DIRAIRWALL)/detecttest
@@ -94,6 +94,9 @@ $(DIRAIRWALL)/ldpairwall: $(DIRAIRWALL)/ldpairwall.o $(DIRAIRWALL)/libairwall.a 
 	$(CC) $(CFLAGS) -o $@ $(filter %.o,$^) $(filter %.a,$^) $(CFLAGS_AIRWALL) $(LDFLAGS_LDP) -lpthread -ldl
 
 $(DIRAIRWALL)/unittest: $(DIRAIRWALL)/unittest.o $(DIRAIRWALL)/libairwall.a $(LIBS_AIRWALL) $(MAKEFILES_COMMON) $(MAKEFILES_AIRWALL)
+	$(CC) $(CFLAGS) -o $@ $(filter %.o,$^) $(filter %.a,$^) $(CFLAGS_AIRWALL) $(LDFLAGS_LDP) -lpthread -ldl
+
+$(DIRAIRWALL)/pcpclient: $(DIRAIRWALL)/pcpclient.o $(DIRAIRWALL)/libairwall.a $(LIBS_AIRWALL) $(MAKEFILES_COMMON) $(MAKEFILES_AIRWALL)
 	$(CC) $(CFLAGS) -o $@ $(filter %.o,$^) $(filter %.a,$^) $(CFLAGS_AIRWALL) $(LDFLAGS_LDP) -lpthread -ldl
 
 $(AIRWALL_OBJ): %.o: %.c %.d $(MAKEFILES_COMMON) $(MAKEFILES_AIRWALL)

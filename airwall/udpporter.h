@@ -35,9 +35,12 @@ void deallocate_udp_port(struct udp_porter *porter, uint16_t port,
 
 uint16_t get_udp_port_different(struct udp_porter *porter,
                                 uint32_t local_ip,
-                                uint16_t preferred, uint16_t local_port);
+                                uint16_t preferred, uint16_t local_port,
+                                int outgoing);
 
 uint16_t get_udp_port(struct udp_porter *porter,
-                      uint32_t local_ip, uint16_t preferred);
+                      uint32_t local_ip, uint16_t preferred, int outoging);
+
+int get_exact_port_in(struct udp_porter *porter, uint32_t local_ip, uint16_t port);
 
 #endif
