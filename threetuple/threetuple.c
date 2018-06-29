@@ -270,6 +270,104 @@ int threetuplectx_modify(
   return 0;
 }
 
+int threetuplectx_modify_noadd_nonce(
+  struct threetuplectx *ctx,
+  struct timer_linkheap *heap,
+  int consumable,
+  int port_allocated,
+  uint32_t ip, uint16_t port, uint8_t proto, int port_valid, int proto_valid,
+  const struct threetuplepayload *payload, uint64_t expire_time64,
+  uint32_t local_ip,
+  uint16_t local_port,
+  const void *nonce,
+  uint64_t *old_expiry,
+  uint16_t *old_ext_port)
+{
+  uint32_t hashval = threetuple_iphash(ip);
+  struct hash_list_node *node;
+  port_valid = !!port_valid;
+  proto_valid = !!proto_valid;
+  if (!port_valid)
+  {
+    port = 0;
+    abort();
+  }
+  if (!proto_valid)
+  {
+    proto = 0;
+    abort();
+  }
+  hash_table_lock_bucket(&ctx->tbl, hashval);
+  HASH_TABLE_FOR_EACH_POSSIBLE(&ctx->tbl, node, hashval)
+  {
+    struct threetupleentry *e =
+      CONTAINER_OF(node, struct threetupleentry, node);
+    if (e->version == 4 && e->ip.ipv4 == ip &&
+        e->proto == proto &&
+        e->port_valid == port_valid && e->proto_valid == proto_valid &&
+        e->payload.local_ip == local_ip && e->payload.local_port == local_port)
+    {
+      if (e->port_allocated != port_allocated || !e->nonce_set ||
+          memcmp(e->nonce, nonce, 96/8) != 0)
+      {
+        if (old_expiry)
+        {
+          *old_expiry = e->timer.time64;
+        }
+        if (old_ext_port)
+        {
+          *old_ext_port = e->port;
+        }
+        hash_table_unlock_bucket(&ctx->tbl, hashval);
+        return -EACCES;
+      }
+      e->consumable = consumable;
+      e->payload = *payload;
+      e->timer.time64 = expire_time64;
+      timer_linkheap_modify(heap, &e->timer);
+      hash_table_unlock_bucket(&ctx->tbl, hashval);
+      if (old_ext_port)
+      {
+        *old_ext_port = e->port;
+      }
+      return 0;
+    }
+    if (e->version == 4 && e->ip.ipv4 == ip &&
+        e->port == port && e->proto == proto &&
+        e->port_valid == port_valid && e->proto_valid == proto_valid)
+    {
+      if (e->port_allocated != port_allocated || !e->nonce_set ||
+          memcmp(e->nonce, nonce, 96/8) != 0 ||
+          e->payload.local_ip != local_ip ||
+          e->payload.local_port != local_port)
+      {
+        if (old_expiry)
+        {
+          *old_expiry = e->timer.time64;
+        }
+        if (old_ext_port)
+        {
+          *old_ext_port = e->port;
+        }
+        hash_table_unlock_bucket(&ctx->tbl, hashval);
+        return -EACCES;
+      }
+      e->consumable = consumable;
+      e->payload = *payload;
+      e->timer.time64 = expire_time64;
+      timer_linkheap_modify(heap, &e->timer);
+      hash_table_unlock_bucket(&ctx->tbl, hashval);
+      if (old_ext_port)
+      {
+        *old_ext_port = e->port;
+      }
+      return 0;
+    }
+  }
+  hash_table_unlock_bucket(&ctx->tbl, hashval);
+  return -ENOENT;
+}
+
 int threetuplectx_modify_nonce(
   struct threetuplectx *ctx,
   struct timer_linkheap *heap,
@@ -307,7 +405,7 @@ int threetuplectx_modify_nonce(
         e->payload.local_ip == local_ip && e->payload.local_port == local_port)
     {
       if (e->port_allocated != port_allocated || !e->nonce_set ||
-          memcmp(e->nonce, nonce, 96/8) != 0 || e->port != port)
+          memcmp(e->nonce, nonce, 96/8) != 0)
       {
         if (old_expiry)
         {

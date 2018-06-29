@@ -2581,66 +2581,97 @@ static int uplink_pcp(
       }
       else if (rcode == 0 && pcp_lifetime(origudppay) > 0)
       {
-        if (pcp_mapreq_protocol(origudppay) == 6)
-        {
-          ext_port = get_udp_port_different(airwall->porter,
-                                            pcp_req_get_ipv4(origudppay),
-                                            pcp_mapreq_sugg_ext_port(origudppay),
-                                            pcp_mapreq_int_port(origudppay), 0);
-        }
-        else
-        {
-          ext_port = get_udp_port_different(airwall->udp_porter,
-                                            pcp_req_get_ipv4(origudppay),
-                                            pcp_mapreq_sugg_ext_port(origudppay),
-                                            pcp_mapreq_int_port(origudppay), 0);
-        }
-        // FIXME verify also ext_ip:
-        if (ext_port != pcp_mapreq_sugg_ext_port(origudppay) && prefer_failure)
+        uint64_t old_expiry;
+        uint16_t old_ext_port;
+        struct threetuplepayload payload;
+        int status;
+        payload.mss = 1460;
+        payload.wscaleshift = 7;
+        payload.sack_supported = 0;
+        payload.mss_set = 0;
+        payload.sack_set = 0;
+        payload.wscaleshift_set = 0;
+        payload.local_ip = ip_src(origip);
+        payload.local_port = pcp_mapreq_int_port(origudppay);
+        ext_port = pcp_mapreq_sugg_ext_port(origudppay);
+        status = threetuplectx_modify_noadd_nonce(
+                     &airwall->threetuplectx,
+                     &local->timers, 0, 1, ext_ipv4, ext_port,
+                     pcp_mapreq_protocol(origudppay), 1, 1,
+                     &payload,
+                     gettime64() + pcp_lifetime(origudppay)*1000ULL*1000ULL,
+                     ip_src(origip),
+                     pcp_mapreq_int_port(origudppay),
+                     pcp_mapreq_nonce(origudppay),
+                     &old_expiry,
+                     &old_ext_port);
+        ext_port = old_ext_port;
+        if (status == -ENOENT)
         {
           if (pcp_mapreq_protocol(origudppay) == 6)
           {
-            deallocate_udp_port(airwall->porter, ext_port, 0);
+            ext_port = get_udp_port_different(airwall->porter,
+                                              pcp_req_get_ipv4(origudppay),
+                                              pcp_mapreq_sugg_ext_port(origudppay),
+                                              pcp_mapreq_int_port(origudppay), 0);
           }
           else
           {
-            deallocate_udp_port(airwall->udp_porter, ext_port, 0);
+            ext_port = get_udp_port_different(airwall->udp_porter,
+                                              pcp_req_get_ipv4(origudppay),
+                                              pcp_mapreq_sugg_ext_port(origudppay),
+                                              pcp_mapreq_int_port(origudppay), 0);
           }
-          rcode = PCP_RCODE_CANNOT_PROVIDE_EXTERNAL;
-        }
-        else
-        {
-          uint64_t old_expiry;
-          struct threetuplepayload payload;
-          int status;
-          payload.mss = 1460;
-          payload.wscaleshift = 7;
-          payload.sack_supported = 0;
-          payload.mss_set = 0;
-          payload.sack_set = 0;
-          payload.wscaleshift_set = 0;
-          payload.local_ip = ip_src(origip);
-          payload.local_port = pcp_mapreq_int_port(origudppay);
-          status = threetuplectx_modify_nonce(
-                       &airwall->threetuplectx,
-                       &local->timers, 0, 1, ext_ipv4, ext_port,
-                       pcp_mapreq_protocol(origudppay), 1, 1,
-                       &payload,
-                       gettime64() + pcp_lifetime(origudppay)*1000ULL*1000ULL,
-                       ip_src(origip),
-                       pcp_mapreq_int_port(origudppay),
-                       pcp_mapreq_nonce(origudppay),
-                       &old_expiry);
-          if (status != 0)
+          // FIXME verify also ext_ip:
+          if (ext_port != pcp_mapreq_sugg_ext_port(origudppay) && prefer_failure)
           {
-            int32_t secdiff = (old_expiry - gettime64()) / (1000*1000);
-            if (secdiff < 0)
+            if (pcp_mapreq_protocol(origudppay) == 6)
             {
-              secdiff = 0;
+              deallocate_udp_port(airwall->porter, ext_port, 0);
             }
-            pcp_set_lifetime(udppay, secdiff);
-            rcode = PCP_RCODE_NOT_AUTHORIZED;
+            else
+            {
+              deallocate_udp_port(airwall->udp_porter, ext_port, 0);
+            }
+            rcode = PCP_RCODE_CANNOT_PROVIDE_EXTERNAL;
           }
+          else
+          {
+            status = threetuplectx_modify_nonce(
+                         &airwall->threetuplectx,
+                         &local->timers, 0, 1, ext_ipv4, ext_port,
+                         pcp_mapreq_protocol(origudppay), 1, 1,
+                         &payload,
+                         gettime64() + pcp_lifetime(origudppay)*1000ULL*1000ULL,
+                         ip_src(origip),
+                         pcp_mapreq_int_port(origudppay),
+                         pcp_mapreq_nonce(origudppay),
+                         &old_expiry);
+            if (status != 0)
+            {
+              int32_t secdiff = (old_expiry - gettime64()) / (1000*1000);
+              if (secdiff < 0)
+              {
+                secdiff = 0;
+              }
+              pcp_set_lifetime(udppay, secdiff);
+              rcode = PCP_RCODE_NOT_AUTHORIZED;
+            }
+          }
+        }
+        else if (status != 0)
+        {
+          int32_t secdiff = (old_expiry - gettime64()) / (1000*1000);
+          if (secdiff < 0)
+          {
+            secdiff = 0;
+          }
+          pcp_set_lifetime(udppay, secdiff);
+          rcode = PCP_RCODE_NOT_AUTHORIZED;
+        }
+        else if (status == 0)
+        {
+          rcode = PCP_RCODE_SUCCESS;
         }
       }
       pcp_mapresp_set_nonce(udppay, pcp_mapreq_nonce(origudppay));
