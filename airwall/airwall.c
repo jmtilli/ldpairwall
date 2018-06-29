@@ -3250,6 +3250,11 @@ static int downlink_dns(
           }
         }
       }
+      else
+      {
+        ret = 0;
+        addr = airwall->conf->ul_addr;
+      }
       if (ret == 0)
       {
         hdr_set32n(ipv4, addr);
