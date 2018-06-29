@@ -1,12 +1,13 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 int main(int argc, char **argv)
 {
   int sockfd;
-  char msg[60] = {0};
-  char recvmsg[1514];
+  unsigned char msg[60] = {0};
+  unsigned char recvmsg[1514];
   ssize_t recvd;
   struct sockaddr_in sin;
   sockfd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -41,5 +42,6 @@ int main(int argc, char **argv)
   {
     abort();
   }
+  printf("port is %d\n", (recvmsg[42]<<8) | recvmsg[43]);
   return 0;
 }
