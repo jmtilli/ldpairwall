@@ -15,7 +15,7 @@ int main(int argc, char **argv)
 
   for (i = 0; i < 100; i++)
   {
-    port = get_udp_port(&porter, (10<<24)|100, 1024);
+    port = get_udp_port(&porter, (10<<24)|100, 1024, 1);
     printf("%d\n", port);
     deallocate_udp_port(&porter, port, 1);
   }

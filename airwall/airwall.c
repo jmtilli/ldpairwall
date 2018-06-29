@@ -2550,6 +2550,7 @@ static int uplink_pcp(
                              &local->timers, pcp_req_get_ipv4(origudppay),
                              pcp_mapreq_sugg_ext_port(origudppay), // XXX
                              pcp_mapreq_protocol(origudppay), 1, 1);
+#if 0
         if (pcp_mapreq_protocol(origudppay) == 6)
         {
           deallocate_udp_port(airwall->porter, // FIXME only if prev ok
@@ -2560,6 +2561,7 @@ static int uplink_pcp(
           deallocate_udp_port(airwall->udp_porter, // FIXME only if prev ok
                               pcp_mapreq_sugg_ext_port(origudppay), 0);
         }
+#endif
       }
       else if (rcode == 0 && pcp_lifetime(origudppay) > 0)
       {
@@ -2568,14 +2570,14 @@ static int uplink_pcp(
           ext_port = get_udp_port_different(airwall->porter,
                                             pcp_req_get_ipv4(origudppay),
                                             pcp_mapreq_sugg_ext_port(origudppay),
-                                            pcp_mapreq_int_port(origudppay));
+                                            pcp_mapreq_int_port(origudppay), 0);
         }
         else
         {
           ext_port = get_udp_port_different(airwall->udp_porter,
                                             pcp_req_get_ipv4(origudppay),
                                             pcp_mapreq_sugg_ext_port(origudppay),
-                                            pcp_mapreq_int_port(origudppay));
+                                            pcp_mapreq_int_port(origudppay), 0);
         }
         // FIXME verify also ext_ip:
         if (ext_port != pcp_mapreq_sugg_ext_port(origudppay) && prefer_failure)
@@ -2603,7 +2605,7 @@ static int uplink_pcp(
           payload.local_port = pcp_mapreq_int_port(origudppay);
           // FIXME verify the user owns the mapping
           threetuplectx_modify(&airwall->threetuplectx,
-                               &local->timers, 0, ext_ipv4, ext_port,
+                               &local->timers, 0, 1, ext_ipv4, ext_port,
                                pcp_mapreq_protocol(origudppay), 1, 1,
                                &payload,
                                gettime64() - 2*1000ULL*1000ULL + pcp_lifetime(origudppay)*1000ULL*1000ULL); // FIXME make this prettier
@@ -2690,7 +2692,7 @@ static int uplink_udp(
     {
       uint32_t loc = airwall->conf->ul_addr;
       hdr_set32n(ipv4, loc);
-      nat_port = get_udp_port(airwall->udp_porter, hdr_get32n(lan_ip), lan_port);
+      nat_port = get_udp_port(airwall->udp_porter, hdr_get32n(lan_ip), lan_port, 1);
     }
     else
     {
@@ -2931,7 +2933,7 @@ static int uplink_icmp(
       {
         uint32_t loc = airwall->conf->ul_addr;
         hdr_set32n(ipv4, loc);
-        nat_identifier = get_udp_port(airwall->icmp_porter, hdr_get32n(lan_ip), icmp_echo_identifier(ippay));
+        nat_identifier = get_udp_port(airwall->icmp_porter, hdr_get32n(lan_ip), icmp_echo_identifier(ippay), 1);
       }
       else
       {
@@ -3168,7 +3170,7 @@ static int downlink_dns(
         {
           struct ul_addr *e = CONTAINER_OF(node, struct ul_addr, node);
           addr = e->addr;
-          ret = threetuplectx_add(&airwall->threetuplectx, &local->timers, 1,
+          ret = threetuplectx_add(&airwall->threetuplectx, &local->timers, 1, 0,
                                   addr, host->port, host->protocol,
                                   (host->port != 0), (host->protocol != 0),
                                   &payload, time64);
@@ -3179,11 +3181,41 @@ static int downlink_dns(
         }
         if (ret != 0 && (host->port != 0 || airwall->conf->allow_anyport_primary))
         {
+          int ok = 1;
           addr = airwall->conf->ul_addr;
-          ret = threetuplectx_add(&airwall->threetuplectx, &local->timers, 1,
-                                  addr, host->port, host->protocol,
-                                  (host->port != 0), (host->protocol != 0),
-                                  &payload, time64);
+          if (host->protocol == 0 && host->port != 0)
+          {
+            int gotten_tcp, gotten_udp;
+            gotten_tcp = get_exact_port_in(airwall->porter, host->local_ip, host->port);
+            if (gotten_tcp == host->port)
+            {
+              gotten_udp = get_exact_port_in(airwall->udp_porter, host->local_ip, host->port);
+              if (gotten_udp < 0)
+              {
+                deallocate_udp_port(airwall->porter, gotten_tcp, 0);
+              }
+            }
+            ok = (gotten_udp == host->port) && (gotten_tcp == host->port);
+          }
+          else if (host->protocol == 6 && host->port != 0)
+          {
+            int gotten;
+            gotten = get_exact_port_in(airwall->porter, host->local_ip, host->port);
+            ok = (gotten == host->port);
+          }
+          else if (host->protocol == 17 && host->port != 0)
+          {
+            int gotten;
+            gotten = get_exact_port_in(airwall->udp_porter, host->local_ip, host->port);
+            ok = (gotten == host->port);
+          }
+          if (ok)
+          {
+            ret = threetuplectx_add(&airwall->threetuplectx, &local->timers, 1, 1,
+                                    addr, host->port, host->protocol,
+                                    (host->port != 0), (host->protocol != 0),
+                                    &payload, time64);
+          }
         }
       }
       if (ret == 0)
@@ -4722,7 +4754,7 @@ int uplink(
       {
         uint32_t loc = airwall->conf->ul_addr;
         hdr_set32n(ipv4, loc);
-        tcp_port = get_udp_port(airwall->porter, hdr_get32n(lan_ip), lan_port);
+        tcp_port = get_udp_port(airwall->porter, hdr_get32n(lan_ip), lan_port, 1);
       }
       else
       {

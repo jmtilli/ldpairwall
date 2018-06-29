@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include "hashtable.h"
 #include "timerlink.h"
+#include "udpporter.h"
 
 struct threetuplepayload {
   uint16_t mss;
@@ -24,6 +25,7 @@ struct threetupleentry {
   } ip;
   uint16_t port;
   uint8_t proto;
+  uint8_t port_allocated:1;
   uint8_t consumable:1;
   uint8_t port_valid:1;
   uint8_t proto_valid:1;
@@ -33,12 +35,15 @@ struct threetupleentry {
 };
 struct threetuplectx {
   struct hash_table tbl;
+  struct udp_porter *porter;
+  struct udp_porter *udp_porter;
 };
 
 int threetuplectx_add(
   struct threetuplectx *ctx,
   struct timer_linkheap *heap,
   int consumable,
+  int port_allocated,
   uint32_t ip, uint16_t port, uint8_t proto, int port_valid, int proto_valid,
   const struct threetuplepayload *payload, uint64_t time64);
 
@@ -46,6 +51,7 @@ int threetuplectx_add6(
   struct threetuplectx *ctx,
   struct timer_linkheap *heap,
   int consumable,
+  int port_allocated,
   const void *ipv6,
   uint16_t port, uint8_t proto, int port_valid, int proto_valid,
   const struct threetuplepayload *payload, uint64_t time64);
@@ -54,6 +60,7 @@ int threetuplectx_modify(
   struct threetuplectx *ctx,
   struct timer_linkheap *heap,
   int consumable,
+  int port_allocated,
   uint32_t ip, uint16_t port, uint8_t proto, int port_valid, int proto_valid,
   const struct threetuplepayload *payload, uint64_t time64);
 
@@ -61,6 +68,7 @@ int threetuplectx_modify6(
   struct threetuplectx *ctx,
   struct timer_linkheap *heap,
   int consumable,
+  int port_allocated,
   const void *ipv6,
   uint16_t port, uint8_t proto, int port_valid, int proto_valid,
   const struct threetuplepayload *payload, uint64_t time64);
@@ -104,7 +112,8 @@ void threetuplectx_flush_ip(struct threetuplectx *ctx, struct timer_linkheap *he
 
 void threetuplectx_flush_ip6(struct threetuplectx *ctx, struct timer_linkheap *heap, const void *ipv6);
 
-void threetuplectx_init(struct threetuplectx *ctx);
+void threetuplectx_init(struct threetuplectx *ctx,
+                        struct udp_porter *porter, struct udp_porter *udp_porter);
 
 void threetuplectx_free(struct threetuplectx *ctx, struct timer_linkheap *heap);
 

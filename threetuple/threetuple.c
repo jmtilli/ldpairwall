@@ -48,6 +48,26 @@ static void threetuplectx_expiry_fn(
   hash_table_lock_bucket(&ctx->tbl, hashval);
   hash_table_delete_already_bucket_locked(&ctx->tbl, &e->node);
   hash_table_unlock_bucket(&ctx->tbl, hashval);
+  if (e->port_allocated)
+  {
+    if (!e->proto_valid)
+    {
+      deallocate_udp_port(ctx->porter, e->port, 0);
+      deallocate_udp_port(ctx->udp_porter, e->port, 0);
+    }
+    else if (e->proto == 6)
+    {
+      deallocate_udp_port(ctx->porter, e->port, 0);
+    }
+    else if (e->proto == 17)
+    {
+      deallocate_udp_port(ctx->udp_porter, e->port, 0);
+    }
+    else
+    {
+      abort();
+    }
+  }
   free(e);
 }
 
@@ -55,6 +75,7 @@ int threetuplectx_add(
   struct threetuplectx *ctx,
   struct timer_linkheap *heap,
   int consumable,
+  int port_allocated,
   uint32_t ip, uint16_t port, uint8_t proto, int port_valid, int proto_valid,
   const struct threetuplepayload *payload, uint64_t time64)
 {
@@ -71,6 +92,30 @@ int threetuplectx_add(
   {
     proto = 0;
   }
+
+#if 0
+  if (allocate_port)
+  {
+    if (proto == 0)
+    {
+      allocate_udp_port(ctx->porter, port, payload->local_ip, payload->local_port, 0);
+      allocate_udp_port(ctx->udp_porter, port, payload->local_ip, payload->local_port, 0);
+    }
+    else if (proto == 6)
+    {
+      allocate_udp_port(ctx->porter, port, payload->local_ip, payload->local_port, 0);
+    }
+    else if (proto == 17)
+    {
+      allocate_udp_port(ctx->udp_porter, port, payload->local_ip, payload->local_port, 0);
+    }
+    else
+    {
+      abort();
+    }
+  }
+#endif
+  e->port_allocated = port_allocated;
   e->consumable = consumable;
   e->version = 4;
   e->ip.ipv4 = ip;
@@ -108,6 +153,7 @@ int threetuplectx_add6(
   struct threetuplectx *ctx,
   struct timer_linkheap *heap,
   int consumable,
+  int port_allocated,
   const void *ipv6,
   uint16_t port, uint8_t proto, int port_valid, int proto_valid,
   const struct threetuplepayload *payload, uint64_t time64)
@@ -125,6 +171,7 @@ int threetuplectx_add6(
   {
     proto = 0;
   }
+  e->port_allocated = port_allocated;
   e->consumable = consumable;
   e->version = 6;
   memcpy(&e->ip, ipv6, 16);
@@ -162,6 +209,7 @@ int threetuplectx_modify(
   struct threetuplectx *ctx,
   struct timer_linkheap *heap,
   int consumable,
+  int port_allocated,
   uint32_t ip, uint16_t port, uint8_t proto, int port_valid, int proto_valid,
   const struct threetuplepayload *payload, uint64_t time64)
 {
@@ -186,6 +234,10 @@ int threetuplectx_modify(
         e->port == port && e->proto == proto &&
         e->port_valid == port_valid && e->proto_valid == proto_valid)
     {
+      if (e->port_allocated != port_allocated)
+      {
+        return -EACCES;
+      }
       e->consumable = consumable;
       e->payload = *payload;
       e->timer.time64 = time64 + RGW_TIMEOUT_SECS*1000ULL*1000ULL;
@@ -196,6 +248,7 @@ int threetuplectx_modify(
   }
   struct threetupleentry *e = malloc(sizeof(*e));
   e->consumable = consumable;
+  e->port_allocated = port_allocated;
   e->version = 4;
   e->ip.ipv4 = ip;
   e->port = port;
@@ -217,6 +270,7 @@ int threetuplectx_modify6(
   struct threetuplectx *ctx,
   struct timer_linkheap *heap,
   int consumable,
+  int port_allocated,
   const void *ipv6,
   uint16_t port, uint8_t proto, int port_valid, int proto_valid,
   const struct threetuplepayload *payload, uint64_t time64)
@@ -242,6 +296,10 @@ int threetuplectx_modify6(
         e->port == port && e->proto == proto &&
         e->port_valid == port_valid && e->proto_valid == proto_valid)
     {
+      if (e->port_allocated != port_allocated)
+      {
+        return -EACCES;
+      }
       e->consumable = consumable;
       e->payload = *payload;
       e->timer.time64 = time64 + RGW_TIMEOUT_SECS*1000ULL*1000ULL;
@@ -252,6 +310,7 @@ int threetuplectx_modify6(
   }
   struct threetupleentry *e = malloc(sizeof(*e));
   e->consumable = consumable;
+  e->port_allocated = port_allocated;
   e->version = 6;
   memcpy(&e->ip, ipv6, 16);
   e->port = port;
@@ -322,6 +381,26 @@ int threetuplectx_consume(
       {
         hash_table_delete_already_bucket_locked(&ctx->tbl, &e->node);
         timer_linkheap_remove(heap, &e->timer);
+        if (e->port_allocated)
+        {
+          if (!e->proto_valid)
+          {
+            deallocate_udp_port(ctx->porter, port, 0);
+            deallocate_udp_port(ctx->udp_porter, port, 0);
+          }
+          else if (e->proto == 6)
+          {
+            deallocate_udp_port(ctx->porter, port, 0);
+          }
+          else if (e->proto == 17)
+          {
+            deallocate_udp_port(ctx->udp_porter, port, 0);
+          }
+          else
+          {
+            abort();
+          }
+        }
         free(e);
       }
       hash_table_unlock_bucket(&ctx->tbl, hashval);
@@ -385,6 +464,26 @@ int threetuplectx_consume6(
       {
         hash_table_delete_already_bucket_locked(&ctx->tbl, &e->node);
         timer_linkheap_remove(heap, &e->timer);
+        if (e->port_allocated)
+        {
+          if (!e->proto_valid)
+          {
+            deallocate_udp_port(ctx->porter, port, 0);
+            deallocate_udp_port(ctx->udp_porter, port, 0);
+          }
+          else if (e->proto == 6)
+          {
+            deallocate_udp_port(ctx->porter, port, 0);
+          }
+          else if (e->proto == 17)
+          {
+            deallocate_udp_port(ctx->udp_porter, port, 0);
+          }
+          else
+          {
+            abort();
+          }
+        }
         free(e);
       }
       hash_table_unlock_bucket(&ctx->tbl, hashval);
@@ -424,6 +523,26 @@ int threetuplectx_delete(
       hash_table_delete_already_bucket_locked(&ctx->tbl, &e->node);
       hash_table_unlock_bucket(&ctx->tbl, hashval);
       timer_linkheap_remove(heap, &e->timer);
+      if (e->port_allocated)
+      {
+        if (!e->proto_valid)
+        {
+          deallocate_udp_port(ctx->porter, port, 0);
+          deallocate_udp_port(ctx->udp_porter, port, 0);
+        }
+        else if (e->proto == 6)
+        {
+          deallocate_udp_port(ctx->porter, port, 0);
+        }
+        else if (e->proto == 17)
+        {
+          deallocate_udp_port(ctx->udp_porter, port, 0);
+        }
+        else
+        {
+          abort();
+        }
+      }
       free(e);
       return 0;
     }
@@ -462,6 +581,26 @@ int threetuplectx_delete6(
       hash_table_delete_already_bucket_locked(&ctx->tbl, &e->node);
       hash_table_unlock_bucket(&ctx->tbl, hashval);
       timer_linkheap_remove(heap, &e->timer);
+      if (e->port_allocated)
+      {
+        if (!e->proto_valid)
+        {
+          deallocate_udp_port(ctx->porter, port, 0);
+          deallocate_udp_port(ctx->udp_porter, port, 0);
+        }
+        else if (e->proto == 6)
+        {
+          deallocate_udp_port(ctx->porter, port, 0);
+        }
+        else if (e->proto == 17)
+        {
+          deallocate_udp_port(ctx->udp_porter, port, 0);
+        }
+        else
+        {
+          abort();
+        }
+      }
       free(e);
       return 0;
     }
@@ -483,6 +622,26 @@ void threetuplectx_flush(struct threetuplectx *ctx, struct timer_linkheap *heap)
         CONTAINER_OF(n, struct threetupleentry, node);
       hash_table_delete_already_bucket_locked(&ctx->tbl, n);
       timer_linkheap_remove(heap, &e->timer);
+      if (e->port_allocated)
+      {
+        if (!e->proto_valid)
+        {
+          deallocate_udp_port(ctx->porter, e->port, 0);
+          deallocate_udp_port(ctx->udp_porter, e->port, 0);
+        }
+        else if (e->proto == 6)
+        {
+          deallocate_udp_port(ctx->porter, e->port, 0);
+        }
+        else if (e->proto == 17)
+        {
+          deallocate_udp_port(ctx->udp_porter, e->port, 0);
+        }
+        else
+        {
+          abort();
+        }
+      }
       free(e);
     }
     hash_table_unlock_bucket(&ctx->tbl, bucket);
@@ -502,6 +661,26 @@ void threetuplectx_flush_ip(struct threetuplectx *ctx, struct timer_linkheap *he
     {
       hash_table_delete_already_bucket_locked(&ctx->tbl, n);
       timer_linkheap_remove(heap, &e->timer);
+      if (e->port_allocated)
+      {
+        if (!e->proto_valid)
+        {
+          deallocate_udp_port(ctx->porter, e->port, 0);
+          deallocate_udp_port(ctx->udp_porter, e->port, 0);
+        }
+        else if (e->proto == 6)
+        {
+          deallocate_udp_port(ctx->porter, e->port, 0);
+        }
+        else if (e->proto == 17)
+        {
+          deallocate_udp_port(ctx->udp_porter, e->port, 0);
+        }
+        else
+        {
+          abort();
+        }
+      }
       free(e);
     }
   }
@@ -521,18 +700,42 @@ void threetuplectx_flush_ip6(struct threetuplectx *ctx, struct timer_linkheap *h
     {
       hash_table_delete_already_bucket_locked(&ctx->tbl, n);
       timer_linkheap_remove(heap, &e->timer);
+      if (e->port_allocated)
+      {
+        if (!e->proto_valid)
+        {
+          deallocate_udp_port(ctx->porter, e->port, 0);
+          deallocate_udp_port(ctx->udp_porter, e->port, 0);
+        }
+        else if (e->proto == 6)
+        {
+          deallocate_udp_port(ctx->porter, e->port, 0);
+        }
+        else if (e->proto == 17)
+        {
+          deallocate_udp_port(ctx->udp_porter, e->port, 0);
+        }
+        else
+        {
+          abort();
+        }
+      }
       free(e);
     }
   }
   hash_table_unlock_bucket(&ctx->tbl, hashval);
 }
 
-void threetuplectx_init(struct threetuplectx *ctx)
+void threetuplectx_init(struct threetuplectx *ctx,
+                        struct udp_porter *porter,
+                        struct udp_porter *udp_porter)
 {
   if (hash_table_init_locked(&ctx->tbl, 256, threetuple_hash_fn, NULL, 0))
   {
     abort();
   }
+  ctx->porter = porter;
+  ctx->udp_porter = udp_porter;
 }
 
 void threetuplectx_free(struct threetuplectx *ctx, struct timer_linkheap *heap)

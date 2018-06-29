@@ -833,7 +833,7 @@ static inline void airwall_init(
   airwall->udp_porter = udp_porter;
   airwall->icmp_porter = icmp_porter;
   //sack_ip_port_hash_init(&airwall->autolearn, conf->learnhashsize);
-  threetuplectx_init(&airwall->threetuplectx);
+  threetuplectx_init(&airwall->threetuplectx, porter, udp_porter);
 }
 
 static inline void airwall_free(
