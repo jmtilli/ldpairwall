@@ -66,6 +66,17 @@ int threetuplectx_modify(
   uint32_t ip, uint16_t port, uint8_t proto, int port_valid, int proto_valid,
   const struct threetuplepayload *payload, uint64_t time64);
 
+int threetuplectx_modify_noadd_nonce(
+  struct threetuplectx *ctx,
+  struct timer_linkheap *heap,
+  int consumable,
+  int port_allocated,
+  uint32_t ip, uint16_t port, uint8_t proto, int port_valid, int proto_valid,
+  const struct threetuplepayload *payload, uint64_t expire_time64,
+  uint32_t local_ip,
+  uint16_t local_port, 
+  const void *nonce, uint64_t *old_expiry, uint16_t *old_ext_port);
+
 int threetuplectx_modify_nonce(
   struct threetuplectx *ctx,
   struct timer_linkheap *heap,
