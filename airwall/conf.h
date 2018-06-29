@@ -75,6 +75,9 @@ struct conf {
   uint32_t ul_mask;
   uint32_t ul_defaultgw;
   int allow_anyport_primary;
+  uint32_t tun_addr;
+  uint32_t tun_peer;
+  int enable_tun;
 };
 
 static inline int ul_addr_is_mine(struct conf *conf, uint32_t addr)
@@ -402,6 +405,11 @@ static inline int conf_postprocess(struct conf *conf)
       log_log(LOG_LEVEL_CRIT, "CONFPARSER", "uplink alt addresses same as default GW");
       return -EINVAL;
     }
+  }
+  if (conf->enable_tun && (conf->tun_addr == 0 || conf->tun_peer == 0))
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER", "tun addresses need to be set");
+    return -EINVAL;
   }
   return 0;
 }

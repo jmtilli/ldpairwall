@@ -3,7 +3,9 @@
 #include "branchpredict.h"
 #include <sys/time.h>
 #include <sys/sysinfo.h>
+#include <sys/uio.h>
 #include <arpa/inet.h>
+#include <unistd.h>
 #include "time64.h"
 #include "detect.h"
 
@@ -60,7 +62,28 @@ static int send_via_arp(struct packet *pkt,
   struct arp_cache *cache;
   uint32_t addr;
   const void *mac;
+  int retval;
   uint32_t dst = ip_dst(ether_payload(ether));
+  if (dir == PACKET_DIRECTION_DOWNLINK && dst == airwall->conf->tun_peer &&
+      airwall->conf->enable_tun)
+  {
+    struct iovec iov[2];
+    char hdr[4] = {0,0,0x08,0x00};
+    fd_set writefds;
+    FD_ZERO(&writefds);
+    FD_SET(airwall->tun_fd, &writefds);
+    select(airwall->tun_fd+1, NULL, &writefds, NULL, NULL);
+    iov[0].iov_base = hdr;
+    iov[0].iov_len = 4;
+    iov[1].iov_base = ether_payload(ether);
+    iov[1].iov_len = pkt->sz-14;
+    retval = writev(airwall->tun_fd, iov, 2);
+    if (retval > (int)(pkt->sz-14+4))
+    {
+      abort();
+    }
+    return 1;
+  }
   if (dir == PACKET_DIRECTION_UPLINK)
   {
     memcpy(ether_src(ether), airwall->ul_mac, 6);
@@ -82,6 +105,11 @@ static int send_via_arp(struct packet *pkt,
     if ((dst & airwall->conf->dl_mask) !=
         (airwall->conf->dl_addr & airwall->conf->dl_mask))
     {
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "%d.%d.%d.%d",
+              (dst>>24)&0xFF,
+              (dst>>16)&0xFF,
+              (dst>>8)&0xFF,
+              (dst>>0)&0xFF);
       log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "IP not to subnet, dropping");
       return 1;
     }
@@ -650,14 +678,16 @@ struct airwall_hash_entry *airwall_hash_put(
   uint16_t nat_port,
   const void *remote_ip,
   uint16_t remote_port,
+  const void *mod_remote_ip,
+  uint16_t mod_remote_port,
   uint8_t was_synproxied,
   uint64_t time64)
 {
   struct airwall_hash_entry *e;
   struct airwall_hash_ctx ctx;
-  if (local_ip != 0 && local_port != 0)
+  if (local_ip != NULL && local_port != 0)
   {
-    if (airwall_hash_get_local(local, version, local_ip, local_port, remote_ip, remote_port, &ctx))
+    if (airwall_hash_get_local(local, version, local_ip, local_port, mod_remote_ip, mod_remote_port, &ctx))
     {
       return NULL;
     }
@@ -679,10 +709,12 @@ struct airwall_hash_entry *airwall_hash_put(
   }
   memcpy(&e->nat_ip, nat_ip, (version == 4) ? 4 : 16);
   memcpy(&e->remote_ip, remote_ip, (version == 4) ? 4 : 16);
+  memcpy(&e->mod_remote_ip, mod_remote_ip, (version == 4) ? 4 : 16);
   e->detect = NULL;
   e->local_port = local_port;
   e->nat_port = nat_port;
   e->remote_port = remote_port;
+  e->mod_remote_port = mod_remote_port;
   e->was_synproxied = was_synproxied;
   e->timer.time64 = time64 + 86400ULL*1000ULL*1000ULL;
   e->timer.fn = airwall_expiry_fn;
@@ -1615,8 +1647,10 @@ static void send_synack(
     e->version = version;
     memcpy(&e->nat_ip, local_ip, (version == 6) ? 16 : 4);
     memcpy(&e->remote_ip, remote_ip, (version == 6) ? 16 : 4);
+    memcpy(&e->mod_remote_ip, remote_ip, (version == 6) ? 16 : 4);
     e->nat_port = local_port;
     e->remote_port = remote_port;
+    e->mod_remote_port = remote_port;
     allocate_udp_port(airwall->porter, e->nat_port, 0, 0, 0);
     e->was_synproxied = 1;
     e->timer.time64 = time64 + 64ULL*1000ULL*1000ULL;
@@ -1678,11 +1712,11 @@ static void send_or_resend_syn(
   ip46_set_id(ip, 0); // XXX
   ip46_set_ttl(ip, 64);
   ip46_set_proto(ip, 6);
-  ip46_set_src(ip, &entry->remote_ip);
+  ip46_set_src(ip, &entry->mod_remote_ip);
   ip46_set_dst(ip, &entry->local_ip);
   ip46_set_hdr_cksum_calc(ip);
   tcp = ip46_payload(ip);
-  tcp_set_src_port(tcp, entry->remote_port);
+  tcp_set_src_port(tcp, entry->mod_remote_port);
   tcp_set_dst_port(tcp, entry->local_port);
   tcp_set_syn_on(tcp);
   tcp_set_data_offset(tcp, sizeof(syn) - 14 - 40);
@@ -1950,7 +1984,8 @@ static void send_data_only(
 
 static void send_ack_only(
   void *orig, struct airwall_hash_entry *entry, struct port *port,
-  struct ll_alloc_st *st)
+  struct ll_alloc_st *st, struct airwall *airwall, struct worker_local *local,
+  uint64_t time64)
 {
   char ack[14+40+20+12] = {0};
   void *ip, *origip;
@@ -2017,6 +2052,15 @@ static void send_ack_only(
   pktstruct->direction = PACKET_DIRECTION_DOWNLINK;
   pktstruct->sz = sz;
   memcpy(pktstruct->data, ack, sz);
+
+#ifdef ENABLE_ARP
+  if (send_via_arp(pktstruct, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
+  {
+    ll_free_st(st, pktstruct);
+    return;
+  }
+#endif
+
   port->portfunc(pktstruct, port->userdata);
 }
 
@@ -2048,6 +2092,7 @@ static void send_window_update(
       local, version,
       NULL, 0,
       ip46_dst(origip), tcp_dst_port(origtcp),
+      ip46_src(origip), tcp_src_port(origtcp),
       ip46_src(origip), tcp_src_port(origtcp),
       1, time64);
     if (entry->version == 6)
@@ -2106,6 +2151,18 @@ static void send_window_update(
   if (version == 4)
   {
     struct threetuplepayload threetuplepayload;
+    // Use TUN interface for port 53
+    if (tcp_dst_port(origtcp) == 53)
+    {
+      entry->local_port = 53;
+      entry->local_ip.ipv4 = htonl(airwall->conf->tun_peer);
+      entry->mod_remote_port = entry->remote_port;
+      entry->mod_remote_ip.ipv4 = htonl(airwall->conf->tun_addr);
+      hash_table_add_nogrow_already_bucket_locked(
+        &local->local_hash, &entry->local_node, airwall_hash_local(entry));
+      send_syn(triggerpkt, local, port, st, mss, wscale, sack_permitted, entry, time64, was_keepalive, airwall);
+      return;
+    }
     if (threetuplectx_consume(&airwall->threetuplectx, &local->timers, ip_dst(origip), tcp_dst_port(origtcp), 6, &threetuplepayload) == 0)
     {
       if (threetuplepayload.local_port != 0)
@@ -2300,7 +2357,7 @@ static void send_ack_and_window_update(
   origtcp = ip46_payload(origip);
   tcp_parse_options(origtcp, &tcpinfo);
 
-  send_ack_only(orig, entry, port, st); // XXX send_ack_only reparses opts
+  send_ack_only(orig, entry, port, st, airwall, local, time64); // XXX send_ack_only reparses opts
 
   if (airwall->conf->enable_ack && entry->detect)
   {
@@ -2799,6 +2856,7 @@ static int uplink_udp(
   return 0;
 }
 
+// FIXME mod_remote_ip, mod_remote_port
 static int downlink_icmp(
   struct airwall *airwall, struct worker_local *local, struct packet *pkt,
   struct port *port, uint64_t time64, struct ll_alloc_st *st)
@@ -3751,6 +3809,16 @@ int downlink(
         {
           abort();
         }
+        tcp_set_src_port_cksum_update(ippay, tcp_len, entry->mod_remote_port);
+        if (version == 4)
+        {
+          ip_set_src_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
+                                  hdr_get32n(&entry->mod_remote_ip));
+        }
+        else
+        {
+          abort();
+        }
 #ifdef ENABLE_ARP
         if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
         {
@@ -3788,6 +3856,16 @@ int downlink(
         {
           ip_set_dst_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
                                   hdr_get32n(&entry->local_ip));
+        }
+        else
+        {
+          abort();
+        }
+        tcp_set_src_port_cksum_update(ippay, tcp_len, entry->mod_remote_port);
+        if (version == 4)
+        {
+          ip_set_src_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
+                                  hdr_get32n(&entry->mod_remote_ip));
         }
         else
         {
@@ -3856,6 +3934,16 @@ int downlink(
       {
         ip_set_dst_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
                                 hdr_get32n(&entry->local_ip));
+      }
+      else
+      {
+        abort();
+      }
+      tcp_set_src_port_cksum_update(ippay, tcp_len, entry->mod_remote_port);
+      if (version == 4)
+      {
+        ip_set_src_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
+                                hdr_get32n(&entry->mod_remote_ip));
       }
       else
       {
@@ -4229,6 +4317,16 @@ int downlink(
     {
       abort();
     }
+    tcp_set_src_port_cksum_update(ippay, tcp_len, entry->mod_remote_port);
+    if (version == 4)
+    {
+      ip_set_src_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
+                              hdr_get32n(&entry->mod_remote_ip));
+    }
+    else
+    {
+      abort();
+    }
 #ifdef ENABLE_ARP
     if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
     {
@@ -4470,6 +4568,16 @@ int downlink(
   {
     abort();
   }
+  tcp_set_src_port_cksum_update(ippay, tcp_len, entry->mod_remote_port);
+  if (version == 4)
+  {
+    ip_set_src_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
+                            hdr_get32n(&entry->mod_remote_ip));
+  }
+  else
+  {
+    abort();
+  }
 #ifdef ENABLE_ARP
   if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
   {
@@ -4495,6 +4603,40 @@ int downlink(
   Downlink packet arrives. It has wan_ip:wan_port remote_ip:remote_port
   - Lookup by wan_port, verify remote_ip:remote_port
  */
+
+int tunlink(
+  struct airwall *airwall, struct worker_local *local, struct packet *pkt,
+  struct port *port, uint64_t time64, struct ll_alloc_st *st)
+{
+  char hdr2[1514];
+  void *iporig = pkt->data;
+  void *ipnew = ether_payload(hdr2);
+  static const char dummy_mac[6] = {2,1,2,3,4,5};
+  if (pkt->sz > sizeof(hdr2)-14)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERTUNLINK", "too big packet");
+    return 1;
+  }
+  memcpy(ether_dst(hdr2), airwall->dl_mac, 6);
+  memcpy(ether_src(hdr2), dummy_mac, 6);
+  ether_set_type(hdr2, ETHER_TYPE_IP);
+  memcpy(ipnew, iporig, pkt->sz);
+
+  struct packet *pktstruct = ll_alloc_st(st, packet_size(pkt->sz + 14));
+  pktstruct->data = packet_calc_data(pktstruct);
+  pktstruct->direction = PACKET_DIRECTION_UPLINK;
+  pktstruct->sz = pkt->sz + 14;
+  memcpy(pktstruct->data, hdr2, pkt->sz + 14);
+
+  if (uplink(airwall, local, pktstruct, port, time64, st) == 0)
+  {
+    port->portfunc(pktstruct, port->userdata);
+    return 1;
+  }
+  ll_free_st(st, pktstruct);
+  return 1;
+}
+
 
 // return: whether to free (1) or not (0)
 int uplink(
@@ -4790,6 +4932,16 @@ int uplink(
         {
           abort();
         }
+        tcp_set_dst_port_cksum_update(ippay, tcp_len, entry->remote_port);
+        if (version == 4)
+        {
+          ip_set_dst_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
+                                  hdr_get32n(&entry->remote_ip));
+        }
+        else
+        {
+          abort();
+        }
 #ifdef ENABLE_ARP
         if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
         {
@@ -4831,11 +4983,11 @@ int uplink(
         abort();
       }
       entry = airwall_hash_put(
-        local, version, lan_ip, lan_port, ipv4, tcp_port, remote_ip, remote_port, 0, time64);
+        local, version, lan_ip, lan_port, ipv4, tcp_port, remote_ip, remote_port, remote_ip, remote_port, 0, time64);
 #else
       allocate_port(lan_port);
       entry = airwall_hash_put(
-        local, version, lan_ip, lan_port, lan_ip, lan_port, remote_ip, remote_port, 0, time64);
+        local, version, lan_ip, lan_port, lan_ip, lan_port, remote_ip, remote_port, remote_ip, remote_port, 0, time64);
 #endif
       if (version == 6)
       {
@@ -4888,6 +5040,16 @@ int uplink(
       {
         abort();
       }
+      tcp_set_dst_port_cksum_update(ippay, tcp_len, entry->remote_port);
+      if (version == 4)
+      {
+        ip_set_dst_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
+                                hdr_get32n(&entry->remote_ip));
+      }
+      else
+      {
+        abort();
+      }
       //port->portfunc(pkt, port->userdata);
       worker_local_wrlock(local);
       entry->timer.time64 = time64 + 120ULL*1000ULL*1000ULL;
@@ -4927,7 +5089,7 @@ int uplink(
           airwall_entry_to_str(statebuf, sizeof(statebuf), entry);
           airwall_packet_to_str(packetbuf, sizeof(packetbuf), ether);
           log_log(LOG_LEVEL_NOTICE, "WORKERUPLINK", "resending ACK, state: %s, packet: %s", statebuf, packetbuf);
-          send_ack_only(ether, entry, port, st);
+          send_ack_only(ether, entry, port, st, airwall, local, time64);
           //airwall_hash_unlock(local, &ctx);
           return 1;
         }
@@ -5102,6 +5264,16 @@ int uplink(
       {
         abort();
       }
+      tcp_set_dst_port_cksum_update(ippay, tcp_len, entry->remote_port);
+      if (version == 4)
+      {
+        ip_set_dst_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
+                                hdr_get32n(&entry->remote_ip));
+      }
+      else
+      {
+        abort();
+      }
       //port->portfunc(pkt, port->userdata);
       //airwall_hash_unlock(local, &ctx);
 #ifdef ENABLE_ARP
@@ -5151,6 +5323,16 @@ int uplink(
       {
         ip_set_src_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
                                 hdr_get32n(&entry->nat_ip));
+      }
+      else
+      {
+        abort();
+      }
+      tcp_set_dst_port_cksum_update(ippay, tcp_len, entry->remote_port);
+      if (version == 4)
+      {
+        ip_set_dst_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
+                                hdr_get32n(&entry->remote_ip));
       }
       else
       {
@@ -5232,6 +5414,16 @@ int uplink(
       {
         abort();
       }
+      tcp_set_dst_port_cksum_update(ippay, tcp_len, entry->remote_port);
+      if (version == 4)
+      {
+        ip_set_dst_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
+                                hdr_get32n(&entry->remote_ip));
+      }
+      else
+      {
+        abort();
+      }
       //port->portfunc(pkt, port->userdata);
       //airwall_hash_unlock(local, &ctx);
 #ifdef ENABLE_ARP
@@ -5269,6 +5461,16 @@ int uplink(
     {
       ip_set_src_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
                               hdr_get32n(&entry->nat_ip));
+    }
+    else
+    {
+      abort();
+    }
+    tcp_set_dst_port_cksum_update(ippay, tcp_len, entry->remote_port);
+    if (version == 4)
+    {
+      ip_set_dst_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
+                              hdr_get32n(&entry->remote_ip));
     }
     else
     {
@@ -5497,6 +5699,16 @@ int uplink(
   {
     ip_set_src_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
                             hdr_get32n(&entry->nat_ip));
+  }
+  else
+  {
+    abort();
+  }
+  tcp_set_dst_port_cksum_update(ippay, tcp_len, entry->remote_port);
+  if (version == 4)
+  {
+    ip_set_dst_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
+                            hdr_get32n(&entry->remote_ip));
   }
   else
   {

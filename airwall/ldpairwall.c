@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdatomic.h>
 #include <poll.h>
+#include <fcntl.h>
 #include "ldp.h"
 #include "linkcommon.h"
 #include "time64.h"
@@ -12,6 +13,7 @@
 #include "mypcapng.h"
 #include "yyutils.h"
 #include "udpporter.h"
+#include "tuntap.h"
 
 #define POOL_SIZE 48
 #define BLOCK_SIZE 65664
@@ -30,6 +32,21 @@ struct ldp_out_queue *uloutq[MAX_RX_TX];
 struct udp_porter porter;
 struct udp_porter udp_porter;
 struct udp_porter icmp_porter;
+
+static void set_nonblock(int fd)
+{
+  int opt;
+  opt = fcntl(fd, F_GETFL);
+  if (opt < 0)
+  {
+    abort();
+  }
+  opt |= O_NONBLOCK;
+  if (fcntl(fd, F_SETFL, opt) < 0)
+  {
+    abort();
+  }
+}
 
 atomic_int exit_threads = 0;
 
@@ -92,10 +109,11 @@ int main(int argc, char **argv)
 {
   int idx = 0;
   int i;
-  struct pollfd pfds[2];
+  struct pollfd pfds[3];
   uint64_t expiry, time64;
   int timeout;
   int try;
+  int tunfd = -1;
   struct airwall sairwall = {};
   struct airwall *airwall = &sairwall;
   struct worker_local slocal = {};
@@ -135,6 +153,24 @@ int main(int argc, char **argv)
   {
     abort();
   }
+
+  if (conf.enable_tun)
+  {
+    char actual_tundev[IFNAMSIZ];
+    tunfd = tun_alloc(NULL, actual_tundev);
+    if (tunfd < 0)
+    {
+      log_log(LOG_LEVEL_CRIT, "LDPAIRWALL", "failed to open tun device");
+      exit(1);
+    }
+    if (tun_bring_up_addr(actual_tundev, conf.tun_peer, conf.tun_addr) != 0)
+    {
+      log_log(LOG_LEVEL_CRIT, "LDPAIRWALL", "failed to bring up tun device");
+      exit(1);
+    }
+    set_nonblock(tunfd);
+  }
+  airwall->tun_fd = tunfd;
 
   args.idx = 0;
   args.airwall = airwall;
@@ -219,6 +255,11 @@ int main(int argc, char **argv)
     pfds[0].events = POLLIN;
     pfds[1].fd = ulinq[idx]->fd;
     pfds[1].events = POLLIN;
+    if (tunfd >= 0)
+    {
+      pfds[2].fd = tunfd;
+      pfds[2].events = POLLIN;
+    }
 
     worker_local_rdlock(local);
     expiry = timer_linkheap_next_expiry_time(&local->timers);
@@ -236,7 +277,7 @@ int main(int argc, char **argv)
       ldp_out_txsync(uloutq[idx]);
       if (pfds[0].fd >= 0 && pfds[1].fd >= 0)
       {
-        poll(pfds, 2, timeout);
+        poll(pfds, (tunfd >= 0) ? 3 : 2, timeout);
       }
     }
 
@@ -267,6 +308,32 @@ int main(int argc, char **argv)
     struct ldp_packet pkts[1000];
     struct ldp_packet pkts2[1000];
     int num;
+
+    if (tunfd >= 0)
+    {
+      for (i = 0; i < 1000; i++)
+      {
+        char tunbuf[2048];
+        struct packet pktstruct;
+        ssize_t sz;
+        sz = read(tunfd, tunbuf, sizeof(tunbuf));
+        if (sz < 4)
+        {
+          break;
+        }
+        pktstruct.data = tunbuf + 4;
+        pktstruct.direction = PACKET_DIRECTION_FROMTUN;
+        pktstruct.sz = sz - 4;
+        if (tunlink(airwall, local, &pktstruct, &outport, time64, &st))
+        {
+          // ok
+        }
+        else
+        {
+          abort(); // can't convert IP packet into Ethernet packet
+        }
+      }
+    }
 
     num = ldp_in_nextpkts(dlinq[idx], pkts, sizeof(pkts)/sizeof(*pkts));
 

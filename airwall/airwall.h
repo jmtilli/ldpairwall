@@ -35,6 +35,7 @@ struct airwall {
   struct udp_porter *porter;
   struct udp_porter *udp_porter;
   struct udp_porter *icmp_porter;
+  int tun_fd;
 };
 
 struct airwall_udp_entry {
@@ -103,11 +104,16 @@ struct airwall_hash_entry {
     uint32_t ipv4;
     char ipv6[16];
   } remote_ip;
+  union {
+    uint32_t ipv4;
+    char ipv6[16];
+  } mod_remote_ip;
   uint32_t ulflowlabel; // after mangling
   uint32_t dlflowlabel;
   uint16_t local_port;
   uint16_t nat_port;
   uint16_t remote_port;
+  uint16_t mod_remote_port;
   uint16_t flag_state;
   int8_t wscalediff;
   uint8_t lan_wscale;
@@ -238,11 +244,11 @@ static inline uint32_t airwall_hash_local(struct airwall_hash_entry *e)
 {
   if (e->version == 4)
   {
-    return airwall_hash_separate4(ntohl(e->local_ip.ipv4), e->local_port, ntohl(e->remote_ip.ipv4), e->remote_port);
+    return airwall_hash_separate4(ntohl(e->local_ip.ipv4), e->local_port, ntohl(e->mod_remote_ip.ipv4), e->mod_remote_port);
   }
   else
   {
-    return airwall_hash_separate6(&e->local_ip, e->local_port, &e->remote_ip, e->remote_port);
+    return airwall_hash_separate6(&e->local_ip, e->local_port, &e->mod_remote_ip, e->mod_remote_port);
   }
 }
 
@@ -566,8 +572,8 @@ static inline struct airwall_hash_entry *airwall_hash_get_local(
     if (   entry->version == version
         && ipmemequal(&entry->local_ip, local_ip, len)
         && entry->local_port == local_port
-        && ipmemequal(&entry->remote_ip, remote_ip, len)
-        && entry->remote_port == remote_port)
+        && ipmemequal(&entry->mod_remote_ip, remote_ip, len)
+        && entry->mod_remote_port == remote_port)
     {
       //ctx->entry = entry;
       return entry;
@@ -766,6 +772,8 @@ struct airwall_hash_entry *airwall_hash_put(
   uint16_t nat_port,
   const void *remote_ip,
   uint16_t remote_port,
+  const void *mod_remote_ip,
+  uint16_t mod_remote_port,
   uint8_t was_synproxied,
   uint64_t time64);
 
@@ -812,7 +820,7 @@ static inline void airwall_hash_put_connected(
   local_ipv4 = hdr_get32n(local_ip);
   allocate_udp_port(local->airwall->porter, nat_port, local_ipv4, local_port, 1);
   e = airwall_hash_put(
-    local, version, local_ip, local_port, nat_ip, nat_port, remote_ip, remote_port, 0, time64);
+    local, version, local_ip, local_port, nat_ip, nat_port, remote_ip, remote_port, remote_ip, remote_port, 0, time64);
   e->flag_state = FLAG_STATE_ESTABLISHED;
   e->lan_max = 32768;
   e->lan_sent = 0;
@@ -828,6 +836,7 @@ static inline void airwall_init(
   struct udp_porter *udp_porter,
   struct udp_porter *icmp_porter)
 {
+  airwall->tun_fd = -1;
   airwall->conf = conf;
   airwall->porter = porter;
   airwall->udp_porter = udp_porter;
@@ -885,6 +894,10 @@ int downlink(
   struct port *port, uint64_t time64, struct ll_alloc_st *st);
 
 int uplink(
+  struct airwall *airwall, struct worker_local *local, struct packet *pkt,
+  struct port *port, uint64_t time64, struct ll_alloc_st *st);
+
+int tunlink(
   struct airwall *airwall, struct worker_local *local, struct packet *pkt,
   struct port *port, uint64_t time64, struct ll_alloc_st *st);
 

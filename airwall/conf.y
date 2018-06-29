@@ -63,10 +63,12 @@ int confyywrap(yyscan_t scanner)
 %token PORT
 %token HOSTS
 %token ENABLE_ACK
+%token ENABLE_TUN
 %token TCP UDP TCPUDP NORGW
 
 %token DL_ADDR
 %token UL_ADDR
+%token TUN_ADDR TUN_PEER
 %token UL_ALTERNATIVES
 %token DL_MASK
 %token UL_MASK
@@ -272,6 +274,10 @@ TEST_CONNECTIONS SEMICOLON
 {
   conf->enable_ack = 1;
 }
+| ENABLE_TUN SEMICOLON
+{
+  conf->enable_tun = 1;
+}
 | ALLOW_ANYPORT_PRIMARY SEMICOLON
 {
   conf->allow_anyport_primary = 1;
@@ -283,6 +289,14 @@ TEST_CONNECTIONS SEMICOLON
 | UL_ADDR EQUALS IP_LITERAL SEMICOLON
 {
   conf->ul_addr = (uint32_t)$3;
+}
+| TUN_ADDR EQUALS IP_LITERAL SEMICOLON
+{
+  conf->tun_addr = (uint32_t)$3;
+}
+| TUN_PEER EQUALS IP_LITERAL SEMICOLON
+{
+  conf->tun_peer = (uint32_t)$3;
 }
 | UL_ALTERNATIVES EQUALS OPENBRACE ul_alternatives_maybe CLOSEBRACE SEMICOLON
 | DL_MASK EQUALS IP_LITERAL SEMICOLON
