@@ -29,8 +29,10 @@ struct threetupleentry {
   uint8_t consumable:1;
   uint8_t port_valid:1;
   uint8_t proto_valid:1;
+  uint8_t nonce_set:1;
   uint8_t version:4;
   struct timer_link timer;
+  char nonce[96/8];
   struct threetuplepayload payload;
 };
 struct threetuplectx {
@@ -64,6 +66,17 @@ int threetuplectx_modify(
   uint32_t ip, uint16_t port, uint8_t proto, int port_valid, int proto_valid,
   const struct threetuplepayload *payload, uint64_t time64);
 
+int threetuplectx_modify_nonce(
+  struct threetuplectx *ctx,
+  struct timer_linkheap *heap,
+  int consumable,
+  int port_allocated,
+  uint32_t ip, uint16_t port, uint8_t proto, int port_valid, int proto_valid,
+  const struct threetuplepayload *payload, uint64_t expire_time64,
+  uint32_t local_ip,
+  uint16_t local_port, 
+  const void *nonce, uint64_t *old_expiry);
+
 int threetuplectx_modify6(
   struct threetuplectx *ctx,
   struct timer_linkheap *heap,
@@ -77,6 +90,14 @@ int threetuplectx_delete(
   struct threetuplectx *ctx,
   struct timer_linkheap *heap,
   uint32_t ip, uint16_t port, uint8_t proto, int port_valid, int proto_valid);
+
+int threetuplectx_delete_nonce(
+  struct threetuplectx *ctx,
+  struct timer_linkheap *heap,
+  uint32_t ip, uint16_t port, uint8_t proto, int port_valid, int proto_valid,
+  uint32_t local_ip,
+  uint16_t local_port, 
+  const void *nonce, uint64_t *old_expiry);
 
 int threetuplectx_delete6(
   struct threetuplectx *ctx,

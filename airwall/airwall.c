@@ -2545,11 +2545,27 @@ static int uplink_pcp(
       }
       if (rcode == 0 && pcp_lifetime(origudppay) == 0)
       {
-        // FIXME verify the user owns the mapping
-        threetuplectx_delete(&airwall->threetuplectx,
+        int status;
+        uint64_t old_expiry;
+        status = threetuplectx_delete_nonce(
+                             &airwall->threetuplectx,
                              &local->timers, pcp_req_get_ipv4(origudppay),
-                             pcp_mapreq_sugg_ext_port(origudppay), // XXX
-                             pcp_mapreq_protocol(origudppay), 1, 1);
+                             pcp_mapreq_sugg_ext_port(origudppay),
+                             pcp_mapreq_protocol(origudppay), 1, 1,
+                             ip_src(origip),
+                             pcp_mapreq_int_port(origudppay),
+                             pcp_mapreq_nonce(origudppay),
+                             &old_expiry);
+        if (status != 0)
+        {
+          int32_t secdiff = (old_expiry - gettime64()) / (1000*1000);
+          if (secdiff < 0)
+          {
+            secdiff = 0;
+          }
+          pcp_set_lifetime(udppay, secdiff);
+          rcode = PCP_RCODE_NOT_AUTHORIZED;
+        }
 #if 0
         if (pcp_mapreq_protocol(origudppay) == 6)
         {
@@ -2594,7 +2610,9 @@ static int uplink_pcp(
         }
         else
         {
+          uint64_t old_expiry;
           struct threetuplepayload payload;
+          int status;
           payload.mss = 1460;
           payload.wscaleshift = 7;
           payload.sack_supported = 0;
@@ -2603,12 +2621,26 @@ static int uplink_pcp(
           payload.wscaleshift_set = 0;
           payload.local_ip = ip_src(origip);
           payload.local_port = pcp_mapreq_int_port(origudppay);
-          // FIXME verify the user owns the mapping
-          threetuplectx_modify(&airwall->threetuplectx,
-                               &local->timers, 0, 1, ext_ipv4, ext_port,
-                               pcp_mapreq_protocol(origudppay), 1, 1,
-                               &payload,
-                               gettime64() - 2*1000ULL*1000ULL + pcp_lifetime(origudppay)*1000ULL*1000ULL); // FIXME make this prettier
+          status = threetuplectx_modify_nonce(
+                       &airwall->threetuplectx,
+                       &local->timers, 0, 1, ext_ipv4, ext_port,
+                       pcp_mapreq_protocol(origudppay), 1, 1,
+                       &payload,
+                       gettime64() + pcp_lifetime(origudppay)*1000ULL*1000ULL,
+                       ip_src(origip),
+                       pcp_mapreq_int_port(origudppay),
+                       pcp_mapreq_nonce(origudppay),
+                       &old_expiry);
+          if (status != 0)
+          {
+            int32_t secdiff = (old_expiry - gettime64()) / (1000*1000);
+            if (secdiff < 0)
+            {
+              secdiff = 0;
+            }
+            pcp_set_lifetime(udppay, secdiff);
+            rcode = PCP_RCODE_NOT_AUTHORIZED;
+          }
         }
       }
       pcp_mapresp_set_nonce(udppay, pcp_mapreq_nonce(origudppay));
