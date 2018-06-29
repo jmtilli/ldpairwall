@@ -238,6 +238,7 @@ int threetuplectx_modify(
     {
       if (e->port_allocated != port_allocated)
       {
+        hash_table_unlock_bucket(&ctx->tbl, hashval);
         return -EACCES;
       }
       e->consumable = consumable;
@@ -312,6 +313,7 @@ int threetuplectx_modify_nonce(
         {
           *old_expiry = e->timer.time64;
         }
+        hash_table_unlock_bucket(&ctx->tbl, hashval);
         return -EACCES;
       }
       e->consumable = consumable;
@@ -334,6 +336,7 @@ int threetuplectx_modify_nonce(
         {
           *old_expiry = e->timer.time64;
         }
+        hash_table_unlock_bucket(&ctx->tbl, hashval);
         return -EACCES;
       }
       e->consumable = consumable;
@@ -398,6 +401,7 @@ int threetuplectx_modify6(
     {
       if (e->port_allocated != port_allocated)
       {
+        hash_table_unlock_bucket(&ctx->tbl, hashval);
         return -EACCES;
       }
       e->consumable = consumable;
@@ -690,6 +694,7 @@ int threetuplectx_delete_nonce(
         {
           *old_expiry = e->timer.time64;
         }
+        hash_table_unlock_bucket(&ctx->tbl, hashval);
         return -EACCES;
       }
       hash_table_delete_already_bucket_locked(&ctx->tbl, &e->node);
