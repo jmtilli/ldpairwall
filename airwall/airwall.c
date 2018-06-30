@@ -2501,7 +2501,7 @@ static int uplink_pcp(
   pcp_resp_zero_reserved2(udppay);
   if (pcp_opcode(origudppay) == PCP_OPCODE_MAP)
   {
-    uint16_t ext_port;
+    uint16_t ext_port = 0;
     uint32_t ext_ipv4 = airwall->conf->ul_addr;
     if (udp_len >= 8 + 60)
     {
@@ -3250,7 +3250,7 @@ static int downlink_dns(
           addr = airwall->conf->ul_addr;
           if (host->protocol == 0 && host->port != 0)
           {
-            int gotten_tcp, gotten_udp;
+            int gotten_tcp, gotten_udp = 0;
             gotten_tcp = get_exact_port_in(airwall->porter, host->local_ip, host->port);
             if (gotten_tcp == host->port)
             {
