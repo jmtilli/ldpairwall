@@ -2,6 +2,7 @@
 #include <sys/socket.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 static uint32_t get_default_gateway(void)
 {
@@ -52,6 +53,7 @@ int main(int argc, char **argv)
   struct sockaddr_in sin;
   uint32_t default_gateway;
   int intport, desired_extport, lifetime;
+  int protocol;
   socklen_t addrlen;
 
   sockfd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -59,18 +61,31 @@ int main(int argc, char **argv)
   {
     abort();
   }
-  if (argc != 4)
+  if (argc != 5)
   {
-    printf("Usage: %s intport desiredextport lifetime\n", argv[0]);
+    printf("Usage: %s tcp|udp intport desiredextport lifetime\n", argv[0]);
     exit(1);
   }
-  intport = atoi(argv[1]);
-  desired_extport = atoi(argv[2]);
-  lifetime = atoi(argv[3]);
+  if (strcmp(argv[1], "tcp") == 0)
+  {
+    protocol = 6;
+  }
+  else if (strcmp(argv[1], "udp") == 0)
+  {
+    protocol = 17;
+  }
+  else
+  {
+    printf("Usage: %s tcp|udp intport desiredextport lifetime\n", argv[0]);
+    exit(1);
+  }
+  intport = atoi(argv[2]);
+  desired_extport = atoi(argv[3]);
+  lifetime = atoi(argv[4]);
   if (intport <= 0 || intport > 65535 ||
       desired_extport <= 0 || desired_extport > 65535 || lifetime < 0)
   {
-    printf("Usage: %s intport desiredextport lifetime\n", argv[0]);
+    printf("Usage: %s tcp|udp intport desiredextport lifetime\n", argv[0]);
     exit(1);
   }
   msg[0] = 2;
@@ -81,7 +96,7 @@ int main(int argc, char **argv)
   msg[7] = lifetime&0xff;
   msg[18] = 0xff;
   msg[19] = 0xff;
-  msg[36] = 6;
+  msg[36] = protocol;
   msg[40] = intport>>8;
   msg[41] = intport&0xff;
   msg[42] = desired_extport>>8;
@@ -132,6 +147,11 @@ int main(int argc, char **argv)
   if (recvmsg[3] != 0)
   {
     printf("Result not success\n");
+    exit(1);
+  }
+  if (recvmsg[36] != protocol)
+  {
+    printf("Protocol mismatch\n");
     exit(1);
   }
   printf("Lifetime %u\n", (recvmsg[4]<<24) | (recvmsg[5]<<16) | (recvmsg[6]<<8) | recvmsg[7]);

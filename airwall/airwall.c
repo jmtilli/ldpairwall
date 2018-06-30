@@ -3367,8 +3367,32 @@ static int downlink_udp(
   ue = airwall_hash_get_nat_udp(local, version, lan_ip, lan_port, remote_ip, remote_port, &ctx);
   if (ue == NULL)
   {
-    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "UDP entry not found");
-    return 1;
+    struct threetuplepayload threetuplepayload;
+    uint32_t local_ip;
+    char local_ipv4[4];
+    uint16_t local_port;
+    if (threetuplectx_consume(&airwall->threetuplectx, &local->timers, ip_dst(ip), udp_dst_port(ippay), 17, &threetuplepayload) != 0)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "UDP entry not found and no threetupleentry");
+      return 1;
+    }
+    if (threetuplepayload.local_port != 0)
+    {
+      local_port = threetuplepayload.local_port;
+    }
+    else
+    {
+      local_port = lan_port;
+    }
+    local_ip = threetuplepayload.local_ip;
+    hdr_set32n(local_ipv4, local_ip);
+    ue = airwall_hash_put_udp(local, version, local_ipv4, local_port, lan_ip, lan_port,
+                              remote_ip, remote_port, 1, time64);
+    if (ue == NULL)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "can't add UDP entry");
+      return 1;
+    }
   }
 
 
