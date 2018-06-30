@@ -235,3 +235,17 @@ protocol:
 ip netns exec ns2 nc -v -v -v -l -p 22
 ip netns exec ns1 nc -v -v -v ssh.example.com 22
 ```
+
+PCP client can also be used to open ports, for UDP:
+```
+ip netns exec ns2 ./airwall/pcpclient udp 40000 40000 86400
+ip netns exec ns2 nc -v -v -v -u -l -p 40000
+ip netns exec ns1 nc -v -v -v -u 10.150.2.100 40000
+```
+
+Or for TCP:
+```
+ip netns exec ns2 ./airwall/pcpclient tcp 40000 40000 86400
+ip netns exec ns2 nc -v -v -v -l -p 40000
+ip netns exec ns1 nc -v -v -v 10.150.2.100 40000
+```
