@@ -18,6 +18,7 @@ const char http_connect_revdatabuf[19] = {
 #define IPV6_FRAG_CUTOFF 512
 
 #define UDP_TIMEOUT_SECS 300
+#define ICMP_TIMEOUT_SECS 60
 
 #define ENABLE_ARP
 
@@ -839,7 +840,7 @@ struct airwall_icmp_entry *airwall_hash_put_icmp(
   ue->local_identifier = local_identifier;
   ue->nat_identifier = nat_identifier;
   ue->was_incoming = was_incoming;
-  ue->timer.time64 = time64 + 15ULL*1000ULL*1000ULL;
+  ue->timer.time64 = time64 + ICMP_TIMEOUT_SECS*1000ULL*1000ULL;
   ue->timer.fn = airwall_icmp_expiry_fn;
   ue->timer.userdata = local;
   worker_local_wrlock(local);
@@ -2881,6 +2882,8 @@ static int downlink_icmp(
       return 1;
     }
     icmp_set_echo_identifier_cksum_update(ippay, icmp_len, ie->local_identifier);
+    ie->timer.time64 = time64 + ICMP_TIMEOUT_SECS*1000ULL*1000ULL;
+    timer_linkheap_modify(&local->timers, &ie->timer);
     ip_set_dst_cksum_update(ip, ip46_total_len(ip), 0, NULL, 0, hdr_get32n(&ie->local_ip));
     if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
     {
@@ -3052,6 +3055,8 @@ static int uplink_icmp(
     }
     icmp_set_echo_identifier_cksum_update(ippay, icmp_len, ie->nat_identifier);
     ip_set_src_cksum_update(ip, ip46_total_len(ip), 0, NULL, 0, hdr_get32n(&ie->nat_ip));
+    ie->timer.time64 = time64 + ICMP_TIMEOUT_SECS*1000ULL*1000ULL;
+    timer_linkheap_modify(&local->timers, &ie->timer);
     if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
     {
       return 1;
