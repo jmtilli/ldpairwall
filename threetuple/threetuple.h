@@ -29,17 +29,30 @@ struct threetupleentry {
   uint8_t consumable:1;
   uint8_t port_valid:1;
   uint8_t proto_valid:1;
+  uint8_t inthost_set:1;
   uint8_t nonce_set:1;
   uint8_t version:4;
   struct timer_link timer;
   char nonce[96/8];
   struct threetuplepayload payload;
 };
+
+struct threetupleinthostcount {
+  struct hash_list_node node;
+  uint32_t local_ip;
+  uint32_t count;
+};
+
 struct threetuplectx {
   struct hash_table tbl;
+  struct hash_table int_tbl;
   struct udp_porter *porter;
   struct udp_porter *udp_porter;
 };
+
+void int_tbl_rm(struct threetuplectx *ctx, uint32_t local_ip);
+
+int int_tbl_add(struct threetuplectx *ctx, uint32_t local_ip, uint32_t limit);
 
 int threetuplectx_add(
   struct threetuplectx *ctx,
@@ -86,7 +99,7 @@ int threetuplectx_modify_nonce(
   const struct threetuplepayload *payload, uint64_t expire_time64,
   uint32_t local_ip,
   uint16_t local_port, 
-  const void *nonce, uint64_t *old_expiry);
+  const void *nonce, uint64_t *old_expiry, uint32_t limit);
 
 int threetuplectx_modify6(
   struct threetuplectx *ctx,

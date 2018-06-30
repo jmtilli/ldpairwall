@@ -77,6 +77,7 @@ udp          return UDP;
 tcpudp       return TCPUDP;
 norgw        return NORGW;
 allow_anyport_primary return ALLOW_ANYPORT_PRIMARY;
+port_binding_limit return PORT_BINDING_LIMIT;
 
 [0-9]+       {
   char *endptr;

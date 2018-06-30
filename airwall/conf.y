@@ -72,6 +72,7 @@ int confyywrap(yyscan_t scanner)
 %token UL_MASK
 %token UL_DEFAULTGW
 %token ALLOW_ANYPORT_PRIMARY
+%token PORT_BINDING_LIMIT
 
 
 %type<i> sackconflictval
@@ -296,6 +297,17 @@ TEST_CONNECTIONS SEMICOLON
 | UL_DEFAULTGW EQUALS IP_LITERAL SEMICOLON
 {
   conf->ul_defaultgw = (uint32_t)$3;
+}
+| PORT_BINDING_LIMIT EQUALS INT_LITERAL SEMICOLON
+{
+  if ($3 <= 0)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
+            "invalid port binding limit: %d at line %d col %d",
+            $3, @3.first_line, @3.first_column);
+    YYABORT;
+  }
+  conf->port_binding_limit = $3;
 }
 | PORT EQUALS INT_LITERAL SEMICOLON
 {

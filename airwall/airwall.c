@@ -2648,7 +2648,7 @@ static int uplink_pcp(
                          ip_src(origip),
                          pcp_mapreq_int_port(origudppay),
                          pcp_mapreq_nonce(origudppay),
-                         &old_expiry);
+                         &old_expiry, airwall->conf->port_binding_limit);
             if (status != 0)
             {
               int32_t secdiff = (old_expiry - gettime64()) / (1000*1000);
