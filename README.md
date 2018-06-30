@@ -26,6 +26,26 @@ netmap (by leaving out the prefix). For highest performance, the `netmap:`
 prefixed use of ldpairwall is required. This requires netmap to compile the
 sources and also the netmap kernel module must be installed.
 
+# Unique features
+
+The ldpairwall is a DNS server and there is NAT-DNS interoperation in Private
+Realm Gateway (PRGW) style. Whenever a DNS query arrives, the NAT can allocate
+a state match for the incoming connection. This feature is not completely
+unique to ldpairwall: the original Realm Gateway (RGW) supports it also. Do
+note the DNS server interoperation is not as secure as in the original RGW,
+i.e. there is no reputation system to rank queriers and also support for DNS
+truncated option is missing, as is support for DNS over TCP.
+
+Application layer NAT (AL-NAT) means that for HTTP and TLS protocols, the
+hostname is automatically detected from the initial data and the connection is
+automatically steered towards the correct host in the private subnet.
+
+HTTP CONNECT proxy allows connecting to all ports of all hosts in the private
+subnet at the cost of requiring client side application modifications.
+
+Port control protocol (PCP) support means that hosts in the private subnet can
+use the protocol to open ports.
+
 # Prerequisites
 
 You need to have flex and bison installed in order to compile this project.
