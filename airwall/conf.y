@@ -64,6 +64,7 @@ int confyywrap(yyscan_t scanner)
 %token HOSTS
 %token ENABLE_ACK
 %token TCP UDP TCPUDP NORGW
+%token MAX_TCP_CONNECTIONS MAX_UDP_CONNECTIONS MAX_ICMP_CONNECTIONS
 
 %token DL_ADDR
 %token UL_ADDR
@@ -622,6 +623,39 @@ TEST_CONNECTIONS SEMICOLON
     YYABORT;
   }
   conf->detect_cache_max = $3;
+}
+| MAX_TCP_CONNECTIONS EQUALS INT_LITERAL SEMICOLON
+{
+  if ($3 < 0)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
+            "invalid max_tcp_connections: %d at line %d col %d",
+            $3, @3.first_line, @3.first_column);
+    YYABORT;
+  }
+  conf->max_tcp_connections = $3;
+}
+| MAX_UDP_CONNECTIONS EQUALS INT_LITERAL SEMICOLON
+{
+  if ($3 < 0)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
+            "invalid max_udp_connections: %d at line %d col %d",
+            $3, @3.first_line, @3.first_column);
+    YYABORT;
+  }
+  conf->max_udp_connections = $3;
+}
+| MAX_ICMP_CONNECTIONS EQUALS INT_LITERAL SEMICOLON
+{
+  if ($3 < 0)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
+            "invalid max_icmp_connections: %d at line %d col %d",
+            $3, @3.first_line, @3.first_column);
+    YYABORT;
+  }
+  conf->max_icmp_connections = $3;
 }
 | RATEHASH EQUALS OPENBRACE ratehashlist CLOSEBRACE SEMICOLON
 | HOSTS EQUALS OPENBRACE hostslist_maybe CLOSEBRACE SEMICOLON
