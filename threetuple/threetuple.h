@@ -108,7 +108,7 @@ int threetuplectx_delete_nonce(
   uint32_t ip, uint16_t port, uint8_t proto, int port_valid, int proto_valid,
   uint32_t local_ip,
   uint16_t local_port, 
-  const void *nonce, uint64_t *old_expiry);
+  const void *nonce, uint64_t *old_expiry, uint16_t *old_ext_port);
 
 int threetuplectx_delete6(
   struct threetuplectx *ctx,
