@@ -69,6 +69,26 @@ static int send_via_arp(struct packet *pkt,
     cache = &local->ul_arp_cache;
     addr = airwall->conf->ul_addr;
     mac = airwall->ul_mac;
+    if (ul_addr_is_mine(airwall->conf, dst))
+    {
+      char *ip = ether_payload(ether);
+      int version = ip_version(ip);
+      int proto = ip_proto(ip);
+      size_t ip_len = pkt->sz - ETHER_HDR_LEN;
+      size_t tcp_len = ip46_total_len(ip) - ip46_hdr_len(ip);
+      char *ippay = ip_payload(ip);
+      //pkt->direction = PACKET_DIRECTION_DOWNLINK;
+      memcpy(ether_dst(ether), airwall->ul_mac, 6);
+      if (version == 4)
+      {
+        ip_set_src_cksum_update(ip, ip_len, proto, ippay, tcp_len, dst);
+      }
+      else
+      {
+        abort();
+      }
+      return downlink(airwall, local, pkt, port, time64, st);
+    }
     if ((dst & airwall->conf->ul_mask) !=
         (airwall->conf->ul_addr & airwall->conf->ul_mask))
     {
@@ -105,6 +125,16 @@ static int send_via_arp(struct packet *pkt,
     return 1;
   }
   memcpy(ether_dst(ether), arpe->mac, 6);
+  if (dir == PACKET_DIRECTION_DOWNLINK && pkt->direction == PACKET_DIRECTION_UPLINK)
+  {
+    struct packet *pktstruct = ll_alloc_st(st, packet_size(pkt->sz));
+    pktstruct->data = packet_calc_data(pktstruct);
+    pktstruct->direction = dir;
+    pktstruct->sz = pkt->sz;
+    memcpy(pktstruct->data, ether, pkt->sz);
+    port->portfunc(pktstruct, port->userdata);
+    return 1;
+  }
   return 0;
 }
 
@@ -1531,6 +1561,13 @@ static void send_synack(
   pktstruct->direction = PACKET_DIRECTION_UPLINK;
   pktstruct->sz = sz;
   memcpy(pktstruct->data, synack, sz);
+#ifdef ENABLE_ARP
+  if (send_via_arp(pktstruct, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
+  {
+    ll_free_st(st, pktstruct);
+    return;
+  }
+#endif
   port->portfunc(pktstruct, port->userdata);
 
   if (airwall->conf->halfopen_cache_max)
