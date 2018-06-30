@@ -3461,7 +3461,7 @@ int downlink(
       {
         uint32_t spa = arp_spa(arp);
         const unsigned char *sha = arp_const_sha(arp);
-        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK",
+        log_log(LOG_LEVEL_INFO, "WORKERDOWNLINK",
                 "%d.%d.%d.%d is at %.2x:%.2x:%.2x:%.2x:%.2x:%.2x",
                 (spa>>24)&0xFF, (spa>>16)&0xFF, (spa>>8)&0xFF, (spa>>0)&0xFF,
                 sha[0], sha[1], sha[2], sha[3], sha[4], sha[5]);
@@ -3498,7 +3498,7 @@ int downlink(
       {
         uint32_t spa = arp_spa(arp);
         const unsigned char *sha = arp_const_sha(arp);
-        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK",
+        log_log(LOG_LEVEL_INFO, "WORKERDOWNLINK",
                 "%d.%d.%d.%d is at %.2x:%.2x:%.2x:%.2x:%.2x:%.2x",
                 (spa>>24)&0xFF, (spa>>16)&0xFF, (spa>>8)&0xFF, (spa>>0)&0xFF,
                 sha[0], sha[1], sha[2], sha[3], sha[4], sha[5]);
@@ -4561,7 +4561,7 @@ int uplink(
       {
         uint32_t spa = arp_spa(arp);
         const unsigned char *sha = arp_const_sha(arp);
-        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK",
+        log_log(LOG_LEVEL_INFO, "WORKERDOWNLINK",
                 "%d.%d.%d.%d is at %.2x:%.2x:%.2x:%.2x:%.2x:%.2x",
                 (spa>>24)&0xFF, (spa>>16)&0xFF, (spa>>8)&0xFF, (spa>>0)&0xFF,
                 sha[0], sha[1], sha[2], sha[3], sha[4], sha[5]);
@@ -4598,7 +4598,7 @@ int uplink(
       {
         uint32_t spa = arp_spa(arp);
         const unsigned char *sha = arp_const_sha(arp);
-        log_log(LOG_LEVEL_ERR, "WORKERUPLINK",
+        log_log(LOG_LEVEL_INFO, "WORKERUPLINK",
                 "%d.%d.%d.%d is at %.2x:%.2x:%.2x:%.2x:%.2x:%.2x",
                 (spa>>24)&0xFF, (spa>>16)&0xFF, (spa>>8)&0xFF, (spa>>0)&0xFF,
                 sha[0], sha[1], sha[2], sha[3], sha[4], sha[5]);
