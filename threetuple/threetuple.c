@@ -29,11 +29,23 @@ static inline uint32_t threetuple_hash(struct threetupleentry *e)
   }
 }
 
+static inline uint32_t int_tbl_hash(struct threetupleinthostcount *e)
+{
+  return threetuple_iphash(e->local_ip);
+}
+
 
 static uint32_t threetuple_hash_fn(struct hash_list_node *node, void *userdata)
 {
   struct threetupleentry *e = CONTAINER_OF(node, struct threetupleentry, node);
   return threetuple_hash(e);
+}
+
+static uint32_t int_tbl_hash_fn(struct hash_list_node *node, void *userdata)
+{
+  struct threetupleinthostcount *e =
+    CONTAINER_OF(node, struct threetupleinthostcount, node);
+  return int_tbl_hash(e);
 }
 
 #define RGW_TIMEOUT_SECS 2
@@ -48,6 +60,10 @@ static void threetuplectx_expiry_fn(
   hash_table_lock_bucket(&ctx->tbl, hashval);
   hash_table_delete_already_bucket_locked(&ctx->tbl, &e->node);
   hash_table_unlock_bucket(&ctx->tbl, hashval);
+  if (e->inthost_set)
+  {
+    int_tbl_rm(ctx, e->payload.local_ip);
+  }
   if (e->port_allocated)
   {
     if (!e->proto_valid)
@@ -116,6 +132,7 @@ int threetuplectx_add(
   }
 #endif
   e->nonce_set = 0;
+  e->inthost_set = 0;
   e->port_allocated = port_allocated;
   e->consumable = consumable;
   e->version = 4;
@@ -173,6 +190,7 @@ int threetuplectx_add6(
     proto = 0;
   }
   e->nonce_set = 0;
+  e->inthost_set = 0;
   e->port_allocated = port_allocated;
   e->consumable = consumable;
   e->version = 6;
@@ -251,6 +269,7 @@ int threetuplectx_modify(
   }
   struct threetupleentry *e = malloc(sizeof(*e));
   e->nonce_set = 0;
+  e->inthost_set = 0;
   e->consumable = consumable;
   e->port_allocated = port_allocated;
   e->version = 4;
@@ -378,7 +397,8 @@ int threetuplectx_modify_nonce(
   uint32_t local_ip,
   uint16_t local_port,
   const void *nonce,
-  uint64_t *old_expiry)
+  uint64_t *old_expiry,
+  uint32_t limit)
 {
   uint32_t hashval = threetuple_iphash(ip);
   struct hash_list_node *node;
@@ -392,6 +412,10 @@ int threetuplectx_modify_nonce(
   if (!proto_valid)
   {
     proto = 0;
+    abort();
+  }
+  if (payload->local_ip != local_ip || payload->local_port != local_port)
+  {
     abort();
   }
   hash_table_lock_bucket(&ctx->tbl, hashval);
@@ -445,9 +469,15 @@ int threetuplectx_modify_nonce(
       return 0;
     }
   }
+  if (int_tbl_add(ctx, local_ip, limit) != 0)
+  {
+    hash_table_unlock_bucket(&ctx->tbl, hashval);
+    return -EMFILE;
+  }
   struct threetupleentry *e = malloc(sizeof(*e));
   memcpy(e->nonce, nonce, 96/8);
   e->nonce_set = 1;
+  e->inthost_set = 1;
   e->consumable = consumable;
   e->port_allocated = port_allocated;
   e->version = 4;
@@ -512,6 +542,7 @@ int threetuplectx_modify6(
   }
   struct threetupleentry *e = malloc(sizeof(*e));
   e->nonce_set = 0;
+  e->inthost_set = 0;
   e->consumable = consumable;
   e->port_allocated = port_allocated;
   e->version = 6;
@@ -584,6 +615,10 @@ int threetuplectx_consume(
       {
         hash_table_delete_already_bucket_locked(&ctx->tbl, &e->node);
         timer_linkheap_remove(heap, &e->timer);
+        if (e->inthost_set)
+        {
+          int_tbl_rm(ctx, e->payload.local_ip);
+        }
         if (e->port_allocated)
         {
           if (!e->proto_valid)
@@ -667,6 +702,10 @@ int threetuplectx_consume6(
       {
         hash_table_delete_already_bucket_locked(&ctx->tbl, &e->node);
         timer_linkheap_remove(heap, &e->timer);
+        if (e->inthost_set)
+        {
+          int_tbl_rm(ctx, e->payload.local_ip);
+        }
         if (e->port_allocated)
         {
           if (!e->proto_valid)
@@ -726,6 +765,10 @@ int threetuplectx_delete(
       hash_table_delete_already_bucket_locked(&ctx->tbl, &e->node);
       hash_table_unlock_bucket(&ctx->tbl, hashval);
       timer_linkheap_remove(heap, &e->timer);
+      if (e->inthost_set)
+      {
+        int_tbl_rm(ctx, e->payload.local_ip);
+      }
       if (e->port_allocated)
       {
         if (!e->proto_valid)
@@ -803,6 +846,10 @@ int threetuplectx_delete_nonce(
       hash_table_delete_already_bucket_locked(&ctx->tbl, &e->node);
       hash_table_unlock_bucket(&ctx->tbl, hashval);
       timer_linkheap_remove(heap, &e->timer);
+      if (e->inthost_set)
+      {
+        int_tbl_rm(ctx, e->payload.local_ip);
+      }
       if (e->port_allocated)
       {
         if (!e->proto_valid)
@@ -865,6 +912,10 @@ int threetuplectx_delete6(
       hash_table_delete_already_bucket_locked(&ctx->tbl, &e->node);
       hash_table_unlock_bucket(&ctx->tbl, hashval);
       timer_linkheap_remove(heap, &e->timer);
+      if (e->inthost_set)
+      {
+        int_tbl_rm(ctx, e->payload.local_ip);
+      }
       if (e->port_allocated)
       {
         if (!e->proto_valid)
@@ -906,6 +957,10 @@ void threetuplectx_flush(struct threetuplectx *ctx, struct timer_linkheap *heap)
         CONTAINER_OF(n, struct threetupleentry, node);
       hash_table_delete_already_bucket_locked(&ctx->tbl, n);
       timer_linkheap_remove(heap, &e->timer);
+      if (e->inthost_set)
+      {
+        int_tbl_rm(ctx, e->payload.local_ip);
+      }
       if (e->port_allocated)
       {
         if (!e->proto_valid)
@@ -945,6 +1000,10 @@ void threetuplectx_flush_ip(struct threetuplectx *ctx, struct timer_linkheap *he
     {
       hash_table_delete_already_bucket_locked(&ctx->tbl, n);
       timer_linkheap_remove(heap, &e->timer);
+      if (e->inthost_set)
+      {
+        int_tbl_rm(ctx, e->payload.local_ip);
+      }
       if (e->port_allocated)
       {
         if (!e->proto_valid)
@@ -984,6 +1043,10 @@ void threetuplectx_flush_ip6(struct threetuplectx *ctx, struct timer_linkheap *h
     {
       hash_table_delete_already_bucket_locked(&ctx->tbl, n);
       timer_linkheap_remove(heap, &e->timer);
+      if (e->inthost_set)
+      {
+        int_tbl_rm(ctx, e->payload.local_ip);
+      }
       if (e->port_allocated)
       {
         if (!e->proto_valid)
@@ -1018,6 +1081,10 @@ void threetuplectx_init(struct threetuplectx *ctx,
   {
     abort();
   }
+  if (hash_table_init(&ctx->int_tbl, 256, int_tbl_hash_fn, NULL))
+  {
+    abort();
+  }
   ctx->porter = porter;
   ctx->udp_porter = udp_porter;
 }
@@ -1034,5 +1101,63 @@ void threetuplectx_free(struct threetuplectx *ctx, struct timer_linkheap *heap)
     timer_linkheap_remove(heap, &e->timer);
     free(e);
   }
+  HASH_TABLE_FOR_EACH_SAFE(&ctx->int_tbl, bucket, node, tmp)
+  {
+    struct threetupleinthostcount *e =
+      CONTAINER_OF(node, struct threetupleinthostcount, node);
+    hash_table_delete(&ctx->int_tbl, node, int_tbl_hash(e));
+    free(e);
+  }
   hash_table_free(&ctx->tbl);
+  hash_table_free(&ctx->int_tbl);
+}
+
+void int_tbl_rm(struct threetuplectx *ctx, uint32_t local_ip)
+{
+  struct hash_list_node *node;
+  uint32_t hashval = threetuple_iphash(local_ip);
+  HASH_TABLE_FOR_EACH_POSSIBLE(&ctx->int_tbl, node, hashval)
+  {
+    struct threetupleinthostcount *cnte =
+      CONTAINER_OF(node, struct threetupleinthostcount, node);
+    if (cnte->local_ip == local_ip)
+    {
+      if (cnte->count == 0)
+      {
+        abort();
+      }
+      cnte->count--;
+      return;
+    }
+  }
+  abort();
+}
+
+int int_tbl_add(struct threetuplectx *ctx, uint32_t local_ip, uint32_t limit)
+{
+  struct hash_list_node *node;
+  uint32_t hashval = threetuple_iphash(local_ip);
+  struct threetupleinthostcount *cnte;
+  HASH_TABLE_FOR_EACH_POSSIBLE(&ctx->int_tbl, node, hashval)
+  {
+    cnte = CONTAINER_OF(node, struct threetupleinthostcount, node);
+    if (cnte->local_ip == local_ip)
+    {
+      if (cnte->count >= limit)
+      {
+        return -EPERM;
+      }
+      cnte->count++;
+      return 0;
+    }
+  }
+  if (limit == 0)
+  {
+    return -EPERM;
+  }
+  cnte = malloc(sizeof(*cnte));
+  cnte->local_ip = local_ip;
+  cnte->count = 1;
+  hash_table_add_nogrow(&ctx->int_tbl, &cnte->node, hashval);
+  return 0;
 }

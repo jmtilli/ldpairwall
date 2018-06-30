@@ -15,6 +15,7 @@ airwallconf = {
   own_wscale = 7;
   own_sack = enable;
   mss_clamp = 1460;
+  port_binding_limit = 100;
   ratehash = {
     size = 131072;
     timer_period_usec = 1000000;
