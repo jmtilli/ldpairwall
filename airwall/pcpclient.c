@@ -3,6 +3,46 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+static uint32_t get_default_gateway(void)
+{
+  FILE *f = fopen("/proc/net/route", "r");
+  char *line = NULL;
+  size_t sz = 0;
+  ssize_t nread;
+  char iname[25];
+  unsigned dst, gw, flags, refcnt, use, metric, mask, mtu, window, irtt;
+  if (f == NULL)
+  {
+    return 0;
+  }
+  nread = getline(&line, &sz, f);
+  if (nread < 0)
+  {
+    return 0;
+  }
+  for (;;)
+  {
+    nread = getline(&line, &sz, f);
+    if (nread < 0)
+    {
+      break;
+    }
+    if (sscanf(line, "%20s %X %X %X %u %u %u %X %u %u %u",
+              iname, &dst, &gw, &flags, &refcnt, &use, &metric, &mask, &mtu, 
+              &window, &irtt) != 11)
+    {
+      break;
+    }
+    if (dst == 0 && mask == 0)
+    {
+      fclose(f);
+      return ntohl(gw);
+    }
+  }
+  fclose(f);
+  return 0;
+}
+
 int main(int argc, char **argv)
 {
   int sockfd;
@@ -10,7 +50,10 @@ int main(int argc, char **argv)
   unsigned char recvmsg[1514];
   ssize_t recvd;
   struct sockaddr_in sin;
+  uint32_t default_gateway;
   int intport, desired_extport, lifetime;
+  socklen_t addrlen;
+
   sockfd = socket(AF_INET, SOCK_DGRAM, 0);
   if (sockfd < 0)
   {
@@ -38,20 +81,36 @@ int main(int argc, char **argv)
   msg[7] = lifetime&0xff;
   msg[18] = 0xff;
   msg[19] = 0xff;
-  msg[20] = 10;
-  msg[21] = 150;
-  msg[22] = 1;
-  msg[23] = 101;
   msg[36] = 6;
   msg[40] = intport>>8;
   msg[41] = intport&0xff;
   msg[42] = desired_extport>>8;
   msg[43] = desired_extport&0xff;
+
+  default_gateway = get_default_gateway();
   
   sin.sin_family = AF_INET;
   sin.sin_port = htons(5351);
-  sin.sin_addr.s_addr = htonl((10<<24) | (150<<16) | (1<<8) | 1);
-  if (sendto(sockfd, msg, sizeof(msg), 0, (struct sockaddr*)&sin, sizeof(sin)) != sizeof(msg))
+  sin.sin_addr.s_addr = htonl(default_gateway);
+
+  if (connect(sockfd, (struct sockaddr*)&sin, sizeof(sin)) != 0)
+  {
+    printf("Can't connect\n");
+    exit(1);
+  }
+  addrlen = sizeof(sin);
+  if (getsockname(sockfd, (struct sockaddr*)&sin, &addrlen) != 0)
+  {
+    printf("Can't get bound address\n");
+    exit(1);
+  }
+  msg[20] = (ntohl(sin.sin_addr.s_addr)>>24) & 0xFF;
+  msg[21] = (ntohl(sin.sin_addr.s_addr)>>16) & 0xFF;
+  msg[22] = (ntohl(sin.sin_addr.s_addr)>>8) & 0xFF;
+  msg[23] = (ntohl(sin.sin_addr.s_addr)>>0) & 0xFF;
+  printf("Local address is %d.%d.%d.%d\n", msg[20], msg[21], msg[22], msg[23]);
+  
+  if (send(sockfd, msg, sizeof(msg), 0) != sizeof(msg))
   {
     abort();
   }
