@@ -2547,15 +2547,17 @@ static int uplink_pcp(
       {
         int status;
         uint64_t old_expiry;
+        uint16_t old_ext_port;
         status = threetuplectx_delete_nonce(
                              &airwall->threetuplectx,
-                             &local->timers, pcp_req_get_ipv4(origudppay),
+                             &local->timers, ext_ipv4,
                              pcp_mapreq_sugg_ext_port(origudppay),
                              pcp_mapreq_protocol(origudppay), 1, 1,
                              ip_src(origip),
                              pcp_mapreq_int_port(origudppay),
                              pcp_mapreq_nonce(origudppay),
-                             &old_expiry);
+                             &old_expiry, &old_ext_port);
+        ext_port = old_ext_port;
         if (status != 0)
         {
           int32_t secdiff = (old_expiry - gettime64()) / (1000*1000);

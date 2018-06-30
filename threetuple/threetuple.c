@@ -761,7 +761,8 @@ int threetuplectx_delete_nonce(
   uint32_t local_ip,
   uint16_t local_port,
   const void *nonce,
-  uint64_t *old_expiry)
+  uint64_t *old_expiry,
+  uint16_t *old_ext_port)
 {
   uint32_t hashval = threetuple_iphash(ip);
   struct hash_list_node *node;
@@ -792,6 +793,10 @@ int threetuplectx_delete_nonce(
         {
           *old_expiry = e->timer.time64;
         }
+        if (old_ext_port)
+        {
+          *old_ext_port = e->port;
+        }
         hash_table_unlock_bucket(&ctx->tbl, hashval);
         return -EACCES;
       }
@@ -817,6 +822,10 @@ int threetuplectx_delete_nonce(
         {
           abort();
         }
+      }
+      if (old_ext_port)
+      {
+        *old_ext_port = e->port;
       }
       free(e);
       return 0;
