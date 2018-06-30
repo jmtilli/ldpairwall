@@ -1,4 +1,3 @@
-port control protocol
 NAT port mapping protocol
 universal plug and play
 DHCP client
