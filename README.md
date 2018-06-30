@@ -269,3 +269,26 @@ ip netns exec ns2 ./airwall/pcpclient tcp 40000 40000 86400
 ip netns exec ns2 nc -v -v -v -l -p 40000
 ip netns exec ns1 nc -v -v -v 10.150.2.100 40000
 ```
+
+Test also UDP hole punching:
+```
+ip netns exec ns1 nc -v -v -v -l -u -p 40000
+ip netns exec ns2 nc -v -v -v -u 10.150.2.1 40000
+```
+
+Take note of the port where the connection came from, example:
+```
+ip netns exec ns1 nc -v -v -v -l -u -p 40000
+Listening on [0.0.0.0] (family 0, port 40000)
+Connection from 10.150.2.100 53710 received!
+XXXXX
+```
+
+Then connect to this port from the outside network:
+```
+ip netns exec ns2 nc -v -v -v -u -l -p 53710
+ip netns exec ns1 nc -v -v -v -u 10.150.2.100 53710
+```
+
+...and the connection in should work, provided that you did everything within
+the UDP connection timeout.
