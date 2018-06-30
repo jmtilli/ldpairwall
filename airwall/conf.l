@@ -78,6 +78,9 @@ tcpudp       return TCPUDP;
 norgw        return NORGW;
 allow_anyport_primary return ALLOW_ANYPORT_PRIMARY;
 port_binding_limit return PORT_BINDING_LIMIT;
+max_tcp_connections return MAX_TCP_CONNECTIONS;
+max_udp_connections return MAX_UDP_CONNECTIONS;
+max_icmp_connections return MAX_ICMP_CONNECTIONS;
 
 [0-9]+       {
   char *endptr;

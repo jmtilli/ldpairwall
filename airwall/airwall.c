@@ -686,6 +686,37 @@ static inline uint32_t between(uint32_t a, uint32_t x, uint32_t b)
   }
 }
 
+static struct airwall_hash_entry *alloc_airwall_hash_entry(struct worker_local *local)
+{
+  if (local->synproxied_connections + local->direct_connections
+      >= local->airwall->conf->max_tcp_connections)
+  {
+    return NULL;
+  }
+  return malloc(sizeof(struct airwall_hash_entry));
+}
+
+static struct airwall_udp_entry *alloc_airwall_udp_entry(struct worker_local *local)
+{
+  if (local->incoming_udp_connections + local->direct_udp_connections
+      >= local->airwall->conf->max_udp_connections)
+  {
+    return NULL;
+  }
+  return malloc(sizeof(struct airwall_udp_entry));
+}
+
+static struct airwall_icmp_entry *alloc_airwall_icmp_entry(struct worker_local *local)
+{
+  if (local->incoming_icmp_connections + local->direct_icmp_connections
+      >= local->airwall->conf->max_icmp_connections)
+  {
+    return NULL;
+  }
+  return malloc(sizeof(struct airwall_icmp_entry));
+}
+
+
 struct airwall_hash_entry *airwall_hash_put(
   struct worker_local *local,
   int version,
@@ -711,7 +742,7 @@ struct airwall_hash_entry *airwall_hash_put(
   {
     return NULL;
   }
-  e = malloc(sizeof(*e));
+  e = alloc_airwall_hash_entry(local);
   if (e == NULL)
   {
     return NULL;
@@ -776,7 +807,7 @@ struct airwall_udp_entry *airwall_hash_put_udp(
   {
     return NULL;
   }
-  ue = malloc(sizeof(*ue));
+  ue = alloc_airwall_udp_entry(local);
   if (ue == NULL)
   {
     return NULL;
@@ -836,7 +867,7 @@ struct airwall_icmp_entry *airwall_hash_put_icmp(
   {
     return NULL;
   }
-  ue = malloc(sizeof(*ue));
+  ue = alloc_airwall_icmp_entry(local);
   if (ue == NULL)
   {
     return NULL;
@@ -1652,9 +1683,7 @@ static void send_synack(
     }
     else
     {
-      local->half_open_connections++;
-      local->synproxied_connections++;
-      e = malloc(sizeof(*e));
+      e = alloc_airwall_hash_entry(local);
       if (e == NULL)
       {
         worker_local_wrunlock(local);
@@ -1662,6 +1691,8 @@ static void send_synack(
         log_log(LOG_LEVEL_ERR, "WORKER", "out of memory");
         return;
       }
+      local->half_open_connections++;
+      local->synproxied_connections++;
     }
     memset(e, 0, sizeof(*e));
     e->version = version;
@@ -2102,14 +2133,15 @@ static void send_window_update(
       ip46_dst(origip), tcp_dst_port(origtcp),
       ip46_src(origip), tcp_src_port(origtcp),
       1, time64);
+    if (entry == NULL)
+    {
+      deallocate_udp_port(airwall->porter, tcp_dst_port(origtcp), 0);
+      log_log(LOG_LEVEL_ERR, "WORKER", "not enough memory or already existing");
+      return;
+    }
     if (entry->version == 6)
     {
       entry->ulflowlabel = gen_flowlabel_entry(entry);
-    }
-    if (entry == NULL)
-    {
-      log_log(LOG_LEVEL_ERR, "WORKER", "not enough memory or already existing");
-      return;
     }
   }
   if (version == 6)
@@ -2818,6 +2850,7 @@ static int uplink_udp(
     ue = airwall_hash_put_udp(local, version, lan_ip, lan_port, ipv4, nat_port, remote_ip, remote_port, 0, time64);
     if (ue == NULL)
     {
+      deallocate_udp_port(airwall->udp_porter, nat_port, 1);
       log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "No memory for UDP enry");
       return 1;
     }
@@ -3061,6 +3094,7 @@ static int uplink_icmp(
       ie = airwall_hash_put_icmp(local, version, lan_ip, icmp_echo_identifier(ippay), ipv4, nat_identifier, remote_ip, 0, time64);
       if (ie == NULL)
       {
+        deallocate_udp_port(airwall->icmp_porter, nat_identifier, 1);
         log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "No memory for ICMP entry");
         return 1;
       }
@@ -3438,10 +3472,13 @@ static int downlink_udp(
       local_port = freeport->lan_port;
       local_ip = freeport->lan_ip;
       hdr_set32n(local_ipv4, local_ip);
+      allocate_udp_port(airwall->udp_porter, udp_dst_port(ippay),
+                        local_ip, local_port, 0);
       ue = airwall_hash_put_udp(local, version, local_ipv4, local_port, lan_ip, lan_port,
                                 remote_ip, remote_port, 1, time64);
       if (ue == NULL)
       {
+        deallocate_udp_port(airwall->udp_porter, udp_dst_port(ippay), 0);
         log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "can't add UDP entry");
         return 1;
       }
@@ -3458,10 +3495,13 @@ static int downlink_udp(
       }
       local_ip = threetuplepayload.local_ip;
       hdr_set32n(local_ipv4, local_ip);
+      allocate_udp_port(airwall->udp_porter, udp_dst_port(ippay),
+                        local_ip, local_port, 0);
       ue = airwall_hash_put_udp(local, version, local_ipv4, local_port, lan_ip, lan_port,
                                 remote_ip, remote_port, 1, time64);
       if (ue == NULL)
       {
+        deallocate_udp_port(airwall->udp_porter, udp_dst_port(ippay), 0);
         log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "can't add UDP entry");
         return 1;
       }
@@ -4934,15 +4974,20 @@ int uplink(
       entry = airwall_hash_put(
         local, version, lan_ip, lan_port, lan_ip, lan_port, remote_ip, remote_port, 0, time64);
 #endif
-      if (version == 6)
-      {
-        entry->ulflowlabel = ipv6_flow_label(ip);
-      }
       if (entry == NULL)
       {
         log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "out of memory or already exists");
+#ifdef ENABLE_ARP
+        deallocate_udp_port(airwall->porter, tcp_port, 1);
+#else
+        deallocate_udp_port(airwall->porter, lan_port, 1);
+#endif
         //airwall_hash_unlock(local, &ctx);
         return 1;
+      }
+      if (version == 6)
+      {
+        entry->ulflowlabel = ipv6_flow_label(ip);
       }
       tcp_parse_options(ippay, &tcpinfo);
       if (!tcpinfo.options_valid)

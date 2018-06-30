@@ -76,6 +76,9 @@ struct conf {
   uint32_t ul_defaultgw;
   int allow_anyport_primary;
   uint32_t port_binding_limit;
+  uint32_t max_tcp_connections;
+  uint32_t max_udp_connections;
+  uint32_t max_icmp_connections;
 };
 
 static inline int ul_addr_is_mine(struct conf *conf, uint32_t addr)
@@ -139,6 +142,9 @@ static inline void conf_init(struct conf *conf)
   conf->ul_defaultgw = 0;
   conf->allow_anyport_primary = 0;
   conf->port_binding_limit = 0;
+  conf->max_tcp_connections = 131072;
+  conf->max_udp_connections = 131072;
+  conf->max_icmp_connections = 131072;
 }
 
 static inline void conf_free(struct conf *conf)
