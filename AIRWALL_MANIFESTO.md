@@ -123,6 +123,15 @@ In addition to HTTP CONNECT, a SOCKS4 proxy should be trivial to implement, a
 SOCKS4a proxy slightly more complicated but still easy, and SOCKS5 much more
 complicated.
 
+## Private realm gateway
+
+The private realm gateway (PRGW) mode of operation is supported. This means an
+airwall acts as a DNS server, and allocates a state match rule for every DNS A
+query. The state match rule will allow one incoming connection then and will
+after that point of time be consumed away. If the state match rule is not
+possible to create due to IPv4 address shortage, the DNS query will not be
+responded to, causing the DNS client to retry.
+
 ## Wildcard connection open
 
 If the protocol of the buffer cannot be detected for any reason, or if the
@@ -172,4 +181,5 @@ Unfortunately, the UPnP protocols are a bit complicated, meaning implementing
 them won't be easy. miniupnp from Github (https://github.com/miniupnp/miniupnp)
 can be used as an example.
 
-(Note: these NAT traversal protocols are not yet supported in ldpairwall.)
+(Note: these NAT traversal protocols are not yet supported in ldpairwall with
+the exception of PCP.)
