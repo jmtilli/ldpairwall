@@ -17,6 +17,8 @@ const char http_connect_revdatabuf[19] = {
 #define INITIAL_WINDOW (1<<14)
 #define IPV6_FRAG_CUTOFF 512
 
+#define UDP_TIMEOUT_SECS 300
+
 #define ENABLE_ARP
 
 #ifdef ENABLE_ARP
@@ -748,7 +750,7 @@ struct airwall_udp_entry *airwall_hash_put_udp(
   ue->nat_port = nat_port;
   ue->remote_port = remote_port;
   ue->was_incoming = was_incoming;
-  ue->timer.time64 = time64 + 120ULL*1000ULL*1000ULL;
+  ue->timer.time64 = time64 + UDP_TIMEOUT_SECS*1000ULL*1000ULL;
   ue->timer.fn = airwall_udp_expiry_fn;
   ue->timer.userdata = local;
   worker_local_wrlock(local);
@@ -2782,7 +2784,7 @@ static int uplink_udp(
     abort();
   }
 
-  next64 = time64 + 120ULL*1000ULL*1000ULL;
+  next64 = time64 + UDP_TIMEOUT_SECS*1000ULL*1000ULL;
   if (abs(next64 - ue->timer.time64) >= 1000*1000)
   {
     worker_local_wrlock(local);
@@ -3424,7 +3426,7 @@ static int downlink_udp(
     abort();
   }
 
-  next64 = time64 + 120ULL*1000ULL*1000ULL;
+  next64 = time64 + UDP_TIMEOUT_SECS*1000ULL*1000ULL;
   if (abs(next64 - ue->timer.time64) >= 1000*1000)
   {
     worker_local_wrlock(local);
