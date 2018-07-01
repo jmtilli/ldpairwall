@@ -13,3 +13,4 @@ don't apply window scaling unless both endpoint support it? applies to SYNs.
 test packet loss
 decrement TTL
 porter for multiple IPs?
+static port mappings
