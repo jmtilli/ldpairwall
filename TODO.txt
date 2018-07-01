@@ -13,4 +13,3 @@ don't apply window scaling unless both endpoint support it? applies to SYNs.
 test packet loss
 decrement TTL
 porter for multiple IPs?
-rewrite threetuple to not use a linked list

@@ -1,4 +1,4 @@
-AIRWALL_SRC_LIB := airwall.c secret.c detect.c yyutils.c hosthash.c porter.c udpporter.c ctrl.c conf.c
+AIRWALL_SRC_LIB := airwall.c secret.c detect.c yyutils.c hosthash.c porter.c udpporter.c conf.c
 AIRWALL_SRC := $(AIRWALL_SRC_LIB) ldpairwall.c detecttest.c detectperf.c genchartbl.c unittest.c sz.c portertest.c udpportertest.c pcpclient.c
 
 AIRWALL_LEX_LIB := conf.l
@@ -37,13 +37,13 @@ AIRWALL_DEP := $(patsubst %.c,%.d,$(AIRWALL_SRC))
 AIRWALL_DEPGEN_LIB := $(patsubst %.c,%.d,$(AIRWALL_GEN_LIB))
 AIRWALL_DEPGEN := $(patsubst %.c,%.d,$(AIRWALL_GEN))
 
-CFLAGS_AIRWALL := -I$(DIRPACKET) -I$(DIRLINKEDLIST) -I$(DIRIPHDR) -I$(DIRMISC) -I$(DIRLOG) -I$(DIRHASHTABLE) -I$(DIRHASHLIST) -I$(DIRPORTS) -I$(DIRALLOC) -I$(DIRTIMERLINKHEAP) -I$(DIRMYPCAP) -I$(DIRDYNARR) -I$(DIRIPHASH) -I$(DIRTHREETUPLE) -I$(DIRDATABUF) -I$(DIRNETMAP) -I$(DIRLDP) -I$(DIRARP) -I$(DIRAIRWALL)
+CFLAGS_AIRWALL := -I$(DIRPACKET) -I$(DIRLINKEDLIST) -I$(DIRIPHDR) -I$(DIRMISC) -I$(DIRLOG) -I$(DIRHASHTABLE) -I$(DIRHASHLIST) -I$(DIRPORTS) -I$(DIRALLOC) -I$(DIRTIMERLINKHEAP) -I$(DIRMYPCAP) -I$(DIRDYNARR) -I$(DIRIPHASH) -I$(DIRTHREETUPLE2) -I$(DIRDATABUF) -I$(DIRNETMAP) -I$(DIRLDP) -I$(DIRARP) -I$(DIRAIRWALL)
 
 MAKEFILES_AIRWALL := $(DIRAIRWALL)/module.mk
 
 #LIBS_AIRWALL := $(DIRSACKHASH)/libsackhash.a $(DIRIPHASH)/libiphash.a $(DIRDYNARR)/libdynarr.a $(DIRALLOC)/liballoc.a $(DIRIPHDR)/libiphdr.a $(DIRHASHTABLE)/libhashtable.a $(DIRHASHLIST)/libhashlist.a $(DIRTIMERLINKHEAP)/libtimerlinkheap.a $(DIRMISC)/libmisc.a $(DIRTHREETUPLE)/libthreetuple.a $(DIRDATABUF)/libdatabuf.a $(DIRNETMAP)/libnetmap.a $(DIRLOG)/liblog.a $(DIRLDP)/libldp.a $(DIRPORTS)/libports.a $(DIRMYPCAP)/libmypcap.a
 #LIBS_AIRWALL := $(DIRSACKHASH)/libsackhash.a $(DIRTHREETUPLE)/libthreetuple.a $(DIRLIBPPTK)/libpptk.a
-LIBS_AIRWALL := $(DIRTHREETUPLE)/libthreetuple.a $(DIRLIBPPTK)/libpptk.a
+LIBS_AIRWALL := $(DIRTHREETUPLE2)/libthreetuple2.a $(DIRLIBPPTK)/libpptk.a
 
 .PHONY: AIRWALL clean_AIRWALL distclean_AIRWALL unit_AIRWALL $(LCAIRWALL) clean_$(LCAIRWALL) distclean_$(LCAIRWALL) unit_$(LCAIRWALL)
 
