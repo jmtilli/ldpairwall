@@ -27,6 +27,14 @@ struct ul_addr {
   uint32_t addr;
 };
 
+struct static_mapping {
+  uint32_t ext_addr;
+  uint16_t ext_port;
+  uint32_t int_addr;
+  uint8_t protocol;
+  uint16_t int_port;
+};
+
 static inline uint32_t ul_addr_hash_separate(uint32_t addr)
 {
   return siphash64(hash_seed_get(), addr);
@@ -46,6 +54,7 @@ struct conf {
   DYNARR(uint8_t) wscalelist;
   DYNARR(uint16_t) tsmsslist;
   DYNARR(uint8_t) tswscalelist;
+  DYNARR(struct static_mapping) static_mappings;
   uint32_t halfopen_cache_max;
   uint32_t detect_cache_max;
   int msslist_present;
@@ -115,6 +124,7 @@ static inline void conf_init(struct conf *conf)
   DYNARR_INIT(&conf->wscalelist);
   DYNARR_INIT(&conf->tsmsslist);
   DYNARR_INIT(&conf->tswscalelist);
+  DYNARR_INIT(&conf->static_mappings);
   conf->msslist_present = 0;
   conf->wscalelist_present = 0;
   conf->own_mss = 1460;
@@ -156,6 +166,7 @@ static inline void conf_free(struct conf *conf)
   DYNARR_FREE(&conf->wscalelist);
   DYNARR_FREE(&conf->tsmsslist);
   DYNARR_FREE(&conf->tswscalelist);
+  DYNARR_FREE(&conf->static_mappings);
   host_hash_free(&conf->hosts);
   HASH_TABLE_FOR_EACH_SAFE(&conf->ul_alternatives, bucket, n, x)
   {
@@ -170,6 +181,7 @@ static inline int conf_postprocess(struct conf *conf)
 {
   uint8_t bits = 0;
   unsigned bucket;
+  size_t i;
   struct hash_list_node *node;
   if (!conf->wscalelist_present)
   {
@@ -408,6 +420,15 @@ static inline int conf_postprocess(struct conf *conf)
     if (e->addr == conf->ul_defaultgw)
     {
       log_log(LOG_LEVEL_CRIT, "CONFPARSER", "uplink alt addresses same as default GW");
+      return -EINVAL;
+    }
+  }
+  for (i = 0; i < DYNARR_SIZE(&conf->static_mappings); i++)
+  {
+    struct static_mapping *map = &DYNARR_GET(&conf->static_mappings, i);
+    if (!ul_addr_is_mine(conf, map->ext_addr))
+    {
+      log_log(LOG_LEVEL_CRIT, "CONFPARSER", "can't add mapping: addr not mine");
       return -EINVAL;
     }
   }

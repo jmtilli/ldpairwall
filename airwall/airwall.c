@@ -2691,10 +2691,19 @@ static int uplink_pcp(
         ext_port = old_ext_port;
         if (status != 0)
         {
-          int32_t secdiff = (old_expiry - gettime64()) / (1000*1000);
-          if (secdiff < 0)
+          uint32_t secdiff;
+          if (old_expiry < time64)
           {
             secdiff = 0;
+          }
+          else
+          {
+            uint64_t secdiff64 = (old_expiry - time64) / (1000*1000);
+            if (secdiff64 > UINT32_MAX)
+            {
+              secdiff64 = UINT32_MAX;
+            }
+            secdiff = secdiff64;
           }
           pcp_set_lifetime(udppay, secdiff);
           rcode = PCP_RCODE_NOT_AUTHORIZED;
@@ -2770,10 +2779,19 @@ static int uplink_pcp(
                          &old_expiry, airwall->conf->port_binding_limit);
             if (status != 0)
             {
-              int32_t secdiff = (old_expiry - gettime64()) / (1000*1000);
-              if (secdiff < 0)
+              uint32_t secdiff;
+              if (old_expiry < time64)
               {
                 secdiff = 0;
+              }
+              else
+              {
+                uint64_t secdiff64 = (old_expiry - time64) / (1000*1000);
+                if (secdiff64 > UINT32_MAX)
+                {
+                  secdiff64 = UINT32_MAX;
+                }
+                secdiff = secdiff64;
               }
               pcp_set_lifetime(udppay, secdiff);
               rcode = PCP_RCODE_NOT_AUTHORIZED;
@@ -2782,10 +2800,19 @@ static int uplink_pcp(
         }
         else if (status != 0)
         {
-          int32_t secdiff = (old_expiry - gettime64()) / (1000*1000);
-          if (secdiff < 0)
+          uint32_t secdiff;
+          if (old_expiry < time64)
           {
             secdiff = 0;
+          }
+          else
+          {
+            uint64_t secdiff64 = (old_expiry - time64) / (1000*1000);
+            if (secdiff64 > UINT32_MAX)
+            {
+              secdiff64 = UINT32_MAX;
+            }
+            secdiff = secdiff64;
           }
           pcp_set_lifetime(udppay, secdiff);
           rcode = PCP_RCODE_NOT_AUTHORIZED;

@@ -386,6 +386,8 @@ static inline void worker_local_init(
   struct worker_local *local, struct airwall *airwall, int deterministic,
   int locked, struct allocif *intf)
 {
+  size_t i;
+
   if (locked)
   {
     hash_table_init(
@@ -450,6 +452,39 @@ static inline void worker_local_init(
   ip_hash_init(&local->ratelimit, &local->timers, locked ? &local->rwlock : NULL);
   linked_list_head_init(&local->half_open_list);
   linked_list_head_init(&local->detect_list);
+
+  for (i = 0; i < DYNARR_SIZE(&airwall->conf->static_mappings); i++)
+  {
+    struct static_mapping *map = &DYNARR_GET(&airwall->conf->static_mappings, i);
+    int port_allocated = (map->ext_addr == airwall->conf->ul_addr);
+    if (port_allocated)
+    {
+      if (map->protocol == 0)
+      {
+        allocate_udp_port(airwall->porter, map->ext_port, map->int_addr, map->int_port, 0);
+        allocate_udp_port(airwall->udp_porter, map->ext_port, map->int_addr, map->int_port, 0);
+      }
+      else if (map->protocol == 6)
+      {
+        allocate_udp_port(airwall->porter, map->ext_port, map->int_addr, map->int_port, 0);
+      }
+      else if (map->protocol == 17)
+      {
+        allocate_udp_port(airwall->udp_porter, map->ext_port, map->int_addr, map->int_port, 0);
+      }
+      else
+      {
+        abort();
+      }
+    }
+    if (threetuple2ctx_add(&airwall->threetuplectx, &local->timers, 0, port_allocated,
+                           map->ext_addr, map->ext_port, map->protocol,
+                           map->int_addr, map->int_port, UINT64_MAX) != 0)
+    {
+      log_log(LOG_LEVEL_CRIT, "AIRWALL", "can't add static mapping");
+      exit(1);
+    }
+  }
 }
 
 static inline void worker_local_free(struct worker_local *local)
