@@ -24,6 +24,8 @@
 #include "udpporter.h"
 #include "threetuple2.h"
 #include "time64.h"
+#include "reasshl.h"
+#include "directalloc.h"
 
 const char http_connect_revdatabuf[19];
 
@@ -346,6 +348,8 @@ struct worker_local {
   struct arp_cache dl_arp_cache;
   struct arp_cache ul_arp_cache;
   struct airwall *airwall;
+  struct reasshlctx reass;
+  struct allocif mallocif;
 };
 
 static inline void worker_local_rdlock(struct worker_local *local)
@@ -454,6 +458,10 @@ static inline void worker_local_init(
   ip_hash_init(&local->ratelimit, &local->timers, locked ? &local->rwlock : NULL);
   linked_list_head_init(&local->half_open_list);
   linked_list_head_init(&local->detect_list);
+  local->mallocif.ops = &direct_allocif_ops;
+  local->mallocif.userdata = NULL;
+  reasshlctx_init(&local->reass, airwall->conf->reass_memory_max,
+                  &local->timers, &local->mallocif);
 
   for (i = 0; i < DYNARR_SIZE(&airwall->conf->static_mappings); i++)
   {

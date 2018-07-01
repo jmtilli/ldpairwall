@@ -75,6 +75,7 @@ int confyywrap(yyscan_t scanner)
 %token ALLOW_ANYPORT_PRIMARY
 %token PORT_BINDING_LIMIT
 %token STATIC_MAPPINGS
+%token REASS_MEMORY_MAX
 
 
 %type<i> sackconflictval
@@ -633,6 +634,17 @@ TEST_CONNECTIONS SEMICOLON
     YYABORT;
   }
   conf->detect_cache_max = $3;
+}
+| REASS_MEMORY_MAX EQUALS INT_LITERAL SEMICOLON
+{
+  if ($3 < 0)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
+            "invalid reass_memory_max: %d at line %d col %d",
+            $3, @3.first_line, @3.first_column);
+    YYABORT;
+  }
+  conf->reass_memory_max = $3;
 }
 | MAX_TCP_CONNECTIONS EQUALS INT_LITERAL SEMICOLON
 {
