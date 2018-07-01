@@ -117,6 +117,7 @@ struct airwall_hash_entry {
   uint8_t lan_sack_was_supported:1;
   uint8_t revdata:1;
   uint8_t retxtimer_set:1;
+  uint8_t port_alloced:1;
   uint32_t seqoffset;
   uint32_t tsoffset;
   uint32_t lan_sent; // what LAN has sent plus 1
@@ -471,7 +472,10 @@ static inline void worker_local_free(struct worker_local *local)
       timer_linkheap_remove(&local->timers, &e->retx_timer);
       e->retxtimer_set = 0;
     }
-    deallocate_udp_port(local->airwall->porter, e->nat_port, !e->was_synproxied);
+    if (e->port_alloced)
+    {
+      deallocate_udp_port(local->airwall->porter, e->nat_port, !e->was_synproxied);
+    }
     free(e->detect);
     e->detect = NULL;
     free(e);
@@ -767,7 +771,8 @@ struct airwall_hash_entry *airwall_hash_put(
   const void *remote_ip,
   uint16_t remote_port,
   uint8_t was_synproxied,
-  uint64_t time64);
+  uint64_t time64,
+  int port_alloced);
 
 struct airwall_udp_entry *airwall_hash_put_udp(
   struct worker_local *local,
@@ -812,7 +817,7 @@ static inline void airwall_hash_put_connected(
   local_ipv4 = hdr_get32n(local_ip);
   allocate_udp_port(local->airwall->porter, nat_port, local_ipv4, local_port, 1);
   e = airwall_hash_put(
-    local, version, local_ip, local_port, nat_ip, nat_port, remote_ip, remote_port, 0, time64);
+    local, version, local_ip, local_port, nat_ip, nat_port, remote_ip, remote_port, 0, time64, 1);
   e->flag_state = FLAG_STATE_ESTABLISHED;
   e->lan_max = 32768;
   e->lan_sent = 0;
@@ -869,7 +874,10 @@ static inline void airwall_hash_del(
     linked_list_delete(&e->state_data.downlink_half_open.listnode);
     local->half_open_connections--;
   }
-  deallocate_udp_port(local->airwall->porter, e->nat_port, !e->was_synproxied);
+  if (e->port_alloced)
+  {
+    deallocate_udp_port(local->airwall->porter, e->nat_port, !e->was_synproxied);
+  }
   free(e->detect);
   e->detect = NULL;
   free(e);

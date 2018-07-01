@@ -72,7 +72,7 @@ void allocate_udp_port(struct udp_porter *porter,
       hash_table_add_nogrow(&porter->hash, &porter->udpports[port].hashnode, hashval);
     }
   }
-  else if (porter->udpports[port].lan_ip != local_ip || porter->udpports[port].lan_port != local_port)
+  else if ((porter->udpports[port].lan_ip != local_ip || porter->udpports[port].lan_port != local_port) && local_ip != 0 && local_port != 0)
   {
     if (porter->udpports[port].lan_ip != 0 || porter->udpports[port].lan_port != 0)
     {

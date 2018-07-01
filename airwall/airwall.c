@@ -553,7 +553,10 @@ static void airwall_expiry_fn(
     hash_table_delete(&local->local_hash, &e->local_node, airwall_hash_local(e));
   }
   hash_table_delete(&local->nat_hash, &e->nat_node, airwall_hash_nat(e));
-  deallocate_udp_port(local->airwall->porter, e->nat_port, !e->was_synproxied);
+  if (e->port_alloced)
+  {
+    deallocate_udp_port(local->airwall->porter, e->nat_port, !e->was_synproxied);
+  }
   worker_local_wrlock(local);
   if (e->was_synproxied)
   {
@@ -727,7 +730,8 @@ struct airwall_hash_entry *airwall_hash_put(
   const void *remote_ip,
   uint16_t remote_port,
   uint8_t was_synproxied,
-  uint64_t time64)
+  uint64_t time64,
+  int port_alloced)
 {
   struct airwall_hash_entry *e;
   struct airwall_hash_ctx ctx;
@@ -756,6 +760,7 @@ struct airwall_hash_entry *airwall_hash_put(
   memcpy(&e->nat_ip, nat_ip, (version == 4) ? 4 : 16);
   memcpy(&e->remote_ip, remote_ip, (version == 4) ? 4 : 16);
   e->detect = NULL;
+  e->port_alloced = port_alloced;
   e->local_port = local_port;
   e->nat_port = nat_port;
   e->remote_port = remote_port;
@@ -956,7 +961,10 @@ static void delete_closing_already_bucket_locked(
     timer_linkheap_remove(&local->timers, &entry->retx_timer);
     entry->retxtimer_set = 0;
   }
-  deallocate_udp_port(local->airwall->porter, entry->nat_port, !entry->was_synproxied);
+  if (entry->port_alloced)
+  {
+    deallocate_udp_port(local->airwall->porter, entry->nat_port, !entry->was_synproxied);
+  }
   if (entry->local_port != 0)
   {
     hash_table_delete_already_bucket_locked(&local->local_hash, &entry->local_node);
@@ -1192,7 +1200,10 @@ static void process_data(
       linked_list_delete(&e->detect_node);
       free(e->detect);
       e->detect = NULL;
-      deallocate_udp_port(airwall->porter, e->nat_port, !e->was_synproxied);
+      if (e->port_alloced)
+      {
+        deallocate_udp_port(airwall->porter, e->nat_port, !e->was_synproxied);
+      }
       if (e->local_port != 0)
       {
         hash_table_delete_already_bucket_locked(&local->local_hash, &e->local_node);
@@ -1320,6 +1331,8 @@ static void process_data(
 #else
     memcpy(&entry->local_ip, &entry->nat_ip, sizeof(entry->local_ip));
 #endif
+    allocate_udp_port(airwall->porter, entry->nat_port, ntohl(entry->local_ip.ipv4), entry->local_port, 0);
+    entry->port_alloced = 1;
     hash_table_add_nogrow_already_bucket_locked(
       &local->local_hash, &entry->local_node, airwall_hash_local(entry));
     if (entry->detect->hostctx.is_http_connect_num_bytes)
@@ -1662,7 +1675,10 @@ static void send_synack(
       }
       free(e->detect);
       e->detect = NULL;
-      deallocate_udp_port(airwall->porter, e->nat_port, !e->was_synproxied);
+      if (e->port_alloced)
+      {
+        deallocate_udp_port(airwall->porter, e->nat_port, !e->was_synproxied);
+      }
       //if (ctx.hashval == hashval)
       {
         if (e->local_port != 0)
@@ -1700,7 +1716,9 @@ static void send_synack(
     memcpy(&e->remote_ip, remote_ip, (version == 6) ? 16 : 4);
     e->nat_port = local_port;
     e->remote_port = remote_port;
-    allocate_udp_port(airwall->porter, e->nat_port, 0, 0, 0);
+    // Don't allocate the port yet, as local IP is unknown
+    //allocate_udp_port(airwall->porter, e->nat_port, 0, 0, 0);
+    //e->port_alloced = 1;
     e->was_synproxied = 1;
     e->timer.time64 = time64 + TCP_DOWNLINK_HALF_OPEN_TIMEOUT_SECS*1000ULL*1000ULL;
     e->timer.fn = airwall_expiry_fn;
@@ -2126,16 +2144,17 @@ static void send_window_update(
 
   if (entry == NULL)
   {
-    allocate_udp_port(airwall->porter, tcp_dst_port(origtcp), 0, 0, 0);
+    // Don't allocate the port yet, as local IP is unknown
+    //allocate_udp_port(airwall->porter, tcp_dst_port(origtcp), 0, 0, 0);
     entry = airwall_hash_put(
       local, version,
       NULL, 0,
       ip46_dst(origip), tcp_dst_port(origtcp),
       ip46_src(origip), tcp_src_port(origtcp),
-      1, time64);
+      1, time64, 0);
     if (entry == NULL)
     {
-      deallocate_udp_port(airwall->porter, tcp_dst_port(origtcp), 0);
+      //deallocate_udp_port(airwall->porter, tcp_dst_port(origtcp), 0);
       log_log(LOG_LEVEL_ERR, "WORKER", "not enough memory or already existing");
       return;
     }
@@ -2201,10 +2220,37 @@ static void send_window_update(
         entry->local_port = entry->nat_port;
       }
       entry->local_ip.ipv4 = htonl(threetuplepayload.local_ip);
+      allocate_udp_port(airwall->porter, entry->nat_port, ntohl(entry->local_ip.ipv4), entry->local_port, 0);
+      entry->port_alloced = 1;
       hash_table_add_nogrow_already_bucket_locked(
         &local->local_hash, &entry->local_node, airwall_hash_local(entry));
       send_syn(triggerpkt, local, port, st, mss, wscale, sack_permitted, entry, time64, was_keepalive, airwall);
       return;
+    }
+    else
+    {
+      struct free_udp_port *freeport = &airwall->porter->udpports[tcp_dst_port(origtcp)];
+      if (freeport->lan_ip != 0 && freeport->lan_port != 0 && freeport->count != 0 && freeport->outcount != 0)
+      {
+        log_log(LOG_LEVEL_ERR, "AIRWALL", "could find free port %d",
+                tcp_dst_port(origtcp));
+        entry->local_port = freeport->lan_port;
+        entry->local_ip.ipv4 = htonl(freeport->lan_ip);
+        allocate_udp_port(airwall->porter, entry->nat_port, ntohl(entry->local_ip.ipv4), entry->local_port, 0);
+        entry->port_alloced = 1;
+        hash_table_add_nogrow_already_bucket_locked(
+          &local->local_hash, &entry->local_node, airwall_hash_local(entry));
+        send_syn(triggerpkt, local, port, st, mss, wscale, sack_permitted, entry, time64, was_keepalive, airwall);
+        return;
+      }
+      else
+      {
+        log_log(LOG_LEVEL_ERR, "AIRWALL", "could not find free port %d / "
+                "%u %u %u %u",
+                tcp_dst_port(origtcp),
+                freeport->lan_ip, freeport->lan_port, freeport->count,
+                freeport->outcount);
+      }
     }
   }
   else
@@ -3464,7 +3510,7 @@ static int downlink_udp(
     if (threetuplectx_consume(&airwall->threetuplectx, &local->timers, ip_dst(ip), udp_dst_port(ippay), 17, &threetuplepayload) != 0)
     {
       struct free_udp_port *freeport = &airwall->udp_porter->udpports[udp_dst_port(ippay)];
-      if (freeport->lan_ip == 0 || freeport->lan_port == 0 || freeport->count == 0)
+      if (freeport->lan_ip == 0 || freeport->lan_port == 0 || freeport->count == 0 || freeport->outcount == 0)
       {
         log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "no UDP entry and no threetupleentry");
         return 1;
@@ -4968,11 +5014,11 @@ int uplink(
         abort();
       }
       entry = airwall_hash_put(
-        local, version, lan_ip, lan_port, ipv4, tcp_port, remote_ip, remote_port, 0, time64);
+        local, version, lan_ip, lan_port, ipv4, tcp_port, remote_ip, remote_port, 0, time64, 1);
 #else
       allocate_port(lan_port);
       entry = airwall_hash_put(
-        local, version, lan_ip, lan_port, lan_ip, lan_port, remote_ip, remote_port, 0, time64);
+        local, version, lan_ip, lan_port, lan_ip, lan_port, remote_ip, remote_port, 0, time64, 1);
 #endif
       if (entry == NULL)
       {
