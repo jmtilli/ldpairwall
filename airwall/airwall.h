@@ -23,6 +23,7 @@
 #include "detect.h"
 #include "udpporter.h"
 #include "threetuple2.h"
+#include "time64.h"
 
 const char http_connect_revdatabuf[19];
 
@@ -35,6 +36,7 @@ struct airwall {
   struct udp_porter *porter;
   struct udp_porter *udp_porter;
   struct udp_porter *icmp_porter;
+  uint64_t start_time;
 };
 
 struct airwall_udp_entry {
@@ -874,7 +876,16 @@ static inline void airwall_init(
   airwall->icmp_porter = icmp_porter;
   //sack_ip_port_hash_init(&airwall->autolearn, conf->learnhashsize);
   threetuple2ctx_init(&airwall->threetuplectx, porter, udp_porter);
+  airwall->start_time = gettime64();
 }
+
+static inline uint32_t epoch_time(struct airwall *airwall)
+{
+  return (gettime64() - airwall->start_time)/(1000ULL*1000ULL);
+}
+
+void send_announce(struct worker_local *local, struct port *port,
+                   struct ll_alloc_st *st);
 
 static inline void airwall_free(
   struct airwall *airwall, struct worker_local *local)

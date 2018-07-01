@@ -209,6 +209,8 @@ int main(int argc, char **argv)
   outport.portfunc = ldpfunc2;
   outport.userdata = &ud;
 
+  send_announce(local, &outport, &st);
+
   while (!atomic_load(&exit_threads))
   {
     if (ldp_in_eof(dlinq[idx]) && ldp_in_eof(ulinq[idx]))

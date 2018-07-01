@@ -2,7 +2,6 @@
 #include "ipcksum.h"
 #include "branchpredict.h"
 #include <sys/time.h>
-#include <sys/sysinfo.h>
 #include <arpa/inet.h>
 #include "time64.h"
 #include "detect.h"
@@ -2626,9 +2625,7 @@ static int uplink_pcp(
   pcp_set_opcode(udppay, pcp_opcode(origudppay));
   pcp_resp_set_reserved(udppay, 0);
   pcp_set_lifetime(udppay, pcp_lifetime(origudppay));
-  struct sysinfo si;
-  sysinfo(&si);
-  pcp_resp_set_epoch_time(udppay, si.uptime);
+  pcp_resp_set_epoch_time(udppay, epoch_time(airwall));
   pcp_resp_zero_reserved2(udppay);
   if (pcp_opcode(origudppay) == PCP_OPCODE_MAP)
   {
@@ -5717,4 +5714,59 @@ int uplink(
   }
   //airwall_hash_unlock(local, &ctx);
   return 0;
+}
+
+void send_announce(struct worker_local *local, struct port *port,
+                   struct ll_alloc_st *st)
+{
+  char pcppkt[14+20+8+24] = {0};
+  char *ip, *udp, *udppay;
+  uint16_t outudppay;
+  struct packet *pktstruct;
+
+  memcpy(ether_src(pcppkt), local->airwall->dl_mac, 6);
+  memset(ether_dst(pcppkt), 0xff, 6);
+  ether_set_type(pcppkt, ETHER_TYPE_IP);
+  ip = ether_payload(pcppkt);
+  ip_set_version(ip, 4);
+#if 0 // FIXME this needs to be thought carefully
+  if (version == 6)
+  {
+    ipv6_set_flow_label(ip, entry->ulflowlabel);
+  }
+#endif
+  ip46_set_min_hdr_len(ip);
+  ip46_set_payload_len(ip, 24);
+  ip46_set_dont_frag(ip, 1);
+  ip46_set_id(ip, 0); // XXX
+  ip46_set_ttl(ip, 1);
+  ip46_set_proto(ip, 17);
+  ip_set_src(ip, local->airwall->conf->dl_addr);
+  ip_set_dst(ip, (224<<24)|1);
+  udp = ip46_payload(ip);
+  udp_set_src_port(udp, 5351);
+  udp_set_dst_port(udp, 5350);
+  udppay = udp+8;
+
+  outudppay = 24;
+  pcp_set_version(udppay, 2);
+  pcp_set_r(udppay, 1);
+  pcp_set_opcode(udppay, PCP_OPCODE_ANNOUNCE);
+  pcp_resp_set_reserved(udppay, 0);
+  pcp_resp_set_rcode(udppay, PCP_RCODE_SUCCESS);
+  pcp_set_lifetime(udppay, 0);
+  pcp_resp_set_epoch_time(udppay, epoch_time(local->airwall));
+  pcp_resp_zero_reserved2(udppay);
+
+  udp_set_total_len(udp, 8 + outudppay);
+  udp_set_cksum(udp, 0); // FIXME
+  ip46_set_payload_len(ip, 8 + outudppay);
+  ip46_set_hdr_cksum_calc(ip);
+
+  pktstruct = ll_alloc_st(st, packet_size(sizeof(pcppkt)));
+  pktstruct->data = packet_calc_data(pktstruct);
+  pktstruct->direction = PACKET_DIRECTION_DOWNLINK;
+  pktstruct->sz = sizeof(pcppkt);
+  memcpy(pktstruct->data, pcppkt, sizeof(pcppkt));
+  port->portfunc(pktstruct, port->userdata);
 }
