@@ -22,14 +22,14 @@
 #include "arp.h"
 #include "detect.h"
 #include "udpporter.h"
-#include "threetuple.h"
+#include "threetuple2.h"
 
 const char http_connect_revdatabuf[19];
 
 struct airwall {
   struct conf *conf;
   //struct sack_ip_port_hash autolearn;
-  struct threetuplectx threetuplectx;
+  struct threetuple2ctx threetuplectx;
   char ul_mac[6];
   char dl_mac[6];
   struct udp_porter *porter;
@@ -838,7 +838,7 @@ static inline void airwall_init(
   airwall->udp_porter = udp_porter;
   airwall->icmp_porter = icmp_porter;
   //sack_ip_port_hash_init(&airwall->autolearn, conf->learnhashsize);
-  threetuplectx_init(&airwall->threetuplectx, porter, udp_porter);
+  threetuple2ctx_init(&airwall->threetuplectx, porter, udp_porter);
 }
 
 static inline void airwall_free(
@@ -846,7 +846,7 @@ static inline void airwall_free(
 {
   airwall->conf = NULL;
   //sack_ip_port_hash_free(&airwall->autolearn);
-  threetuplectx_free(&airwall->threetuplectx, &local->timers);
+  threetuple2ctx_free(&airwall->threetuplectx, &local->timers);
 }
 
 static inline void airwall_hash_del(

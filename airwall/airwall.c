@@ -2208,18 +2208,19 @@ static void send_window_update(
 
   if (version == 4)
   {
-    struct threetuplepayload threetuplepayload;
-    if (threetuplectx_consume(&airwall->threetuplectx, &local->timers, ip_dst(origip), tcp_dst_port(origtcp), 6, &threetuplepayload) == 0)
+    uint32_t threetuple_ip;
+    uint16_t threetuple_port;
+    if (threetuple2ctx_consume(&airwall->threetuplectx, &local->timers, ip_dst(origip), tcp_dst_port(origtcp), 6, &threetuple_ip, &threetuple_port) == 0)
     {
-      if (threetuplepayload.local_port != 0)
+      if (threetuple_port != 0)
       {
-        entry->local_port = threetuplepayload.local_port;
+        entry->local_port = threetuple_port;
       }
       else
       {
         entry->local_port = entry->nat_port;
       }
-      entry->local_ip.ipv4 = htonl(threetuplepayload.local_ip);
+      entry->local_ip.ipv4 = htonl(threetuple_ip);
       allocate_udp_port(airwall->porter, entry->nat_port, ntohl(entry->local_ip.ipv4), entry->local_port, 0);
       entry->port_alloced = 1;
       hash_table_add_nogrow_already_bucket_locked(
@@ -2678,15 +2679,15 @@ static int uplink_pcp(
         int status;
         uint64_t old_expiry;
         uint16_t old_ext_port;
-        status = threetuplectx_delete_nonce(
+        uint32_t old_ext_ip;
+        status = threetuple2ctx_delete_nonce(
                              &airwall->threetuplectx,
-                             &local->timers, ext_ipv4,
-                             pcp_mapreq_sugg_ext_port(origudppay),
-                             pcp_mapreq_protocol(origudppay), 1, 1,
+                             &local->timers,
+                             pcp_mapreq_protocol(origudppay),
                              ip_src(origip),
                              pcp_mapreq_int_port(origudppay),
                              pcp_mapreq_nonce(origudppay),
-                             &old_expiry, &old_ext_port);
+                             &old_expiry, &old_ext_port, &old_ext_ip);
         ext_port = old_ext_port;
         if (status != 0)
         {
@@ -2715,28 +2716,17 @@ static int uplink_pcp(
       {
         uint64_t old_expiry;
         uint16_t old_ext_port;
-        struct threetuplepayload payload;
+        uint32_t old_ext_ip;
         int status;
-        payload.mss = 1460;
-        payload.wscaleshift = 7;
-        payload.sack_supported = 0;
-        payload.mss_set = 0;
-        payload.sack_set = 0;
-        payload.wscaleshift_set = 0;
-        payload.local_ip = ip_src(origip);
-        payload.local_port = pcp_mapreq_int_port(origudppay);
         ext_port = pcp_mapreq_sugg_ext_port(origudppay);
-        status = threetuplectx_modify_noadd_nonce(
+        status = threetuple2ctx_modify_noadd_nonce(
                      &airwall->threetuplectx,
-                     &local->timers, 0, 1, ext_ipv4, ext_port,
-                     pcp_mapreq_protocol(origudppay), 1, 1,
-                     &payload,
+                     &local->timers, 1,
+                     pcp_mapreq_protocol(origudppay),
                      gettime64() + pcp_lifetime(origudppay)*1000ULL*1000ULL,
-                     ip_src(origip),
-                     pcp_mapreq_int_port(origudppay),
+                     ip_src(origip), pcp_mapreq_int_port(origudppay),
                      pcp_mapreq_nonce(origudppay),
-                     &old_expiry,
-                     &old_ext_port);
+                     &old_expiry, &old_ext_port, &old_ext_ip);
         ext_port = old_ext_port;
         if (status == -ENOENT)
         {
@@ -2769,11 +2759,10 @@ static int uplink_pcp(
           }
           else
           {
-            status = threetuplectx_modify_nonce(
+            status = threetuple2ctx_add_nonce(
                          &airwall->threetuplectx,
                          &local->timers, 0, 1, ext_ipv4, ext_port,
-                         pcp_mapreq_protocol(origudppay), 1, 1,
-                         &payload,
+                         pcp_mapreq_protocol(origudppay),
                          gettime64() + pcp_lifetime(origudppay)*1000ULL*1000ULL,
                          ip_src(origip),
                          pcp_mapreq_int_port(origudppay),
@@ -3357,24 +3346,16 @@ static int downlink_dns(
       {
         struct hash_list_node *node;
         unsigned bucket;
-        struct threetuplepayload payload;
-        payload.mss = 1460;
-        payload.wscaleshift = 7;
-        payload.sack_supported = 0;
-        payload.mss_set = 0;
-        payload.sack_set = 0;
-        payload.wscaleshift_set = 0;
-        payload.local_ip = host->local_ip;
-        payload.local_port = host->port;
         log_log(LOG_LEVEL_NOTICE, "WORKERDOWNLINK", "adding threetuple match");
         HASH_TABLE_FOR_EACH(&airwall->conf->ul_alternatives, bucket, node)
         {
           struct ul_addr *e = CONTAINER_OF(node, struct ul_addr, node);
           addr = e->addr;
-          ret = threetuplectx_add(&airwall->threetuplectx, &local->timers, 1, 0,
-                                  addr, host->port, host->protocol,
-                                  (host->port != 0), (host->protocol != 0),
-                                  &payload, time64);
+          ret = threetuple2ctx_add(&airwall->threetuplectx, &local->timers,
+                                   1, 0,
+                                   addr, host->port, host->protocol,
+                                   host->local_ip, host->port,
+                                   time64 + 2ULL*1000ULL*1000ULL);
           if (ret == 0)
           {
             break;
@@ -3412,10 +3393,11 @@ static int downlink_dns(
           }
           if (ok)
           {
-            ret = threetuplectx_add(&airwall->threetuplectx, &local->timers, 1, 1,
-                                    addr, host->port, host->protocol,
-                                    (host->port != 0), (host->protocol != 0),
-                                    &payload, time64);
+            ret = threetuple2ctx_add(&airwall->threetuplectx, &local->timers,
+                                     1, 1,
+                                     addr, host->port, host->protocol,
+                                     host->local_ip, host->port,
+                                     time64 + 2ULL*1000ULL*1000ULL);
           }
         }
       }
@@ -3503,11 +3485,12 @@ static int downlink_udp(
   ue = airwall_hash_get_nat_udp(local, version, lan_ip, lan_port, remote_ip, remote_port, &ctx);
   if (ue == NULL)
   {
-    struct threetuplepayload threetuplepayload;
+    uint32_t threetupleip;
+    uint16_t threetupleport;
     uint32_t local_ip;
     char local_ipv4[4];
     uint16_t local_port;
-    if (threetuplectx_consume(&airwall->threetuplectx, &local->timers, ip_dst(ip), udp_dst_port(ippay), 17, &threetuplepayload) != 0)
+    if (threetuple2ctx_consume(&airwall->threetuplectx, &local->timers, ip_dst(ip), udp_dst_port(ippay), 17, &threetupleip, &threetupleport) != 0)
     {
       struct free_udp_port *freeport = &airwall->udp_porter->udpports[udp_dst_port(ippay)];
       if (freeport->lan_ip == 0 || freeport->lan_port == 0 || freeport->count == 0 || freeport->outcount == 0)
@@ -3531,15 +3514,15 @@ static int downlink_udp(
     }
     else
     {
-      if (threetuplepayload.local_port != 0)
+      if (threetupleport != 0)
       {
-        local_port = threetuplepayload.local_port;
+        local_port = threetupleport;
       }
       else
       {
         local_port = lan_port;
       }
-      local_ip = threetuplepayload.local_ip;
+      local_ip = threetupleip;
       hdr_set32n(local_ipv4, local_ip);
       allocate_udp_port(airwall->udp_porter, udp_dst_port(ippay),
                         local_ip, local_port, 0);
