@@ -88,6 +88,7 @@ struct conf {
   uint32_t max_tcp_connections;
   uint32_t max_udp_connections;
   uint32_t max_icmp_connections;
+  uint32_t reass_memory_max;
 };
 
 static inline int ul_addr_is_mine(struct conf *conf, uint32_t addr)
@@ -155,6 +156,7 @@ static inline void conf_init(struct conf *conf)
   conf->max_tcp_connections = 131072;
   conf->max_udp_connections = 131072;
   conf->max_icmp_connections = 131072;
+  conf->reass_memory_max = 33554432;
 }
 
 static inline void conf_free(struct conf *conf)
