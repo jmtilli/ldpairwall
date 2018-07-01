@@ -40,3 +40,6 @@ The following RFCs are supported:
     * REQ 9: this is MAY, so not a problem
     * REQ 10: ought to be supported
     * REQ 11: MAY drop, ok
+4. RFC 7857
+    * TCP state machine differs from RFC 7857, but however, this is SHOULD, not MUST
+    * most other updates / clarifications are supported
