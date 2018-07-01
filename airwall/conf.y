@@ -74,6 +74,7 @@ int confyywrap(yyscan_t scanner)
 %token UL_DEFAULTGW
 %token ALLOW_ANYPORT_PRIMARY
 %token PORT_BINDING_LIMIT
+%token STATIC_MAPPINGS
 
 
 %type<i> sackconflictval
@@ -139,6 +140,11 @@ ul_alternative_entry
 hostslist:
 hostslist_entry
 | hostslist COMMA hostslist_entry
+;
+
+static_mappings_list:
+static_mappings_list_entry
+| static_mappings_list COMMA static_mappings_list_entry
 ;
 
 conflist:
@@ -243,6 +249,10 @@ tswscalelist_entry
 
 hostslist_maybe:
 | hostslist maybe_comma
+;
+
+static_mappings_list_maybe:
+| static_mappings_list maybe_comma
 ;
 
 ul_alternatives_maybe:
@@ -659,6 +669,7 @@ TEST_CONNECTIONS SEMICOLON
 }
 | RATEHASH EQUALS OPENBRACE ratehashlist CLOSEBRACE SEMICOLON
 | HOSTS EQUALS OPENBRACE hostslist_maybe CLOSEBRACE SEMICOLON
+| STATIC_MAPPINGS EQUALS OPENBRACE static_mappings_list_maybe CLOSEBRACE SEMICOLON
 ;
 
 protocol:
@@ -700,6 +711,51 @@ OPENBRACE STRING_LITERAL COMMA IP_LITERAL COMMA protocol COMMA INT_LITERAL CLOSE
     (a>>0)&0xFF);
 #endif
   free($2);
+}
+;
+
+static_mappings_list_entry:
+OPENBRACE IP_LITERAL COMMA INT_LITERAL COMMA IP_LITERAL COMMA protocol COMMA INT_LITERAL CLOSEBRACE
+{
+  struct static_mapping mapping;
+  if ($4 < 0 || $4 > 65535)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
+            "invalid port: %d at line %d col %d",
+            $4, @4.first_line, @4.first_column);
+    YYABORT;
+  }
+  if ($8 == 255)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
+            "invalid protocol: norgw at line %d col %d",
+             @8.first_line, @8.first_column);
+    YYABORT;
+  }
+  if ($10 < 0 || $10 > 65535)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
+            "invalid port: %d at line %d col %d",
+            $10, @10.first_line, @10.first_column);
+    YYABORT;
+  }
+  mapping.ext_addr = $2;
+  mapping.ext_port = $4;
+  mapping.int_addr = $6;
+  mapping.protocol = $8;
+  mapping.int_port = $10;
+  if (!DYNARR_PUSH_BACK(&conf->static_mappings, mapping))
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER", "out of memory");
+    YYABORT;
+  }
+#if 0
+  printf("%d is at %d.%d.%d.%d:%d\n", $2,
+    (a>>24)&0xFF,
+    (a>>16)&0xFF,
+    (a>>8)&0xFF,
+    (a>>0)&0xFF, $8);
+#endif
 }
 ;
 

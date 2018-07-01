@@ -32,6 +32,9 @@ airwallconf = {
     {"www2.example.com", 10.150.1.102, norgw, 0},
     {"ssh.example.com", 10.150.1.101, tcp, 22},
   };
+  static_mappings = {
+    {10.150.2.100, 23, 10.150.1.101, tcp, 24},
+  };
   enable_ack;
   dl_addr = 10.150.1.1;
   dl_mask = 255.255.255.0;
