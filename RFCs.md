@@ -34,7 +34,7 @@ The following RFCs are supported:
     * REQ 3: not supported, TODO: implement; however, this is SHOULD, not MUST
     * REQ 4: supported
     * REQ 5: supported
-    * REQ 6: ought to be supported, but however, ICMP error in response to ICMP may not be:w
+    * REQ 6: ought to be supported, but however, ICMP error in response to ICMP may not be
     * REQ 7: ought to be supported
     * REQ 8: not supported, TODO: implement
     * REQ 9: this is MAY, so not a problem
