@@ -2989,7 +2989,7 @@ static int downlink_icmp(
     return 1;
   }
   if (icmp_type(ippay) != 3 && icmp_type(ippay) != 11 &&
-      icmp_type(ippay) != 12 && icmp_type(ippay) != 4)
+      icmp_type(ippay) != 12)
   {
     log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "not a supported ICMP type");
     return 1;
@@ -3162,7 +3162,7 @@ static int uplink_icmp(
     return 1;
   }
   if (icmp_type(ippay) != 3 && icmp_type(ippay) != 11 &&
-      icmp_type(ippay) != 12 && icmp_type(ippay) != 4)
+      icmp_type(ippay) != 12)
   {
     log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "not a supported ICMP type");
     return 1;
