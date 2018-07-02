@@ -124,6 +124,51 @@ static int send_via_arp(struct packet *pkt,
   {
     abort();
   }
+  if (pkt->sz > 1514) // FIXME make MTU configurable
+  {
+    struct fragment frags[64];
+    size_t i, count;
+    char *ip = ether_payload(ether);
+    size_t ihl = ip46_hdr_len(ip);
+    i = 0;
+    for (;;)
+    {
+      if (i >= 64)
+      {
+        abort();
+      }
+      frags[i].pkt = NULL;
+      frags[i].datastart = (1500-ihl)*i;
+      frags[i].datalen = (1500-ihl);
+      if (frags[i].datastart + frags[i].datalen >= (pkt->sz-14-ihl))
+      {
+        frags[i].datalen = (pkt->sz-14-ihl) - frags[i].datastart;
+        i++;
+        break;
+      }
+      i++;
+    }
+    count = i;
+    fragment4(&local->mallocif, pkt->data, pkt->sz, frags, count);
+    for (i = 0; i < count; i++)
+    {
+      struct packet *pktstruct = ll_alloc_st(st, packet_size(frags[i].pkt->sz));
+      pktstruct->data = packet_calc_data(pktstruct);
+      pktstruct->direction = pkt->direction;
+      pktstruct->sz = frags[i].pkt->sz;
+      memcpy(pktstruct->data, frags[i].pkt->data, frags[i].pkt->sz);
+      if (send_via_arp(pktstruct, local, airwall, st, port, dir, time64))
+      {
+        ll_free_st(st, pktstruct);
+      }
+      else
+      {
+        port->portfunc(pktstruct, port->userdata);
+      }
+      allocif_free(&local->mallocif, frags[i].pkt);
+    }
+    return 1;
+  }
   arpe = arp_cache_get(cache, dst);
   if (arpe == NULL)
   {
