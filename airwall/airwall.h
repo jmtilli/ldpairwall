@@ -348,7 +348,8 @@ struct worker_local {
   struct arp_cache dl_arp_cache;
   struct arp_cache ul_arp_cache;
   struct airwall *airwall;
-  struct reasshlctx reass;
+  struct reasshlctx reass_ul;
+  struct reasshlctx reass_dl;
   struct allocif mallocif;
 };
 
@@ -460,7 +461,9 @@ static inline void worker_local_init(
   linked_list_head_init(&local->detect_list);
   local->mallocif.ops = &direct_allocif_ops;
   local->mallocif.userdata = NULL;
-  reasshlctx_init(&local->reass, airwall->conf->reass_memory_max,
+  reasshlctx_init(&local->reass_ul, airwall->conf->reass_memory_max,
+                  &local->timers, &local->mallocif);
+  reasshlctx_init(&local->reass_dl, airwall->conf->reass_memory_max,
                   &local->timers, &local->mallocif);
 
   for (i = 0; i < DYNARR_SIZE(&airwall->conf->static_mappings); i++)

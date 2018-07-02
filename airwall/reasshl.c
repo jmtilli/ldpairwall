@@ -79,20 +79,10 @@ struct packet *reasshlctx_add(struct reasshlctx *hl, struct allocif *loc,
   HASH_TABLE_FOR_EACH_POSSIBLE(&hl->hash, node, hashval)
   {
     e = CONTAINER_OF(node, struct reasshlentry, node);
-    if (e->combo.rfc_active)
-    {
-      ok = e->combo.u.rfc->src_ip == src_ip &&
-           e->combo.u.rfc->dst_ip == dst_ip &&
-           e->combo.u.rfc->ip_id == id &&
-           e->combo.u.rfc->proto == proto;
-    }
-    else
-    {
-      ok = e->combo.u.reass.src_ip == src_ip &&
-           e->combo.u.reass.dst_ip == dst_ip &&
-           e->combo.u.reass.ip_id == id &&
-           e->combo.u.reass.proto == proto;
-    }
+    ok = e->src_ip == src_ip &&
+         e->dst_ip == dst_ip &&
+         e->ip_id == id &&
+         e->proto == proto;
     if (ok)
     {
       uint32_t old_mem = e->mem_cur;
@@ -125,6 +115,10 @@ struct packet *reasshlctx_add(struct reasshlctx *hl, struct allocif *loc,
   }
   e = malloc(sizeof(*e));
   reasshlentry_init(e);
+  e->src_ip = src_ip;
+  e->dst_ip = dst_ip;
+  e->ip_id = id;
+  e->proto = proto;
   e->mem_cur = sizeof(struct reasshlentry) + packet_size(pktsz) + 32;
   e->time64 = time64;
   comboctx_add(loc, &e->combo, pkt);
