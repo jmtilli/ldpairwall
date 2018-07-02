@@ -3741,7 +3741,22 @@ int downlink(
     }
     if (ip_frag_off(ip) != 0 || ip_more_frags(ip))
     {
-      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "fragment");
+      struct packet *pkt2 = reasshlctx_add(&local->reass_dl, &local->mallocif,
+                                           pkt->data, pkt->sz, time64);
+      if (pkt2 != NULL)
+      {
+        pkt2->direction = PACKET_DIRECTION_DOWNLINK;
+        if (downlink(airwall, local, pkt2, port, time64, st) == 0)
+        {
+          struct packet *pktstruct = ll_alloc_st(st, packet_size(pkt2->sz));
+          pktstruct->data = packet_calc_data(pktstruct);
+          pktstruct->direction = pkt2->direction;
+          pktstruct->sz = pkt2->sz;
+          memcpy(pktstruct->data, pkt2->data, pkt2->sz);
+          port->portfunc(pkt2, port->userdata);
+        }
+        allocif_free(&local->mallocif, pkt2);
+      }
       return 1;
     }
     if (ip_len < ip_total_len(ip))
@@ -4832,7 +4847,22 @@ int uplink(
     }
     if (ip_frag_off(ip) != 0 || ip_more_frags(ip))
     {
-      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "fragment");
+      struct packet *pkt2 = reasshlctx_add(&local->reass_ul, &local->mallocif,
+                                           pkt->data, pkt->sz, time64);
+      if (pkt2 != NULL)
+      {
+        pkt2->direction = PACKET_DIRECTION_UPLINK;
+        if (uplink(airwall, local, pkt2, port, time64, st) == 0)
+        {
+          struct packet *pktstruct = ll_alloc_st(st, packet_size(pkt2->sz));
+          pktstruct->data = packet_calc_data(pktstruct);
+          pktstruct->direction = pkt2->direction;
+          pktstruct->sz = pkt2->sz;
+          memcpy(pktstruct->data, pkt2->data, pkt2->sz);
+          port->portfunc(pkt2, port->userdata);
+        }
+        allocif_free(&local->mallocif, pkt2);
+      }
       return 1;
     }
     if (ip_len < ip_total_len(ip))

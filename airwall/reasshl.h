@@ -13,6 +13,10 @@
 #define REASS_TIMER_SECS 1
 
 struct reasshlentry {
+  uint32_t src_ip;
+  uint32_t dst_ip;
+  uint16_t ip_id;
+  uint8_t proto;
   struct hash_list_node node;
   struct linked_list_node listnode;
   struct comboctx combo;
@@ -46,13 +50,8 @@ reasshlhash_separate(uint32_t src_ip, uint64_t dst_ip,
 static inline uint32_t
 reasshlhash(struct reasshlentry *entry)
 {
-  if (entry->combo.rfc_active)
-  {
-    return reasshlhash_separate(entry->combo.u.rfc->src_ip, entry->combo.u.rfc->dst_ip,
-                                entry->combo.u.rfc->ip_id, entry->combo.u.rfc->proto);
-  }
-  return reasshlhash_separate(entry->combo.u.reass.src_ip, entry->combo.u.reass.dst_ip,
-                              entry->combo.u.reass.ip_id, entry->combo.u.reass.proto);
+  return reasshlhash_separate(entry->src_ip, entry->dst_ip,
+                              entry->ip_id, entry->proto);
 }
 
 uint32_t reasshlhash_fn(struct hash_list_node *node, void *ud);
