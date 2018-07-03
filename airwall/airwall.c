@@ -177,8 +177,12 @@ static int send_via_arp(struct packet *pkt,
     pktstruct->direction = dir;
     pktstruct->sz = pkt->sz;
     memcpy(pktstruct->data, ether, pkt->sz);
-    arp_cache_put_packet(cache, dst, pktstruct, &local->timers, time64);
-    send_arp(port, dst, dir, addr, mac, st);
+    arpe = arp_cache_put_packet(cache, dst, pktstruct, &local->timers, time64);
+    if (time64 >= arpe->last_tx + 1000ULL*1000ULL)
+    {
+      send_arp(port, dst, dir, addr, mac, st);
+      arpe->last_tx = time64;
+    }
     return 1;
   }
   memcpy(ether_dst(ether), arpe->mac, 6);
