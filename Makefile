@@ -19,6 +19,10 @@ MODULES += THREETUPLE2
 #LCSACKHASH := sackhash
 #MODULES += SACKHASH
 
+DIRTCPREASS := pptk/tcpreass
+LCTCPREASS := tcpreass
+MODULES += TCPREASS
+
 DIRDYNARR := pptk/dynarr
 LCDYNARR := dynarr
 MODULES += DYNARR
