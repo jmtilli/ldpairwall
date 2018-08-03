@@ -8,6 +8,35 @@
 #include "log.h"
 #include "yyutils.h"
 #include "time64.h"
+#include "mypcapng.h"
+
+static void macs_init(struct airwall *airwall)
+{
+  airwall->ul_mac[0] = 0x02;
+  airwall->ul_mac[1] = 0x00;
+  airwall->ul_mac[2] = 0x00;
+  airwall->ul_mac[3] = 0x00;
+  airwall->ul_mac[4] = 0x02;
+  airwall->ul_mac[5] = 0x01;
+
+  airwall->dl_mac[0] = 0x02;
+  airwall->dl_mac[1] = 0x00;
+  airwall->dl_mac[2] = 0x00;
+  airwall->dl_mac[3] = 0x00;
+  airwall->dl_mac[4] = 0x01;
+  airwall->dl_mac[5] = 0x01;
+}
+
+static inline void airwall_macs_init(
+  struct airwall *airwall,
+  struct conf *conf,
+  struct udp_porter *porter,
+  struct udp_porter *udp_porter,
+  struct udp_porter *icmp_porter)
+{
+  airwall_init(airwall, conf, porter, udp_porter, icmp_porter);
+  macs_init(airwall);
+}
 
 const char *argv0;
 
@@ -984,7 +1013,7 @@ static void closed_port(int version)
   init_udp_porter(&porter);
   init_udp_porter(&udp_porter);
   init_udp_porter(&icmp_porter);
-  airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
+  airwall_macs_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
   {
@@ -1165,6 +1194,145 @@ static void closed_port(int version)
   worker_local_free(&local);
 }
 
+static int
+ip_tcp_src_cmp(void *ether1, void *ether2, size_t sz,
+               char exp_esrc[6], char exp_edst[6],
+               uint32_t exp_ip_src, uint16_t exp_tcp_src_port)
+{
+  void *ip1, *ip2;
+  void *tcp1, *tcp2;
+  if (ether_type(ether1) != ether_type(ether2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "ethertypes differ");
+    return 1;
+  }
+  if (memcmp(ether_src(ether2), exp_esrc, 6) != 0)
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "ether src differs");
+    return 1;
+  }
+  if (memcmp(ether_dst(ether2), exp_edst, 6) != 0)
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "ether dst differs");
+    return 1;
+  }
+  ip1 = ether_payload(ether1);
+  ip2 = ether_payload(ether2);
+  if (ip_version(ip1) != ip_version(ip2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP version differs");
+    return 1;
+  }
+  if (ip_hdr_len(ip1) != ip_hdr_len(ip2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP IHL differs");
+    return 1;
+  }
+  if (ip_total_len(ip1) != ip_total_len(ip2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP total len differs");
+    return 1;
+  }
+  if (ip_id(ip1) != ip_id(ip2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP ID differs");
+    return 1;
+  }
+  if (ip_dont_frag(ip1) != ip_dont_frag(ip2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP don't frag differs");
+    return 1;
+  }
+  if (ip_more_frags(ip1) != ip_more_frags(ip2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP more frags differs");
+    return 1;
+  }
+  if (ip_frag_off(ip1) != ip_frag_off(ip2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP frag off differs");
+    return 1;
+  }
+  if (ip_ttl(ip1) != ip_ttl(ip2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP TTL differs");
+    return 1;
+  }
+  if (ip_proto(ip1) != ip_proto(ip2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP proto differs");
+    return 1;
+  }
+  if (ip_src(ip2) != exp_ip_src)
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP proto differs");
+    return 1;
+  }
+  if (ip_dst(ip1) != ip_dst(ip2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP proto differs");
+    return 1;
+  }
+  tcp1 = ip_payload(ip1);
+  tcp2 = ip_payload(ip2);
+  if (tcp_src_port(tcp2) != exp_tcp_src_port && exp_tcp_src_port != 0)
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP src port differs");
+    return 1;
+  }
+  if (tcp_dst_port(tcp1) != tcp_dst_port(tcp2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP dst port differs");
+    return 1;
+  }
+  if (tcp_seq_number(tcp1) != tcp_seq_number(tcp2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP seq number differs");
+    return 1;
+  }
+  if (tcp_ack_number(tcp1) != tcp_ack_number(tcp2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP ack number differs");
+    return 1;
+  }
+  if (tcp_data_offset(tcp1) != tcp_data_offset(tcp2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP data offset differs");
+    return 1;
+  }
+  if (tcp_syn(tcp1) != tcp_syn(tcp2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP SYN differs");
+    return 1;
+  }
+  if (tcp_fin(tcp1) != tcp_fin(tcp2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP FIN differs");
+    return 1;
+  }
+  if (tcp_rst(tcp1) != tcp_rst(tcp2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP RST differs");
+    return 1;
+  }
+  if (tcp_ack(tcp1) != tcp_ack(tcp2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP ACK differs");
+    return 1;
+  }
+  if (tcp_window(tcp1) != tcp_window(tcp2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP window differs");
+    return 1;
+  }
+  if (memcmp(((char*)tcp1)+20, ((char*)tcp2)+20, sz-14-20-20) != 0)
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP payload: differs");
+    return 1;
+  }
+  return 0;
+}
+
 static void three_way_handshake_impl(
   struct airwall *airwall,
   struct worker_local *local, struct ll_alloc_st *loc,
@@ -1179,10 +1347,13 @@ static void three_way_handshake_impl(
   struct linkedlistfunc_userdata ud;
   char pkt[14+40+20] = {0};
   void *ether, *ip, *tcp;
+  char ul_mac[6] = {0x02,0,0,0,0x02,0x01};
+  char dl_mac[6] = {0x02,0,0,0,0x01,0x01};
   char cli_mac[6] = {0x02,0,0,0,0,0x04};
   char lan_mac[6] = {0x02,0,0,0,0,0x01};
   uint32_t isn1 = 0x12345678;
   uint32_t isn2 = 0x87654321;
+  uint32_t natted_port = 0;
   struct airwall_hash_entry *e = NULL;
   unsigned i;
   size_t sz = ((version == 4) ? (sizeof(pkt) - 20) : sizeof(pkt));
@@ -1198,7 +1369,7 @@ static void three_way_handshake_impl(
   {
     ether = pkt;
     memset(pkt, 0, sizeof(pkt));
-    memcpy(ether_dst(ether), lan_mac, 6);
+    memcpy(ether_dst(ether), dl_mac, 6);
     memcpy(ether_src(ether), cli_mac, 6);
     ether_set_type(ether, version == 4 ? ETHER_TYPE_IP : ETHER_TYPE_IPV6);
     ip = ether_payload(ether);
@@ -1234,11 +1405,75 @@ static void three_way_handshake_impl(
       outport.portfunc(pktstruct, outport.userdata);
     }
   
-    pktstruct = fetch_packet(&head);
-    if (pktstruct == NULL)
+    for (;;)
     {
-      log_log(LOG_LEVEL_ERR, "UNIT", "no packet out");
-      exit(1);
+      const void *arp;
+      char etherarp[14+28] = {0};
+      char *arp2 = ether_payload(etherarp);
+      pktstruct = fetch_packet(&head);
+      if (pktstruct == NULL)
+      {
+        log_log(LOG_LEVEL_ERR, "UNIT", "no packet out");
+        exit(1);
+      }
+      if (ether_type(pktstruct->data) == ETHER_TYPE_IP)
+      {
+        printf("IP, break\n");
+        break;
+      }
+      if (ether_type(pktstruct->data) != ETHER_TYPE_ARP)
+      {
+        log_log(LOG_LEVEL_ERR, "UNIT", "packet out neither ARP nor IP");
+        exit(1);
+      }
+      printf("ARP, no break\n");
+      arp = ether_payload(pktstruct->data);
+      if (!arp_is_valid_reqresp(arp))
+      {
+        log_log(LOG_LEVEL_ERR, "UNIT", "ARP packet not valid req/resp\n");
+        exit(1);
+      }
+      if (!arp_is_req(arp))
+      {
+        log_log(LOG_LEVEL_ERR, "UNIT", "ARP packet not request\n");
+        exit(1);
+      }
+      uint32_t exp_dst;
+      if ((hdr_get32n(ip2) & airwall->conf->ul_mask) != (airwall->conf->ul_defaultgw & airwall->conf->ul_mask))
+      {
+        exp_dst = airwall->conf->ul_defaultgw;
+      }
+      else
+      {
+        exp_dst = hdr_get32n(ip2);
+      }
+      if (arp_tpa(arp) != exp_dst)
+      {
+        log_log(LOG_LEVEL_ERR, "UNIT", "ARP packet not for exp_dst");
+        exit(1);
+      }
+      memcpy(ether_src(etherarp), lan_mac, 6);
+      memcpy(ether_dst(etherarp), ul_mac, 6);
+      ether_set_type(etherarp, ETHER_TYPE_ARP);
+      arp_set_ether(arp2);
+      arp_set_resp(arp2);
+      memcpy(arp_sha(arp2), lan_mac, 6);
+      memcpy(arp_tha(arp2), ul_mac, 6);
+      arp_set_spa(arp2, arp_tpa(arp));
+      arp_set_tpa(arp2, arp_spa(arp));
+      pktstruct = ll_alloc_st(loc, packet_size(sizeof(etherarp)));
+      pktstruct->data = packet_calc_data(pktstruct);
+      pktstruct->direction = PACKET_DIRECTION_DOWNLINK;
+      pktstruct->sz = sizeof(etherarp);
+      memcpy(pktstruct->data, etherarp, sizeof(etherarp));
+      if (downlink(airwall, local, pktstruct, &outport, time64, loc))
+      {
+        ll_free_st(loc, pktstruct);
+      }
+      else
+      {
+        outport.portfunc(pktstruct, outport.userdata);
+      }
     }
     if (pktstruct->sz != sz)
     {
@@ -1250,11 +1485,13 @@ static void three_way_handshake_impl(
       log_log(LOG_LEVEL_ERR, "UNIT", "output packet direction doesn't agree");
       exit(1);
     }
-    if (memcmp(pktstruct->data, pkt, sz) != 0)
+    if (ip_tcp_src_cmp(pkt, pktstruct->data, sz, ul_mac, lan_mac,
+                       airwall->conf->ul_addr, 0))
     {
-      log_log(LOG_LEVEL_ERR, "UNIT", "output packet data doesn't agree");
+      log_log(LOG_LEVEL_ERR, "UNIT", "exiting");
       exit(1);
     }
+    natted_port = tcp_src_port(ip_payload(ether_payload(pktstruct->data)));
     ll_free_st(loc, pktstruct);
     pktstruct = fetch_packet(&head);
     if (pktstruct != NULL)
@@ -1263,7 +1500,7 @@ static void three_way_handshake_impl(
       exit(1);
     }
   
-    e = airwall_hash_get_nat(local, version, ip1, port1, ip2, port2, &hashctx);
+    e = airwall_hash_get_local(local, version, ip1, port1, ip2, port2, &hashctx);
     if (e == NULL)
     {
       log_log(LOG_LEVEL_ERR, "UNIT", "state entry not found");
@@ -1280,7 +1517,7 @@ static void three_way_handshake_impl(
   {
     ether = pkt;
     memset(pkt, 0, sizeof(pkt));
-    memcpy(ether_dst(ether), cli_mac, 6);
+    memcpy(ether_dst(ether), ul_mac, 6);
     memcpy(ether_src(ether), lan_mac, 6);
     ether_set_type(ether, version == 4 ? ETHER_TYPE_IP : ETHER_TYPE_IPV6);
     ip = ether_payload(ether);
@@ -1292,11 +1529,11 @@ static void three_way_handshake_impl(
     ip46_set_ttl(ip, 64);
     ip46_set_proto(ip, 6);
     ip46_set_src(ip, ip2);
-    ip46_set_dst(ip, ip1);
+    ip_set_dst(ip, airwall->conf->ul_addr);
     ip46_set_hdr_cksum_calc(ip);
     tcp = ip46_payload(ip);
     tcp_set_src_port(tcp, port2);
-    tcp_set_dst_port(tcp, port1);
+    tcp_set_dst_port(tcp, natted_port);
     tcp_set_syn_on(tcp);
     tcp_set_ack_on(tcp);
     tcp_set_data_offset(tcp, 20);
@@ -1318,11 +1555,66 @@ static void three_way_handshake_impl(
       outport.portfunc(pktstruct, outport.userdata);
     }
   
-    pktstruct = fetch_packet(&head);
-    if (pktstruct == NULL)
+    for (;;)
     {
-      log_log(LOG_LEVEL_ERR, "UNIT", "no packet out");
-      exit(1);
+      const void *arp;
+      char etherarp[14+28] = {0};
+      char *arp2 = ether_payload(etherarp);
+      pktstruct = fetch_packet(&head);
+      if (pktstruct == NULL)
+      {
+        log_log(LOG_LEVEL_ERR, "UNIT", "no packet out");
+        exit(1);
+      }
+      if (ether_type(pktstruct->data) == ETHER_TYPE_IP)
+      {
+        printf("IP, break\n");
+        break;
+      }
+      if (ether_type(pktstruct->data) != ETHER_TYPE_ARP)
+      {
+        log_log(LOG_LEVEL_ERR, "UNIT", "packet out neither ARP nor IP");
+        exit(1);
+      }
+      printf("ARP, no break\n");
+      arp = ether_payload(pktstruct->data);
+      if (!arp_is_valid_reqresp(arp))
+      {
+        log_log(LOG_LEVEL_ERR, "UNIT", "ARP packet not valid req/resp\n");
+        exit(1);
+      }
+      if (!arp_is_req(arp))
+      {
+        log_log(LOG_LEVEL_ERR, "UNIT", "ARP packet not request\n");
+        exit(1);
+      }
+      if (arp_tpa(arp) != hdr_get32n(ip1))
+      {
+        log_log(LOG_LEVEL_ERR, "UNIT", "ARP packet not for ip1");
+        exit(1);
+      }
+      memcpy(ether_src(etherarp), cli_mac, 6);
+      memcpy(ether_dst(etherarp), dl_mac, 6);
+      ether_set_type(etherarp, ETHER_TYPE_ARP);
+      arp_set_ether(arp2);
+      arp_set_resp(arp2);
+      memcpy(arp_sha(arp2), cli_mac, 6);
+      memcpy(arp_tha(arp2), dl_mac, 6);
+      arp_set_spa(arp2, arp_tpa(arp));
+      arp_set_tpa(arp2, arp_spa(arp));
+      pktstruct = ll_alloc_st(loc, packet_size(sizeof(etherarp)));
+      pktstruct->data = packet_calc_data(pktstruct);
+      pktstruct->direction = PACKET_DIRECTION_UPLINK;
+      pktstruct->sz = sizeof(etherarp);
+      memcpy(pktstruct->data, etherarp, sizeof(etherarp));
+      if (uplink(airwall, local, pktstruct, &outport, time64, loc))
+      {
+        ll_free_st(loc, pktstruct);
+      }
+      else
+      {
+        outport.portfunc(pktstruct, outport.userdata);
+      }
     }
     if (pktstruct->sz != sz)
     {
@@ -2369,8 +2661,8 @@ static void three_way_handshake_four_way_fin(int version)
   struct worker_local local;
   struct conf conf = {};
   static struct udp_porter porter = {}, udp_porter = {}, icmp_porter = {};
-  uint32_t src4 = htonl((10<<24)|8);
-  uint32_t dst4 = htonl((11<<24)|7);
+  uint32_t src4 = htonl((10<<24)|(150<<16)|(1<<8)|8);
+  uint32_t dst4 = htonl((10<<24)|(150<<16)|(2<<8)|2);
   char src6[16] = {0xfd,0x80,0x00,0x00,0x00,0x00,0x00,0x00,
                    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x03};
   char dst6[16] = {0xfd,0x80,0x00,0x00,0x00,0x00,0x00,0x00,
@@ -2392,7 +2684,7 @@ static void three_way_handshake_four_way_fin(int version)
   init_udp_porter(&porter);
   init_udp_porter(&udp_porter);
   init_udp_porter(&icmp_porter);
-  airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
+  airwall_macs_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
   {
@@ -2456,7 +2748,7 @@ static void established_rst_uplink(int version)
   init_udp_porter(&porter);
   init_udp_porter(&udp_porter);
   init_udp_porter(&icmp_porter);
-  airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
+  airwall_macs_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
   {
@@ -2610,7 +2902,7 @@ static void established_rst_downlink(int version)
   init_udp_porter(&porter);
   init_udp_porter(&udp_porter);
   init_udp_porter(&icmp_porter);
-  airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
+  airwall_macs_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
   {
@@ -2765,7 +3057,7 @@ static void syn_proxy_rst_uplink(int version)
   init_udp_porter(&porter);
   init_udp_porter(&udp_porter);
   init_udp_porter(&icmp_porter);
-  airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
+  airwall_macs_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
   {
@@ -2923,7 +3215,7 @@ static void syn_proxy_rst_downlink(int version)
   init_udp_porter(&porter);
   init_udp_porter(&udp_porter);
   init_udp_porter(&icmp_porter);
-  airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
+  airwall_macs_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
   {
@@ -3065,7 +3357,7 @@ static void three_way_handshake_ulretransmit(int version)
   init_udp_porter(&porter);
   init_udp_porter(&udp_porter);
   init_udp_porter(&icmp_porter);
-  airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
+  airwall_macs_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
   {
@@ -3116,7 +3408,7 @@ static void three_way_handshake_dlretransmit(int version)
   init_udp_porter(&porter);
   init_udp_porter(&udp_porter);
   init_udp_porter(&icmp_porter);
-  airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
+  airwall_macs_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
   {
@@ -3167,7 +3459,7 @@ static void three_way_handshake_findlretransmit(int version)
   init_udp_porter(&porter);
   init_udp_porter(&udp_porter);
   init_udp_porter(&icmp_porter);
-  airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
+  airwall_macs_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
   {
@@ -3218,7 +3510,7 @@ static void three_way_handshake_finulretransmit(int version)
   init_udp_porter(&porter);
   init_udp_porter(&udp_porter);
   init_udp_porter(&icmp_porter);
-  airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
+  airwall_macs_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
   {
@@ -3272,7 +3564,7 @@ static void syn_proxy_handshake(int version)
   init_udp_porter(&porter);
   init_udp_porter(&udp_porter);
   init_udp_porter(&icmp_porter);
-  airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
+  airwall_macs_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
   {
@@ -3330,7 +3622,7 @@ static void syn_proxy_uplink(int version)
   init_udp_porter(&porter);
   init_udp_porter(&udp_porter);
   init_udp_porter(&icmp_porter);
-  airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
+  airwall_macs_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
   {
@@ -3367,7 +3659,7 @@ static void syn_proxy_uplink(int version)
   init_udp_porter(&porter);
   init_udp_porter(&udp_porter);
   init_udp_porter(&icmp_porter);
-  airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
+  airwall_macs_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
   {
@@ -3404,7 +3696,7 @@ static void syn_proxy_uplink(int version)
   init_udp_porter(&porter);
   init_udp_porter(&udp_porter);
   init_udp_porter(&icmp_porter);
-  airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
+  airwall_macs_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
   {
@@ -3473,7 +3765,7 @@ static void syn_proxy_downlink(int version)
   init_udp_porter(&porter);
   init_udp_porter(&udp_porter);
   init_udp_porter(&icmp_porter);
-  airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
+  airwall_macs_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
   {
@@ -3510,7 +3802,7 @@ static void syn_proxy_downlink(int version)
   init_udp_porter(&porter);
   init_udp_porter(&udp_porter);
   init_udp_porter(&icmp_porter);
-  airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
+  airwall_macs_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
   {
@@ -3547,7 +3839,7 @@ static void syn_proxy_downlink(int version)
   init_udp_porter(&porter);
   init_udp_porter(&udp_porter);
   init_udp_porter(&icmp_porter);
-  airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
+  airwall_macs_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
   {
@@ -3617,7 +3909,7 @@ static void syn_proxy_uplink_downlink(int version)
   init_udp_porter(&porter);
   init_udp_porter(&udp_porter);
   init_udp_porter(&icmp_porter);
-  airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
+  airwall_macs_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
   {
@@ -3687,7 +3979,7 @@ static void syn_proxy_closed_port(int version)
   init_udp_porter(&porter);
   init_udp_porter(&udp_porter);
   init_udp_porter(&icmp_porter);
-  airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
+  airwall_macs_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
   {
@@ -3740,7 +4032,7 @@ static void syn_proxy_handshake_2_1_1(int version)
   init_udp_porter(&porter);
   init_udp_porter(&udp_porter);
   init_udp_porter(&icmp_porter);
-  airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
+  airwall_macs_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
   {
@@ -3797,7 +4089,7 @@ static void syn_proxy_handshake_1_2_1(int version)
   init_udp_porter(&porter);
   init_udp_porter(&udp_porter);
   init_udp_porter(&icmp_porter);
-  airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
+  airwall_macs_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
   {
@@ -3854,7 +4146,7 @@ static void syn_proxy_handshake_1_1_2(int version)
   init_udp_porter(&porter);
   init_udp_porter(&udp_porter);
   init_udp_porter(&icmp_porter);
-  airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
+  airwall_macs_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
   {
@@ -3911,7 +4203,7 @@ static void syn_proxy_handshake_1_1_1_keepalive(int version)
   init_udp_porter(&porter);
   init_udp_porter(&udp_porter);
   init_udp_porter(&icmp_porter);
-  airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
+  airwall_macs_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
   {
@@ -3968,7 +4260,7 @@ static void syn_proxy_handshake_1_1_1_zerowindowprobe(int version)
   init_udp_porter(&porter);
   init_udp_porter(&udp_porter);
   init_udp_porter(&icmp_porter);
-  airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
+  airwall_macs_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
   {
