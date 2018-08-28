@@ -1265,12 +1265,12 @@ ip_tcp_src_cmp(void *ether1, void *ether2, size_t sz,
   }
   if (ip_src(ip2) != exp_ip_src)
   {
-    log_log(LOG_LEVEL_ERR, "UNIT", "IP proto differs");
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP src differs");
     return 1;
   }
   if (ip_dst(ip1) != ip_dst(ip2))
   {
-    log_log(LOG_LEVEL_ERR, "UNIT", "IP proto differs");
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP dst differs");
     return 1;
   }
   tcp1 = ip_payload(ip1);
@@ -1332,6 +1332,295 @@ ip_tcp_src_cmp(void *ether1, void *ether2, size_t sz,
   }
   return 0;
 }
+
+static int __attribute__((unused))
+ip_tcp_cmp(void *ether1, void *ether2, size_t sz,
+           char exp_esrc[6], char exp_edst[6])
+{
+  void *ip1, *ip2;
+  void *tcp1, *tcp2;
+  if (ether_type(ether1) != ether_type(ether2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "ethertypes differ");
+    return 1;
+  }
+  if (memcmp(ether_src(ether2), exp_esrc, 6) != 0)
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "ether src differs");
+    return 1;
+  }
+  if (memcmp(ether_dst(ether2), exp_edst, 6) != 0)
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "ether dst differs");
+    return 1;
+  }
+  ip1 = ether_payload(ether1);
+  ip2 = ether_payload(ether2);
+  if (ip_version(ip1) != ip_version(ip2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP version differs");
+    return 1;
+  }
+  if (ip_hdr_len(ip1) != ip_hdr_len(ip2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP IHL differs");
+    return 1;
+  }
+  if (ip_total_len(ip1) != ip_total_len(ip2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP total len differs");
+    return 1;
+  }
+  if (ip_id(ip1) != ip_id(ip2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP ID differs");
+    return 1;
+  }
+  if (ip_dont_frag(ip1) != ip_dont_frag(ip2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP don't frag differs");
+    return 1;
+  }
+  if (ip_more_frags(ip1) != ip_more_frags(ip2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP more frags differs");
+    return 1;
+  }
+  if (ip_frag_off(ip1) != ip_frag_off(ip2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP frag off differs");
+    return 1;
+  }
+  if (ip_ttl(ip1) != ip_ttl(ip2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP TTL differs");
+    return 1;
+  }
+  if (ip_proto(ip1) != ip_proto(ip2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP proto differs");
+    return 1;
+  }
+  if (ip_dst(ip2) != ip_dst(ip1))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP dst differs");
+    log_log(LOG_LEVEL_ERR, "UNIT", "%d.%d.%d.%d",
+            (ip_dst(ip2)>>24)&0xFF,
+            (ip_dst(ip2)>>16)&0xFF,
+            (ip_dst(ip2)>>8)&0xFF,
+            (ip_dst(ip2)>>0)&0xFF);
+    log_log(LOG_LEVEL_ERR, "UNIT", "%d.%d.%d.%d",
+            (ip_dst(ip1)>>24)&0xFF,
+            (ip_dst(ip1)>>16)&0xFF,
+            (ip_dst(ip1)>>8)&0xFF,
+            (ip_dst(ip1)>>0)&0xFF);
+    return 1;
+  }
+  if (ip_src(ip1) != ip_src(ip2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP src differs");
+    return 1;
+  }
+  tcp1 = ip_payload(ip1);
+  tcp2 = ip_payload(ip2);
+  if (tcp_dst_port(tcp2) != tcp_dst_port(tcp1))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP dst port differs");
+    return 1;
+  }
+  if (tcp_src_port(tcp1) != tcp_src_port(tcp2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP src port differs");
+    return 1;
+  }
+  if (tcp_seq_number(tcp1) != tcp_seq_number(tcp2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP seq number differs");
+    return 1;
+  }
+  if (tcp_ack_number(tcp1) != tcp_ack_number(tcp2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP ack number differs");
+    return 1;
+  }
+  if (tcp_data_offset(tcp1) != tcp_data_offset(tcp2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP data offset differs");
+    return 1;
+  }
+  if (tcp_syn(tcp1) != tcp_syn(tcp2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP SYN differs");
+    return 1;
+  }
+  if (tcp_fin(tcp1) != tcp_fin(tcp2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP FIN differs");
+    return 1;
+  }
+  if (tcp_rst(tcp1) != tcp_rst(tcp2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP RST differs");
+    return 1;
+  }
+  if (tcp_ack(tcp1) != tcp_ack(tcp2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP ACK differs");
+    return 1;
+  }
+  if (tcp_window(tcp1) != tcp_window(tcp2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP window differs");
+    return 1;
+  }
+  if (memcmp(((char*)tcp1)+20, ((char*)tcp2)+20, sz-14-20-20) != 0)
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP payload: differs");
+    return 1;
+  }
+  return 0;
+}
+
+#if 1
+static int
+ip_tcp_dst_cmp(void *ether1, void *ether2, size_t sz,
+               char exp_esrc[6], char exp_edst[6],
+               uint32_t exp_ip_dst, uint16_t exp_tcp_dst_port)
+{
+  void *ip1, *ip2;
+  void *tcp1, *tcp2;
+  if (ether_type(ether1) != ether_type(ether2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "ethertypes differ");
+    return 1;
+  }
+  if (memcmp(ether_src(ether2), exp_esrc, 6) != 0)
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "ether src differs");
+    return 1;
+  }
+  if (memcmp(ether_dst(ether2), exp_edst, 6) != 0)
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "ether dst differs");
+    return 1;
+  }
+  ip1 = ether_payload(ether1);
+  ip2 = ether_payload(ether2);
+  if (ip_version(ip1) != ip_version(ip2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP version differs");
+    return 1;
+  }
+  if (ip_hdr_len(ip1) != ip_hdr_len(ip2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP IHL differs");
+    return 1;
+  }
+  if (ip_total_len(ip1) != ip_total_len(ip2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP total len differs");
+    return 1;
+  }
+  if (ip_id(ip1) != ip_id(ip2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP ID differs");
+    return 1;
+  }
+  if (ip_dont_frag(ip1) != ip_dont_frag(ip2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP don't frag differs");
+    return 1;
+  }
+  if (ip_more_frags(ip1) != ip_more_frags(ip2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP more frags differs");
+    return 1;
+  }
+  if (ip_frag_off(ip1) != ip_frag_off(ip2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP frag off differs");
+    return 1;
+  }
+  if (ip_ttl(ip1) != ip_ttl(ip2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP TTL differs");
+    return 1;
+  }
+  if (ip_proto(ip1) != ip_proto(ip2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP proto differs");
+    return 1;
+  }
+  if (ip_dst(ip2) != exp_ip_dst)
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP dst differs");
+    return 1;
+  }
+  if (ip_src(ip1) != ip_src(ip2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "IP src differs");
+    return 1;
+  }
+  tcp1 = ip_payload(ip1);
+  tcp2 = ip_payload(ip2);
+  if (tcp_dst_port(tcp2) != exp_tcp_dst_port && exp_tcp_dst_port != 0)
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP dst port differs");
+    return 1;
+  }
+  if (tcp_src_port(tcp1) != tcp_src_port(tcp2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP src port differs");
+    return 1;
+  }
+  if (tcp_seq_number(tcp1) != tcp_seq_number(tcp2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP seq number differs");
+    return 1;
+  }
+  if (tcp_ack_number(tcp1) != tcp_ack_number(tcp2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP ack number differs");
+    return 1;
+  }
+  if (tcp_data_offset(tcp1) != tcp_data_offset(tcp2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP data offset differs");
+    return 1;
+  }
+  if (tcp_syn(tcp1) != tcp_syn(tcp2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP SYN differs");
+    return 1;
+  }
+  if (tcp_fin(tcp1) != tcp_fin(tcp2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP FIN differs");
+    return 1;
+  }
+  if (tcp_rst(tcp1) != tcp_rst(tcp2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP RST differs");
+    return 1;
+  }
+  if (tcp_ack(tcp1) != tcp_ack(tcp2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP ACK differs");
+    return 1;
+  }
+  if (tcp_window(tcp1) != tcp_window(tcp2))
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP window differs");
+    return 1;
+  }
+  if (memcmp(((char*)tcp1)+20, ((char*)tcp2)+20, sz-14-20-20) != 0)
+  {
+    log_log(LOG_LEVEL_ERR, "UNIT", "TCP payload: differs");
+    return 1;
+  }
+  return 0;
+}
+#endif
 
 static void three_way_handshake_impl(
   struct airwall *airwall,
@@ -1626,9 +1915,10 @@ static void three_way_handshake_impl(
       log_log(LOG_LEVEL_ERR, "UNIT", "output packet direction doesn't agree");
       exit(1);
     }
-    if (memcmp(pktstruct->data, pkt, sz) != 0)
+    if (ip_tcp_dst_cmp(pkt, pktstruct->data, sz, dl_mac, cli_mac,
+                       hdr_get32n(ip1), port1))
     {
-      log_log(LOG_LEVEL_ERR, "UNIT", "output packet data doesn't agree");
+      log_log(LOG_LEVEL_ERR, "UNIT", "exiting");
       exit(1);
     }
     ll_free_st(loc, pktstruct);
@@ -1647,7 +1937,7 @@ static void three_way_handshake_impl(
 
   ether = pkt;
   memset(pkt, 0, sizeof(pkt));
-  memcpy(ether_dst(ether), lan_mac, 6);
+  memcpy(ether_dst(ether), dl_mac, 6);
   memcpy(ether_src(ether), cli_mac, 6);
   ether_set_type(ether, version == 4 ? ETHER_TYPE_IP : ETHER_TYPE_IPV6);
   ip = ether_payload(ether);
@@ -1700,9 +1990,10 @@ static void three_way_handshake_impl(
     log_log(LOG_LEVEL_ERR, "UNIT", "output packet direction doesn't agree");
     exit(1);
   }
-  if (memcmp(pktstruct->data, pkt, sz) != 0)
+  if (ip_tcp_src_cmp(pkt, pktstruct->data, sz, ul_mac, lan_mac,
+                     airwall->conf->ul_addr, natted_port))
   {
-    log_log(LOG_LEVEL_ERR, "UNIT", "output packet data doesn't agree");
+    log_log(LOG_LEVEL_ERR, "UNIT", "exiting");
     exit(1);
   }
   ll_free_st(loc, pktstruct);
