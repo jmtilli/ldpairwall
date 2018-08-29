@@ -38,7 +38,7 @@ static inline uint16_t hdr_get16n(const void *buf)
   return ntohs(hdr_get16h(buf));
 }
 
-static inline uint16_t hdr_get32n(const void *buf)
+static inline uint32_t hdr_get32n(const void *buf)
 {
   return ntohl(hdr_get32h(buf));
 }

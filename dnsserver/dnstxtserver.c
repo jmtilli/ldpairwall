@@ -70,6 +70,13 @@ int main(int argc, char **argv)
     dns_next_init_qd(pkt, &off, &remcnt, pktsize);
     while (dns_next(pkt, &off, &remcnt, pktsize, nambuf, sizeof(nambuf), &qtype, &qclass) == 0)
     {
+      if (qclass == 1 && qtype == 1 && strcmp(nambuf, "foo.lan") == 0)
+      {
+        printf("%s\n", nambuf);
+        dns_set_ancount(answer, dns_ancount(answer) + 1);
+        dns_put_next(answer, &aoff, &aremcnt, sizeof(answer), "foo.lan", qtype, qclass, 0,
+                     4, "\x01\x02\x03\x04");
+      }
       if (qclass == 1 && qtype == 1 && strcmp(nambuf, "foo2.lan") == 0)
       {
         printf("%s\n", nambuf);
