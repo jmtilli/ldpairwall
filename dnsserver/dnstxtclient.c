@@ -13,6 +13,13 @@ static inline uint16_t hdr_get16h(const void *buf)
   return res;
 }
 
+static inline uint32_t hdr_get32h(const void *buf)
+{
+  uint32_t res;
+  memcpy(&res, buf, sizeof(res));
+  return res;
+}
+
 static inline void hdr_set16h(void *buf, uint16_t val)
 {
   memcpy(buf, &val, sizeof(val));
@@ -26,6 +33,11 @@ static inline void hdr_set32h(void *buf, uint32_t val)
 static inline uint16_t hdr_get16n(const void *buf)
 {
   return ntohs(hdr_get16h(buf));
+}
+
+static inline uint16_t hdr_get32n(const void *buf)
+{
+  return ntohl(hdr_get32h(buf));
 }
 
 static inline void hdr_set16n(void *buf, uint16_t val)
@@ -204,6 +216,183 @@ static inline void dns_next_init_qd(void *vdns, uint16_t *off, uint16_t *remcnt,
   *remcnt = dns_qdcount(vdns);
 }
 
+static inline void dns_next_init_an_ask(void *vdns, uint16_t *off, uint16_t *remcnt,
+                                        uint16_t plen)
+{
+  if (plen < *off)
+  {
+    abort();
+  }
+  *remcnt = dns_ancount(vdns);
+}
+
+static inline int dns_next_an_ask(void *vdns, uint16_t *off, uint16_t *remcnt,
+                                  uint16_t plen,
+                                  char *buf, size_t bufsiz, uint16_t *qtype,
+                                  uint16_t *qclass, uint32_t *ttl,
+                                  char *datbuf, size_t datbufsiz, size_t *datbuflen)
+{
+  unsigned char *cdns = vdns;
+  uint16_t tocopy;
+  uint16_t labsiz, laboff;
+  uint16_t datsiz, datoff, datrem;
+  size_t strlentmp;
+  int jmp = 0;
+  *buf = '\0';
+  if (*remcnt == 0)
+  {
+    return -ENOENT;
+  }
+  laboff = *off;
+  while (*off < plen && *remcnt)
+  {
+    labsiz = cdns[laboff++];
+    //printf("labsiz %d at off %d\n", (int)labsiz, (int)laboff);
+    if (!jmp)
+    {
+      (*off)++;
+    }
+    if (labsiz == 0)
+    {
+      break;
+    }
+    if ((labsiz & 0xc0) == 0xc0)
+    {
+      labsiz &= ~0xc0;
+      labsiz <<= 8;
+      if (laboff >= plen)
+      {
+        return -EFAULT;
+      }
+      labsiz |= cdns[laboff++];
+      if (!jmp)
+      {
+        (*off)++;
+      }
+      if (labsiz >= plen)
+      {
+        return -EFAULT;
+      }
+      laboff = labsiz + 1;
+      labsiz = cdns[laboff - 1];
+      jmp = 1;
+    }
+    else
+    {
+      //laboff = *off;
+      if (!jmp)
+      {
+        (*off) += labsiz;
+      }
+    }
+    if (laboff + labsiz >= plen) // have to have room for '\0'
+    {
+      return -EFAULT;
+    }
+    tocopy = labsiz;
+    strlentmp = strlen(buf);
+    if (tocopy+strlentmp+2 > bufsiz)
+    {
+      return -EFAULT;
+    }
+    memcpy(buf+strlentmp, &cdns[laboff], tocopy);
+    memcpy(buf+strlentmp+tocopy, ".\0", 2);
+    //printf("buf now %s\n", buf);
+    strlentmp += tocopy + 1;
+    laboff += labsiz;
+  }
+  if (*off + 10 > plen)
+  {
+    return -EFAULT;
+  }
+  *qtype = hdr_get16n(&cdns[(*off)]);
+  *qclass = hdr_get16n(&cdns[(*off)+2]);
+  *ttl = hdr_get32n(&cdns[(*off)+4]);
+  datrem = hdr_get16n(&cdns[(*off)+8]);
+  (*off) += 10;
+  if (*qtype != 5)
+  {
+    uint16_t tocopy = datrem;
+    if (tocopy+2 > datbufsiz)
+    {
+      return -EFAULT;
+    }
+    memcpy(datbuf, &cdns[*off], tocopy);
+    *datbuflen = datrem;
+  }
+  else
+  {
+    datoff = *off;
+    jmp = 0;
+    while (*off < plen && *remcnt)
+    {
+      if (!datrem)
+      {
+        return -EFAULT;
+      }
+      datsiz = cdns[datoff++];
+      //printf("datsiz %d at off %d\n", (int)datsiz, (int)datoff);
+      if (!jmp)
+      {
+        (*off)++;
+      }
+      if (datsiz == 0)
+      {
+        break;
+      }
+      if ((datsiz & 0xc0) == 0xc0)
+      {
+        datsiz &= ~0xc0;
+        datsiz <<= 8;
+        if (datoff >= plen)
+        {
+          return -EFAULT;
+        }
+        datsiz |= cdns[datoff++];
+        if (!jmp)
+        {
+          (*off)++;
+        }
+        if (datsiz >= plen)
+        {
+          return -EFAULT;
+        }
+        datoff = datsiz + 1;
+        datsiz = cdns[datoff - 1];
+        jmp = 1;
+      }
+      else
+      {
+        //datoff = *off;
+        if (!jmp)
+        {
+          (*off) += datsiz;
+        }
+      }
+      if (datoff + datsiz >= plen) // have to have room for '\0'
+      {
+        return -EFAULT;
+      }
+      tocopy = datsiz;
+      strlentmp = strlen(datbuf);
+      if (tocopy+strlentmp+2 > bufsiz)
+      {
+        return -EFAULT;
+      }
+      memcpy(datbuf+strlentmp, &cdns[datoff], tocopy);
+      memcpy(datbuf+strlentmp+tocopy, ".\0", 2);
+      //printf("datbuf now %s\n", datbuf);
+      strlentmp += tocopy + 1;
+      datoff += datsiz;
+    }
+    strlentmp = strlen(datbuf);
+    *datbuflen = strlentmp;
+    datbuf[strlentmp-1] = '\0';
+  }
+  (*remcnt)--;
+  return 0;
+}
+
 static inline int dns_put_next(void *vdns, uint16_t *off, uint16_t *remcnt,
                                uint16_t plen,
                                char *buf,
@@ -313,14 +502,21 @@ static inline int dns_next(void *vdns, uint16_t *off, uint16_t *remcnt,
   uint16_t tocopy;
   uint16_t labsiz, laboff;
   size_t strlentmp;
+  int jmp = 0;
   *buf = '\0';
   if (*remcnt == 0)
   {
     return -ENOENT;
   }
+  laboff = *off;
   while (*off < plen && *remcnt)
   {
-    labsiz = cdns[(*off)++];
+    labsiz = cdns[laboff++];
+    //printf("labsiz %d at off %d\n", (int)labsiz, (int)laboff);
+    if (!jmp)
+    {
+      (*off)++;
+    }
     if (labsiz == 0)
     {
       break;
@@ -329,21 +525,30 @@ static inline int dns_next(void *vdns, uint16_t *off, uint16_t *remcnt,
     {
       labsiz &= ~0xc0;
       labsiz <<= 8;
-      if (*off >= plen)
+      if (laboff >= plen)
       {
         return -EFAULT;
       }
-      labsiz |= cdns[(*off)++];
+      labsiz |= cdns[laboff++];
+      if (!jmp)
+      {
+        (*off)++;
+      }
       if (labsiz >= plen)
       {
         return -EFAULT;
       }
       laboff = labsiz + 1;
       labsiz = cdns[laboff - 1];
+      jmp = 1;
     }
     else
     {
-      laboff = *off;
+      //laboff = *off;
+      if (!jmp)
+      {
+        (*off) += labsiz;
+      }
     }
     if (laboff + labsiz >= plen) // have to have room for '\0'
     {
@@ -355,10 +560,11 @@ static inline int dns_next(void *vdns, uint16_t *off, uint16_t *remcnt,
     {
       return -EFAULT;
     }
-    (*off) += labsiz;
     memcpy(buf+strlentmp, &cdns[laboff], tocopy);
     memcpy(buf+strlentmp+tocopy, ".\0", 2);
+    //printf("buf now %s\n", buf);
     strlentmp += tocopy + 1;
+    laboff += labsiz;
   }
   if (*off + 4 > plen)
   {
@@ -379,6 +585,7 @@ int main(int argc, char **argv)
   char querya[1536] = {0};
   char querytxt[1536] = {0};
   char answer[1536] = {0};
+  char nextbuf[1536] = {0};
   int sockfd;
   struct sockaddr_in sin = {};
   struct sockaddr_in ss = {};
@@ -423,7 +630,10 @@ int main(int argc, char **argv)
   for (;;)
   {
     char nambuf[8192] = {0};
+    char valbuf[8192] = {0};
+    size_t vallen = 0;
     uint16_t off, qtype, qclass;
+    uint32_t ttl;
     sslen = sizeof(ss);
     ss2len = sizeof(ss);
 
@@ -442,9 +652,9 @@ int main(int argc, char **argv)
 
     dns_next_init_qd(querytxt, &qofftxt, &remcnt, sizeof(querytxt));
     //dns_set_qdcount(querytxt, dns_qdcount(querytxt) + 1);
-    //dns_put_next_qr(querytxt, &qofftxt, &remcnt, sizeof(querytxt), "foo.lan", 1, 1);
+    //dns_put_next_qr(querytxt, &qofftxt, &remcnt, sizeof(querytxt), "foo2.lan", 1, 1);
     dns_set_qdcount(querytxt, dns_qdcount(querytxt) + 1);
-    dns_put_next_qr(querytxt, &qofftxt, &remcnt, sizeof(querytxt), "_cgtp.foo.lan", 16, 1);
+    dns_put_next_qr(querytxt, &qofftxt, &remcnt, sizeof(querytxt), "_cgtp.foo2.lan", 16, 1);
 
     if (sendto(sockfd, querytxt, qofftxt, 0, (struct sockaddr*)&ss, sslen) < 0)
     {
@@ -466,9 +676,9 @@ int main(int argc, char **argv)
 
     dns_next_init_qd(querya, &qoffa, &remcnt, sizeof(querya));
     dns_set_qdcount(querya, dns_qdcount(querya) + 1);
-    dns_put_next_qr(querya, &qoffa, &remcnt, sizeof(querya), "foo.lan", 1, 1);
+    dns_put_next_qr(querya, &qoffa, &remcnt, sizeof(querya), "foo2.lan", 1, 1);
     //dns_set_qdcount(querya, dns_qdcount(querya) + 1);
-    //dns_put_next_qr(querya, &qoffa, &remcnt, sizeof(querya), "_cgtp.foo.lan", 16, 1);
+    //dns_put_next_qr(querya, &qoffa, &remcnt, sizeof(querya), "_cgtp.foo2.lan", 16, 1);
 
     if (sendto(sockfd, querya, qoffa, 0, (struct sockaddr*)&ss, sslen) < 0)
     {
@@ -507,12 +717,13 @@ int main(int argc, char **argv)
   
       if (dns_id(answer) == txida && !answer_a)
       {
-        uint16_t aoff;
+        uint16_t aoff, answer_aoff;
+        int end = 0;
         printf("got answer for A\n");
         dns_next_init_qd(answer, &aoff, &remcnt, recvd);
         if (dns_next(answer, &aoff, &remcnt, recvd, nambuf, sizeof(nambuf), &qtype, &qclass) == 0)
         {
-          if (strcmp(nambuf, "foo.lan") != 0)
+          if (strcmp(nambuf, "foo2.lan") != 0)
           {
             printf("out1 %s\n", nambuf);
             goto out;
@@ -523,10 +734,57 @@ int main(int argc, char **argv)
           printf("out2\n");
           goto out;
         }
+        snprintf(nextbuf, sizeof(nextbuf), "%s.", nambuf);
         if (dns_next(answer, &aoff, &remcnt, recvd, nambuf, sizeof(nambuf), &qtype, &qclass) == 0)
         {
           printf("out3\n");
           goto out;
+        }
+        answer_aoff = aoff;
+        dns_next_init_an_ask(answer, &aoff, &remcnt, recvd);
+        while (!end)
+        {
+          aoff = answer_aoff;
+          dns_next_init_an_ask(answer, &aoff, &remcnt, recvd);
+          for (;;)
+          {
+            if (dns_next_an_ask(answer, &aoff, &remcnt, recvd, nambuf, sizeof(nambuf), &qtype, &qclass, &ttl,
+                                valbuf, sizeof(valbuf), &vallen) != 0)
+            {
+              printf("at end\n");
+              end = 1;
+              break;
+            }
+            //printf("not at end\n");
+            //printf("%s vs %s\n", nambuf, nextbuf);
+            if (strcmp(nambuf, nextbuf) != 0)
+            {
+              continue;
+            }
+            if (qtype == 5)
+            {
+              snprintf(nextbuf, sizeof(nextbuf), "%s.", valbuf);
+              printf("got cname %s\n", nextbuf);
+              break;
+            }
+            end = 1;
+            if (qtype == 1)
+            {
+              printf("got address\n");
+              if (vallen != 4)
+              {
+                printf("...of invalid length\n");
+              }
+              else
+              {
+                printf("%d.%d.%d.%d\n", (unsigned char)valbuf[0],
+                  (unsigned char)valbuf[1],
+                  (unsigned char)valbuf[2],
+                  (unsigned char)valbuf[3]);
+              }
+              break;
+            }
+          }
         }
         answer_a = 1;
 out:
