@@ -16,7 +16,6 @@ int main(int argc, char **argv)
   struct sockaddr_storage ss = {};
   socklen_t sslen;
   ssize_t pktsize;
-  int i;
   uint16_t remcnt;
   uint16_t aoff, aremcnt;
 
@@ -74,8 +73,15 @@ int main(int argc, char **argv)
       {
         printf("%s\n", nambuf);
         dns_set_ancount(answer, dns_ancount(answer) + 1);
-        dns_put_next(answer, &aoff, &aremcnt, sizeof(answer), "foo.lan", qtype, qclass, 0,
-                     4, "\x01\x02\x03\x04");
+        dns_put_next(answer, &aoff, &aremcnt, sizeof(answer), nambuf, qtype, qclass, 0,
+                     4, "\x7f\x00\x00\x01");
+      }
+      if (qclass == 1 && qtype == 28 && strcmp(nambuf, "foo.lan") == 0)
+      {
+        printf("%s\n", nambuf);
+        dns_set_ancount(answer, dns_ancount(answer) + 1);
+        dns_put_next(answer, &aoff, &aremcnt, sizeof(answer), nambuf, qtype, qclass, 0,
+                     16, "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\1");
       }
       if (qclass == 1 && qtype == 1 && strcmp(nambuf, "foo2.lan") == 0)
       {
@@ -90,6 +96,7 @@ int main(int argc, char **argv)
       if (qclass == 1 && qtype == 16 && strcmp(nambuf, "_cgtp.foo2.lan") == 0)
       {
         char *str = "\024foo.lan!10.150.1.101";
+        //char *str = "\031foo.lan:8081!10.150.1.101";
         printf("%s\n", nambuf);
         dns_set_ancount(answer, dns_ancount(answer) + 1);
         dns_put_next(answer, &aoff, &aremcnt, sizeof(answer), "_cgtp.foo2.lan", 5, 1, 0,
