@@ -97,6 +97,7 @@ int main(int argc, char **argv)
       {
         char *str = "\024foo.lan!10.150.1.101";
         //char *str = "\031foo.lan:8081!10.150.1.101";
+        //char *str = "\026127.0.0.1!10.150.1.101";
         printf("%s\n", nambuf);
         dns_set_ancount(answer, dns_ancount(answer) + 1);
         dns_put_next(answer, &aoff, &aremcnt, sizeof(answer), "_cgtp.foo2.lan", 5, 1, 0,
