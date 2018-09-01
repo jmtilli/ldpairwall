@@ -19,6 +19,8 @@ struct dst {
   char path[8192];
 };
 
+const uint32_t global_addr = (10<<24)|(150<<16)|(2<<8)|100;
+
 int resolv_patha(struct dst *dst)
 {
   int sockfd;
@@ -52,6 +54,7 @@ int resolv_patha(struct dst *dst)
     return -errno;
   }
 
+#if 0
   sin.sin_family = AF_INET;
   sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   sin.sin_port = htons(0);
@@ -60,9 +63,10 @@ int resolv_patha(struct dst *dst)
     close(sockfd);
     return -errno;
   }
+#endif
 
   ss.sin_family = AF_INET;
-  ss.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  ss.sin_addr.s_addr = htonl(global_addr);
   ss.sin_port = htons(53);
 
   snprintf(pathfirst, sizeof(pathfirst), "%s", dst->path);
@@ -206,6 +210,7 @@ int get_dst(struct dst *dst, int try_ipv6, char *name)
     return -errno;
   }
 
+#if 0
   sin.sin_family = AF_INET;
   sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   sin.sin_port = htons(0);
@@ -214,9 +219,10 @@ int get_dst(struct dst *dst, int try_ipv6, char *name)
     close(sockfd);
     return -errno;
   }
+#endif
 
   ss.sin_family = AF_INET;
-  ss.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  ss.sin_addr.s_addr = htonl(global_addr);
   ss.sin_port = htons(53);
 
   dst->family = 0;

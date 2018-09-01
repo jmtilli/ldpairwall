@@ -3410,7 +3410,47 @@ static int downlink_dns(
   {
     struct host_hash_entry *host;
     uint32_t addr;
-    host = host_hash_get_entry(&airwall->conf->hosts, nambuf);
+    if (qclass == 1 && qtype == 16 && strncmp(nambuf, "_cgtp.", 6) == 0)
+    {
+      host = host_hash_get_entry(&airwall->conf->hosts, nambuf+6);
+    }
+    else
+    {
+      host = host_hash_get_entry(&airwall->conf->hosts, nambuf);
+    }
+    if (qclass == 1 && qtype == 16 && host != NULL)
+    {
+      char answbuf[1514] = {0};
+      char answbuffin[1514] = {0};
+      char locipv4[4] = {0};
+      char ipv4[4] = {0};
+      addr = airwall->conf->ul_addr;
+      hdr_set32n(ipv4, addr);
+      hdr_set32n(locipv4, host->local_ip);
+#if 0
+      snprintf(answbuf, sizeof(answbuf), "%d.%d.%d.%d!%d.%d.%d.%d",
+               (unsigned char)ipv4[0],
+               (unsigned char)ipv4[1],
+               (unsigned char)ipv4[2],
+               (unsigned char)ipv4[3],
+               (unsigned char)locipv4[0],
+               (unsigned char)locipv4[1],
+               (unsigned char)locipv4[2],
+               (unsigned char)locipv4[3]);
+#endif
+      snprintf(answbuf, sizeof(answbuf), "%d.%d.%d.%d!%s",
+               (unsigned char)ipv4[0],
+               (unsigned char)ipv4[1],
+               (unsigned char)ipv4[2],
+               (unsigned char)ipv4[3],
+               nambuf+6);
+      answbuffin[0] = strlen(answbuf);
+      snprintf(&answbuffin[1], sizeof(answbuffin)-1, "%s", answbuf);
+
+      dns_set_ancount(udppay, dns_ancount(udppay) + 1);
+      dns_put_next(udppay, &aoff, &aremcnt, udppay_maxlen, nambuf, qtype, qclass, 0,
+                   strlen(answbuffin), answbuffin);
+    }
     if (qclass == 1 && qtype == 1 && host != NULL)
     {
       char ipv4[4];
