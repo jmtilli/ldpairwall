@@ -35,6 +35,7 @@ int resolv_patha(struct dst *dst)
   uint16_t txida;
   uint16_t qoffa;
   uint16_t remcnt;
+  struct in_addr in;
   int answer_a = 0;
   int retrya = 0;
 
@@ -74,6 +75,14 @@ int resolv_patha(struct dst *dst)
   if (colon && *colon)
   {
     *colon = '\0';
+  }
+
+  if (inet_aton(pathfirst, &in))
+  {
+    dst->family = AF_INET;
+    dst->u.ip = ntohl(in.s_addr);
+    close(sockfd);
+    return 0;
   }
 
   //printf("Resolving %s\n", pathfirst);
@@ -153,6 +162,7 @@ int resolv_patha(struct dst *dst)
 
   //printf("Not found\n"); // FIXME rm
   
+  close(sockfd);
   return -ENXIO;
 }
 
