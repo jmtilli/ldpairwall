@@ -67,6 +67,7 @@ void global_addr_set(void)
       {
         global_addr = ntohl(in.s_addr);
         fclose(f);
+        free(line);
         pthread_mutex_unlock(&global_mtx);
         return;
       }
@@ -74,6 +75,7 @@ void global_addr_set(void)
   }
   global_addr = (127<<24)|1;
   fclose(f);
+  free(line);
   pthread_mutex_unlock(&global_mtx);
 }
 
