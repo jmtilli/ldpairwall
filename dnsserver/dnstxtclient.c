@@ -8,6 +8,7 @@
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
+#include <pthread.h>
 #include "dnshdr.h"
 
 struct dst {
@@ -19,7 +20,62 @@ struct dst {
   char path[8192];
 };
 
-const uint32_t global_addr = (10<<24)|(150<<16)|(2<<8)|100;
+uint32_t global_addr = 0;
+pthread_mutex_t global_mtx = PTHREAD_MUTEX_INITIALIZER;
+
+void global_addr_set(void)
+{
+  char *line = NULL;
+  size_t n = 0;
+  FILE *f;
+  struct in_addr in;
+  if (global_addr != 0)
+  {
+    return;
+  }
+  pthread_mutex_lock(&global_mtx);
+  if (global_addr != 0)
+  {
+    pthread_mutex_unlock(&global_mtx);
+    return;
+  }
+  f = fopen("/etc/resolv.conf", "r");
+  if (f == NULL)
+  {
+    global_addr = (127<<24)|1;
+    pthread_mutex_unlock(&global_mtx);
+    return;
+  }
+  for (;;)
+  {
+    getline(&line, &n, f);
+    if (strncmp(line, "nameserver ", 11) == 0 ||
+        strncmp(line, "nameserver\t", 11) == 0)
+    {
+      char *srv = line+11;
+      char *end = srv + strlen(srv) - 1;
+      while (*srv == ' ' || *srv == '\t')
+      {
+        srv++;
+      }
+      while (*end == ' ' || *end == '\t')
+      {
+        *end = '\0';
+        end--;
+      }
+      if (inet_aton(srv, &in) == 1)
+      {
+        global_addr = ntohl(in.s_addr);
+        fclose(f);
+        pthread_mutex_unlock(&global_mtx);
+        return;
+      }
+    }
+  }
+  global_addr = (127<<24)|1;
+  fclose(f);
+  pthread_mutex_unlock(&global_mtx);
+}
 
 int resolv_patha(struct dst *dst)
 {
@@ -64,6 +120,8 @@ int resolv_patha(struct dst *dst)
     return -errno;
   }
 #endif
+
+  global_addr_set();
 
   ss.sin_family = AF_INET;
   ss.sin_addr.s_addr = htonl(global_addr);
@@ -220,6 +278,8 @@ int get_dst(struct dst *dst, int try_ipv6, char *name)
     return -errno;
   }
 #endif
+
+  global_addr_set();
 
   ss.sin_family = AF_INET;
   ss.sin_addr.s_addr = htonl(global_addr);
