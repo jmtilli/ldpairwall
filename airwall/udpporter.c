@@ -122,6 +122,8 @@ void deallocate_udp_port(struct udp_porter *porter, uint16_t port, int outgoing)
   if (porter->udpports[port].count == 0 && (porter->udpports[port].lan_ip != 0 || porter->udpports[port].lan_port != 0))
   {
     hash_table_delete_already_bucket_locked(&porter->hash, &porter->udpports[port].hashnode);
+    porter->udpports[port].lan_ip = 0;
+    porter->udpports[port].lan_port = 0;
   }
   if (porter->udpports[port].count <= UINT16_MAX && porter->udpports[port].available)
   {

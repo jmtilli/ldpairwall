@@ -8,8 +8,22 @@ int main(int argc, char **argv)
 {
   uint16_t port;
   size_t i;
+  uint32_t local_ip = 0x12345678;
 
   hash_seed_init();
+
+  init_udp_porter(&porter);
+  allocate_udp_port(&porter, 8080, local_ip, 22, 0);
+  allocate_udp_port(&porter, 8080, local_ip, 22, 0);
+  allocate_udp_port(&porter, 8080, local_ip, 22, 0);
+  deallocate_udp_port(&porter, 8080, !1);
+  deallocate_udp_port(&porter, 8080, !1);
+  deallocate_udp_port(&porter, 8080, !1);
+  allocate_udp_port(&porter, 8080, local_ip, 22, 0);
+  allocate_udp_port(&porter, 8080, local_ip, 23, 0);
+  deallocate_udp_port(&porter, 8080, !1);
+  deallocate_udp_port(&porter, 8080, !1);
+  free_udp_porter(&porter);
 
   init_udp_porter(&porter);
 
