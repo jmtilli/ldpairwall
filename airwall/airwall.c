@@ -605,6 +605,11 @@ static void airwall_expiry_fn(
   {
     deallocate_udp_port(local->airwall->porter, e->nat_port, !e->was_synproxied);
   }
+  if (e->retxtimer_set)
+  {
+    timer_linkheap_remove(&local->timers, &e->retx_timer);
+    e->retxtimer_set = 0;
+  }
   worker_local_wrlock(local);
   if (e->was_synproxied)
   {
