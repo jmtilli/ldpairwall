@@ -27,6 +27,21 @@ airwallconf = {
     network_prefix = 24;
     network_prefix6 = 64;
   };
+  timeouts = {
+    connected = 86400;
+    one_fin = 7440;
+    both_fin = 240;
+    ul_syn_sent = 240;
+    ul_syn_rcvd = 240;
+    dl_half_open = 240;
+    dl_syn_sent = 240;
+    window_update_sent = 240;
+    time_wait = 120;
+    reseted = 45;
+    retx = 1;
+    udp = 300;
+    icmp = 60;
+  };
   hosts = {
     {"www1.example.com", 10.150.1.101, norgw, 0},
     {"www2.example.com", 10.150.1.102, norgw, 0},
