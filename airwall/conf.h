@@ -35,6 +35,22 @@ struct static_mapping {
   uint16_t int_port;
 };
 
+struct timeouts {
+  uint32_t connected;
+  uint32_t one_fin;
+  uint32_t both_fin;
+  uint32_t ul_syn_sent;
+  uint32_t ul_syn_rcvd;
+  uint32_t dl_half_open;
+  uint32_t dl_syn_sent;
+  uint32_t time_wait;
+  uint32_t reseted;
+  uint32_t window_update_sent;
+  uint32_t retx;
+  uint32_t udp;
+  uint32_t icmp;
+};
+
 static inline uint32_t ul_addr_hash_separate(uint32_t addr)
 {
   return siphash64(hash_seed_get(), addr);
@@ -89,6 +105,7 @@ struct conf {
   uint32_t max_udp_connections;
   uint32_t max_icmp_connections;
   uint32_t reass_memory_max;
+  struct timeouts timeouts;
 };
 
 static inline int ul_addr_is_mine(struct conf *conf, uint32_t addr)
@@ -126,6 +143,19 @@ static inline void conf_init(struct conf *conf)
   DYNARR_INIT(&conf->tsmsslist);
   DYNARR_INIT(&conf->tswscalelist);
   DYNARR_INIT(&conf->static_mappings);
+  conf->timeouts.connected = 86400;
+  conf->timeouts.one_fin = 7440;
+  conf->timeouts.both_fin = 240;
+  conf->timeouts.ul_syn_sent = 240;
+  conf->timeouts.ul_syn_rcvd = 240;
+  conf->timeouts.dl_half_open = 240;
+  conf->timeouts.dl_syn_sent = 240;
+  conf->timeouts.window_update_sent = 240;
+  conf->timeouts.time_wait = 120;
+  conf->timeouts.reseted = 45;
+  conf->timeouts.retx = 1;
+  conf->timeouts.udp = 300;
+  conf->timeouts.icmp = 60;
   conf->msslist_present = 0;
   conf->wscalelist_present = 0;
   conf->own_mss = 1460;

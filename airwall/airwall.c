@@ -16,21 +16,6 @@ const char http_connect_revdatabuf[19] = {
 #define INITIAL_WINDOW (1<<14)
 #define IPV6_FRAG_CUTOFF 512
 
-#define UDP_TIMEOUT_SECS 300
-#define ICMP_TIMEOUT_SECS 60
-
-#define TCP_CONNECTED_TIMEOUT_SECS 86400 // 1 day
-#define TCP_ONE_FIN_TIMEOUT_SECS 7440 // 2 hours 4 minutes (RFC5382)
-#define TCP_BOTH_FIN_TIMEOUT_SECS 240 // 4 minutes (RFC5382)
-#define TCP_UPLINK_SYN_SENT_TIMEOUT_USEC 240 // 4 minutes (RFC5382)
-#define TCP_UPLINK_SYN_RCVD_TIMEOUT_SECS 240 // 4 minutes (RFC5382)
-#define TCP_WINDOW_UPDATE_SENT_TIMEOUT_SECS 240 // 4 minutes (RFC5382)
-#define TCP_DOWNLINK_SYN_SENT_TIMEOUT_SECS 240 // 4 minutes (RFC5382)
-#define TCP_DOWNLINK_HALF_OPEN_TIMEOUT_SECS 240 // 4 minutes (RFC5382)
-#define TCP_TIME_WAIT_TIMEOUT_SECS 120 // no RFC5382 restrictions here
-#define TCP_RESETED_TIMEOUT_SECS 45
-#define TCP_RETX_TIMEOUT_SECS 1
-
 #define ENABLE_ARP
 
 #ifdef ENABLE_ARP
@@ -658,7 +643,7 @@ static void airwall_retx_fn(
   struct timer_thread_data *td = vtd;
   e = CONTAINER_OF(timer, struct airwall_hash_entry, retx_timer);
   retx_http_connect_response(e, td->port, td->st, local->airwall, local);
-  e->retx_timer.time64 += TCP_RETX_TIMEOUT_SECS*1000ULL*1000ULL;
+  e->retx_timer.time64 += local->airwall->conf->timeouts.retx*1000ULL*1000ULL;
   timer_linkheap_add(&local->timers, &e->retx_timer);
 }
 
@@ -818,7 +803,7 @@ struct airwall_hash_entry *airwall_hash_put(
   e->nat_port = nat_port;
   e->remote_port = remote_port;
   e->was_synproxied = was_synproxied;
-  e->timer.time64 = time64 + TCP_CONNECTED_TIMEOUT_SECS*1000ULL*1000ULL;
+  e->timer.time64 = time64 + local->airwall->conf->timeouts.connected*1000ULL*1000ULL;
   e->timer.fn = airwall_expiry_fn;
   e->timer.userdata = local;
   worker_local_wrlock(local);
@@ -882,7 +867,7 @@ struct airwall_udp_entry *airwall_hash_put_udp(
   ue->nat_port = nat_port;
   ue->remote_port = remote_port;
   ue->was_incoming = was_incoming;
-  ue->timer.time64 = time64 + UDP_TIMEOUT_SECS*1000ULL*1000ULL;
+  ue->timer.time64 = time64 + local->airwall->conf->timeouts.udp*1000ULL*1000ULL;
   ue->timer.fn = airwall_udp_expiry_fn;
   ue->timer.userdata = local;
   worker_local_wrlock(local);
@@ -941,7 +926,7 @@ struct airwall_icmp_entry *airwall_hash_put_icmp(
   ue->local_identifier = local_identifier;
   ue->nat_identifier = nat_identifier;
   ue->was_incoming = was_incoming;
-  ue->timer.time64 = time64 + ICMP_TIMEOUT_SECS*1000ULL*1000ULL;
+  ue->timer.time64 = time64 + local->airwall->conf->timeouts.icmp*1000ULL*1000ULL;
   ue->timer.fn = airwall_icmp_expiry_fn;
   ue->timer.userdata = local;
   worker_local_wrlock(local);
@@ -1297,7 +1282,7 @@ static void process_data(
   {
     log_log(LOG_LEVEL_ERR, "AIRWALL", "can't detect protocol and host");
     send_rst(orig, local, airwall, port, st, time64, entry);
-    entry->timer.time64 = time64 + TCP_RESETED_TIMEOUT_SECS*1000ULL*1000ULL;
+    entry->timer.time64 = time64 + airwall->conf->timeouts.reseted*1000ULL*1000ULL;
     entry->flag_state = FLAG_STATE_RESETED;
     timer_linkheap_modify(&local->timers, &entry->timer);
   }
@@ -1305,7 +1290,7 @@ static void process_data(
   {
     log_log(LOG_LEVEL_ERR, "AIRWALL", "content conflict");
     send_rst(orig, local, airwall, port, st, time64, entry);
-    entry->timer.time64 = time64 + TCP_RESETED_TIMEOUT_SECS*1000ULL*1000ULL;
+    entry->timer.time64 = time64 + airwall->conf->timeouts.reseted*1000ULL*1000ULL;
     entry->flag_state = FLAG_STATE_RESETED;
     timer_linkheap_modify(&local->timers, &entry->timer);
   }
@@ -1332,7 +1317,7 @@ static void process_data(
         {
           log_log(LOG_LEVEL_ERR, "AIRWALL", "invalid port %s", strr+1);
           send_rst(orig, local, airwall, port, st, time64, entry);
-          entry->timer.time64 = time64 + TCP_RESETED_TIMEOUT_SECS*1000ULL*1000ULL;
+          entry->timer.time64 = time64 + airwall->conf->timeouts.reseted*1000ULL*1000ULL;
           entry->flag_state = FLAG_STATE_RESETED;
           timer_linkheap_modify(&local->timers, &entry->timer);
           *strr = ':';
@@ -1373,7 +1358,7 @@ static void process_data(
       log_log(LOG_LEVEL_ERR, "AIRWALL", "host %s not found",
               entry->detect->hostctx.hostname);
       send_rst(orig, local, airwall, port, st, time64, entry);
-      entry->timer.time64 = time64 + TCP_RESETED_TIMEOUT_SECS*1000ULL*1000ULL;
+      entry->timer.time64 = time64 + airwall->conf->timeouts.reseted*1000ULL*1000ULL;
       entry->flag_state = FLAG_STATE_RESETED;
       timer_linkheap_modify(&local->timers, &entry->timer);
       return;
@@ -1773,7 +1758,7 @@ static void send_synack(
     //allocate_udp_port(airwall->porter, e->nat_port, 0, 0, 0);
     //e->port_alloced = 1;
     e->was_synproxied = 1;
-    e->timer.time64 = time64 + TCP_DOWNLINK_HALF_OPEN_TIMEOUT_SECS*1000ULL*1000ULL;
+    e->timer.time64 = time64 + local->airwall->conf->timeouts.dl_half_open*1000ULL*1000ULL;
     e->timer.fn = airwall_expiry_fn;
     e->timer.userdata = local;
     timer_linkheap_add(&local->timers, &e->timer);
@@ -1954,7 +1939,7 @@ static void resend_syn(
   {
     entry->wan_max_window_unscaled = tcp_window(origtcp);
   }
-  entry->timer.time64 = time64 + TCP_DOWNLINK_SYN_SENT_TIMEOUT_SECS*1000ULL*1000ULL;
+  entry->timer.time64 = time64 + local->airwall->conf->timeouts.dl_syn_sent*1000ULL*1000ULL;
   timer_linkheap_modify(&local->timers, &entry->timer);
 
   send_or_resend_syn(orig, local, port, st, entry, airwall, time64);
@@ -1987,7 +1972,7 @@ static void send_syn(
   //tcp_parse_options(origtcp, &info);
 
   entry->flag_state = FLAG_STATE_DOWNLINK_SYN_SENT;
-  entry->timer.time64 = time64 + TCP_DOWNLINK_SYN_SENT_TIMEOUT_SECS*1000ULL*1000ULL;
+  entry->timer.time64 = time64 + local->airwall->conf->timeouts.dl_syn_sent*1000ULL*1000ULL;
   timer_linkheap_modify(&local->timers, &entry->timer);
 
   send_or_resend_syn(orig, local, port, st, entry, airwall, time64);
@@ -2256,7 +2241,7 @@ static void send_window_update(
   entry->local_isn = tcp_ack_number(origtcp) - 1;
   entry->remote_isn = tcp_seq_number(origtcp) - 1 + (!!was_keepalive);
   entry->flag_state = FLAG_STATE_WINDOW_UPDATE_SENT;
-  entry->timer.time64 = time64 + TCP_WINDOW_UPDATE_SENT_TIMEOUT_SECS*1000ULL*1000ULL;
+  entry->timer.time64 = time64 + local->airwall->conf->timeouts.window_update_sent*1000ULL*1000ULL;
   timer_linkheap_modify(&local->timers, &entry->timer);
 
   if (version == 4)
@@ -2578,7 +2563,7 @@ static void send_ack_and_window_update(
     memcpy(tcppay, http_connect_revdatabuf, rsz);
     entry->seqoffset += rsz;
 
-    entry->retx_timer.time64 = time64 + TCP_RETX_TIMEOUT_SECS*1000ULL*1000ULL;
+    entry->retx_timer.time64 = time64 + local->airwall->conf->timeouts.retx*1000ULL*1000ULL;
     entry->retx_timer.fn = airwall_retx_fn;
     entry->retx_timer.userdata = local;
     timer_linkheap_add(&local->timers, &entry->retx_timer);
@@ -2980,7 +2965,7 @@ static int uplink_udp(
     abort();
   }
 
-  next64 = time64 + UDP_TIMEOUT_SECS*1000ULL*1000ULL;
+  next64 = time64 + local->airwall->conf->timeouts.udp*1000ULL*1000ULL;
   if (abs(next64 - ue->timer.time64) >= 1000*1000)
   {
     worker_local_wrlock(local);
@@ -3040,7 +3025,7 @@ static int downlink_icmp(
       return 1;
     }
     icmp_set_echo_identifier_cksum_update(ippay, icmp_len, ie->local_identifier);
-    ie->timer.time64 = time64 + ICMP_TIMEOUT_SECS*1000ULL*1000ULL;
+    ie->timer.time64 = time64 + local->airwall->conf->timeouts.icmp*1000ULL*1000ULL;
     timer_linkheap_modify(&local->timers, &ie->timer);
     ip_set_dst_cksum_update(ip, ip46_total_len(ip), 0, NULL, 0, hdr_get32n(&ie->local_ip));
     if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
@@ -3214,7 +3199,7 @@ static int uplink_icmp(
     }
     icmp_set_echo_identifier_cksum_update(ippay, icmp_len, ie->nat_identifier);
     ip_set_src_cksum_update(ip, ip46_total_len(ip), 0, NULL, 0, hdr_get32n(&ie->nat_ip));
-    ie->timer.time64 = time64 + ICMP_TIMEOUT_SECS*1000ULL*1000ULL;
+    ie->timer.time64 = time64 + local->airwall->conf->timeouts.icmp*1000ULL*1000ULL;
     timer_linkheap_modify(&local->timers, &ie->timer);
     if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
     {
@@ -3667,7 +3652,7 @@ static int downlink_udp(
     abort();
   }
 
-  next64 = time64 + UDP_TIMEOUT_SECS*1000ULL*1000ULL;
+  next64 = time64 + local->airwall->conf->timeouts.udp*1000ULL*1000ULL;
   if (abs(next64 - ue->timer.time64) >= 1000*1000)
   {
     worker_local_wrlock(local);
@@ -4132,7 +4117,7 @@ int downlink(
         entry->wan_acked + (tcp_window(ippay) << entry->wan_wscale);
       entry->flag_state = FLAG_STATE_UPLINK_SYN_RCVD;
       worker_local_wrlock(local);
-      entry->timer.time64 = time64 + TCP_UPLINK_SYN_RCVD_TIMEOUT_SECS*1000ULL*1000ULL;
+      entry->timer.time64 = time64 + local->airwall->conf->timeouts.ul_syn_rcvd*1000ULL*1000ULL;
       timer_linkheap_modify(&local->timers, &entry->timer);
       worker_local_wrunlock(local);
       if (airwall->conf->mss_clamp_enabled)
@@ -4513,7 +4498,7 @@ int downlink(
     }
     entry->flag_state = FLAG_STATE_RESETED;
     worker_local_wrlock(local);
-    entry->timer.time64 = time64 + TCP_RESETED_TIMEOUT_SECS*1000ULL*1000ULL;
+    entry->timer.time64 = time64 + local->airwall->conf->timeouts.reseted*1000ULL*1000ULL;
     timer_linkheap_modify(&local->timers, &entry->timer);
     worker_local_wrunlock(local);
     //airwall_hash_unlock(local, &ctx);
@@ -4709,20 +4694,20 @@ int downlink(
   }
   else if (entry->flag_state == FLAG_STATE_RESETED)
   {
-    next64 = time64 + TCP_RESETED_TIMEOUT_SECS*1000ULL*1000ULL;
+    next64 = time64 + local->airwall->conf->timeouts.reseted*1000ULL*1000ULL;
   }
   else if ((entry->flag_state & FLAG_STATE_UPLINK_FIN) &&
            (entry->flag_state & FLAG_STATE_DOWNLINK_FIN))
   {
-    next64 = time64 + TCP_BOTH_FIN_TIMEOUT_SECS*1000ULL*1000ULL;
+    next64 = time64 + local->airwall->conf->timeouts.both_fin*1000ULL*1000ULL;
   }
   else if (entry->flag_state & (FLAG_STATE_UPLINK_FIN|FLAG_STATE_DOWNLINK_FIN))
   {
-    next64 = time64 + TCP_ONE_FIN_TIMEOUT_SECS*1000ULL*1000ULL;
+    next64 = time64 + local->airwall->conf->timeouts.one_fin*1000ULL*1000ULL;
   }
   else
   {
-    next64 = time64 + TCP_CONNECTED_TIMEOUT_SECS*1000ULL*1000ULL;
+    next64 = time64 + local->airwall->conf->timeouts.connected*1000ULL*1000ULL;
   }
   if (!omit && abs(next64 - entry->timer.time64) >= 1000*1000)
   {
@@ -4779,7 +4764,7 @@ int downlink(
   if (todelete)
   {
     worker_local_wrlock(local);
-    entry->timer.time64 = time64 + TCP_TIME_WAIT_TIMEOUT_SECS*1000ULL*1000ULL;
+    entry->timer.time64 = time64 + local->airwall->conf->timeouts.time_wait*1000ULL*1000ULL;
     entry->flag_state = FLAG_STATE_TIME_WAIT;
     timer_linkheap_modify(&local->timers, &entry->timer);
     worker_local_wrunlock(local);
@@ -5209,7 +5194,7 @@ int uplink(
       }
       //port->portfunc(pkt, port->userdata);
       worker_local_wrlock(local);
-      entry->timer.time64 = time64 + TCP_UPLINK_SYN_SENT_TIMEOUT_USEC*1000ULL*1000ULL;
+      entry->timer.time64 = time64 + local->airwall->conf->timeouts.ul_syn_sent*1000ULL*1000ULL;
       timer_linkheap_modify(&local->timers, &entry->timer);
       worker_local_wrunlock(local);
       //airwall_hash_unlock(local, &ctx);
@@ -5360,7 +5345,7 @@ int uplink(
       }
       entry->flag_state = FLAG_STATE_ESTABLISHED;
       worker_local_wrlock(local);
-      entry->timer.time64 = time64 + TCP_CONNECTED_TIMEOUT_SECS*1000ULL*1000ULL;
+      entry->timer.time64 = time64 + local->airwall->conf->timeouts.connected*1000ULL*1000ULL;
       timer_linkheap_modify(&local->timers, &entry->timer);
       worker_local_wrunlock(local);
       send_ack_and_window_update(ether, entry, port, st, airwall, local, time64);
@@ -5408,7 +5393,7 @@ int uplink(
       }
       entry->flag_state = FLAG_STATE_RESETED;
       worker_local_wrlock(local);
-      entry->timer.time64 = time64 + TCP_RESETED_TIMEOUT_SECS*1000ULL*1000ULL;
+      entry->timer.time64 = time64 + local->airwall->conf->timeouts.reseted*1000ULL*1000ULL;
       timer_linkheap_modify(&local->timers, &entry->timer);
       worker_local_wrunlock(local);
       tcp_set_src_port_cksum_update(ippay, tcp_len, entry->nat_port);
@@ -5462,7 +5447,7 @@ int uplink(
       entry->lan_max = ack + (window << entry->lan_wscale);
       entry->flag_state = FLAG_STATE_ESTABLISHED;
       worker_local_wrlock(local);
-      entry->timer.time64 = time64 + TCP_CONNECTED_TIMEOUT_SECS*1000ULL*1000ULL;
+      entry->timer.time64 = time64 + local->airwall->conf->timeouts.connected*1000ULL*1000ULL;
       timer_linkheap_modify(&local->timers, &entry->timer);
       worker_local_wrunlock(local);
       tcp_set_src_port_cksum_update(ippay, tcp_len, entry->nat_port);
@@ -5538,7 +5523,7 @@ int uplink(
         ippay, tcp_len, 0);
       entry->flag_state = FLAG_STATE_RESETED;
       worker_local_wrlock(local);
-      entry->timer.time64 = time64 + TCP_RESETED_TIMEOUT_SECS*1000ULL*1000ULL;
+      entry->timer.time64 = time64 + local->airwall->conf->timeouts.reseted*1000ULL*1000ULL;
       timer_linkheap_modify(&local->timers, &entry->timer);
       worker_local_wrunlock(local);
       tcp_set_src_port_cksum_update(ippay, tcp_len, entry->nat_port);
@@ -5580,7 +5565,7 @@ int uplink(
       ippay, tcp_len, tcp_seq_number(ippay)+entry->seqoffset);
     entry->flag_state = FLAG_STATE_RESETED;
     worker_local_wrlock(local);
-    entry->timer.time64 = time64 + TCP_RESETED_TIMEOUT_SECS*1000ULL*1000ULL;
+    entry->timer.time64 = time64 + local->airwall->conf->timeouts.reseted*1000ULL*1000ULL;
     timer_linkheap_modify(&local->timers, &entry->timer);
     worker_local_wrunlock(local);
     tcp_set_src_port_cksum_update(ippay, tcp_len, entry->nat_port);
@@ -5766,20 +5751,20 @@ int uplink(
   uint64_t next64;
   if (entry->flag_state == FLAG_STATE_RESETED)
   {
-    next64 = time64 + TCP_RESETED_TIMEOUT_SECS*1000ULL*1000ULL;
+    next64 = time64 + local->airwall->conf->timeouts.reseted*1000ULL*1000ULL;
   }
   else if ((entry->flag_state & FLAG_STATE_UPLINK_FIN) &&
            (entry->flag_state & FLAG_STATE_DOWNLINK_FIN))
   {
-    next64 = time64 + TCP_BOTH_FIN_TIMEOUT_SECS*1000ULL*1000ULL;
+    next64 = time64 + local->airwall->conf->timeouts.both_fin*1000ULL*1000ULL;
   }
   else if (entry->flag_state & (FLAG_STATE_UPLINK_FIN|FLAG_STATE_DOWNLINK_FIN))
   {
-    next64 = time64 + TCP_ONE_FIN_TIMEOUT_SECS*1000ULL*1000ULL;
+    next64 = time64 + local->airwall->conf->timeouts.one_fin*1000ULL*1000ULL;
   }
   else
   {
-    next64 = time64 + TCP_CONNECTED_TIMEOUT_SECS*1000ULL*1000ULL;
+    next64 = time64 + local->airwall->conf->timeouts.connected*1000ULL*1000ULL;
   }
   if (abs(next64 - entry->timer.time64) >= 1000*1000)
   {
@@ -5831,7 +5816,7 @@ int uplink(
   if (todelete)
   {
     worker_local_wrlock(local);
-    entry->timer.time64 = time64 + TCP_TIME_WAIT_TIMEOUT_SECS*1000ULL*1000ULL;
+    entry->timer.time64 = time64 + local->airwall->conf->timeouts.time_wait*1000ULL*1000ULL;
     entry->flag_state = FLAG_STATE_TIME_WAIT;
     timer_linkheap_modify(&local->timers, &entry->timer);
     worker_local_wrunlock(local);

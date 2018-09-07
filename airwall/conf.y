@@ -63,7 +63,7 @@ int confyywrap(yyscan_t scanner)
 %token PORT
 %token HOSTS
 %token ENABLE_ACK
-%token TCP UDP TCPUDP NORGW
+%token TCP UDP ICMP TCPUDP NORGW
 %token MAX_TCP_CONNECTIONS MAX_UDP_CONNECTIONS MAX_ICMP_CONNECTIONS
 
 %token DL_ADDR
@@ -77,6 +77,18 @@ int confyywrap(yyscan_t scanner)
 %token STATIC_MAPPINGS
 %token REASS_MEMORY_MAX
 
+%token TIMEOUTS
+%token CONNECTED
+%token ONE_FIN
+%token BOTH_FIN
+%token UL_SYN_SENT
+%token UL_SYN_RCVD
+%token DL_HALF_OPEN
+%token DL_SYN_SENT
+%token TIME_WAIT
+%token RESETED
+%token WINDOW_UPDATE_SENT
+%token RETX
 
 %type<i> sackconflictval
 %type<i> own_sack
@@ -131,6 +143,10 @@ own_sack:
 
 ratehashlist:
 | ratehashlist ratehash_entry
+;
+
+timeoutlist:
+| timeoutlist timeout_entry
 ;
 
 ul_alternatives:
@@ -682,6 +698,7 @@ TEST_CONNECTIONS SEMICOLON
 | RATEHASH EQUALS OPENBRACE ratehashlist CLOSEBRACE SEMICOLON
 | HOSTS EQUALS OPENBRACE hostslist_maybe CLOSEBRACE SEMICOLON
 | STATIC_MAPPINGS EQUALS OPENBRACE static_mappings_list_maybe CLOSEBRACE SEMICOLON
+| TIMEOUTS EQUALS OPENBRACE timeoutlist CLOSEBRACE SEMICOLON
 ;
 
 protocol:
@@ -854,5 +871,151 @@ SIZE EQUALS INT_LITERAL SEMICOLON
     YYABORT;
   }
   conf->ratehash.network_prefix6 = $3;
+}
+;
+
+timeout_entry:
+CONNECTED EQUALS INT_LITERAL SEMICOLON
+{
+  if ($3 <= 0)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
+            "invalid timeout: %d at line %d col %d",
+            $3, @3.first_line, @3.first_column);
+    YYABORT;
+  }
+  conf->timeouts.connected = $3;
+}
+| ONE_FIN EQUALS INT_LITERAL SEMICOLON
+{
+  if ($3 <= 0)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
+            "invalid timeout: %d at line %d col %d",
+            $3, @3.first_line, @3.first_column);
+    YYABORT;
+  }
+  conf->timeouts.one_fin = $3;
+}
+| BOTH_FIN EQUALS INT_LITERAL SEMICOLON
+{
+  if ($3 <= 0)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
+            "invalid timeout: %d at line %d col %d",
+            $3, @3.first_line, @3.first_column);
+    YYABORT;
+  }
+  conf->timeouts.both_fin = $3;
+}
+| UL_SYN_SENT EQUALS INT_LITERAL SEMICOLON
+{
+  if ($3 <= 0)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
+            "invalid timeout: %d at line %d col %d",
+            $3, @3.first_line, @3.first_column);
+    YYABORT;
+  }
+  conf->timeouts.ul_syn_sent = $3;
+}
+| UL_SYN_RCVD EQUALS INT_LITERAL SEMICOLON
+{
+  if ($3 <= 0)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
+            "invalid timeout: %d at line %d col %d",
+            $3, @3.first_line, @3.first_column);
+    YYABORT;
+  }
+  conf->timeouts.ul_syn_rcvd = $3;
+}
+| DL_HALF_OPEN EQUALS INT_LITERAL SEMICOLON
+{
+  if ($3 <= 0)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
+            "invalid timeout: %d at line %d col %d",
+            $3, @3.first_line, @3.first_column);
+    YYABORT;
+  }
+  conf->timeouts.dl_half_open = $3;
+}
+| DL_SYN_SENT EQUALS INT_LITERAL SEMICOLON
+{
+  if ($3 <= 0)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
+            "invalid timeout: %d at line %d col %d",
+            $3, @3.first_line, @3.first_column);
+    YYABORT;
+  }
+  conf->timeouts.dl_syn_sent = $3;
+}
+| TIME_WAIT EQUALS INT_LITERAL SEMICOLON
+{
+  if ($3 <= 0)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
+            "invalid timeout: %d at line %d col %d",
+            $3, @3.first_line, @3.first_column);
+    YYABORT;
+  }
+  conf->timeouts.time_wait = $3;
+}
+| RESETED EQUALS INT_LITERAL SEMICOLON
+{
+  if ($3 <= 0)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
+            "invalid timeout: %d at line %d col %d",
+            $3, @3.first_line, @3.first_column);
+    YYABORT;
+  }
+  conf->timeouts.reseted = $3;
+}
+| WINDOW_UPDATE_SENT EQUALS INT_LITERAL SEMICOLON
+{
+  if ($3 <= 0)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
+            "invalid timeout: %d at line %d col %d",
+            $3, @3.first_line, @3.first_column);
+    YYABORT;
+  }
+  conf->timeouts.window_update_sent = $3;
+}
+| RETX EQUALS INT_LITERAL SEMICOLON
+{
+  if ($3 <= 0)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
+            "invalid timeout: %d at line %d col %d",
+            $3, @3.first_line, @3.first_column);
+    YYABORT;
+  }
+  conf->timeouts.retx = $3;
+}
+| UDP EQUALS INT_LITERAL SEMICOLON
+{
+  if ($3 <= 0)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
+            "invalid timeout: %d at line %d col %d",
+            $3, @3.first_line, @3.first_column);
+    YYABORT;
+  }
+  conf->timeouts.udp = $3;
+}
+| ICMP EQUALS INT_LITERAL SEMICOLON
+{
+  if ($3 <= 0)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
+            "invalid timeout: %d at line %d col %d",
+            $3, @3.first_line, @3.first_column);
+    YYABORT;
+  }
+  conf->timeouts.icmp = $3;
 }
 ;

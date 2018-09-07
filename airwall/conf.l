@@ -22,6 +22,20 @@
 %x COMMENTS
 %%
 
+timeouts return TIMEOUTS;
+connected return CONNECTED;
+one_fin return ONE_FIN;
+both_fin return BOTH_FIN;
+ul_syn_sent return UL_SYN_SENT;
+ul_syn_rcvd return UL_SYN_RCVD;
+dl_half_open return DL_HALF_OPEN;
+dl_syn_sent return DL_SYN_SENT;
+time_wait return TIME_WAIT;
+reseted return RESETED;
+window_update_sent return WINDOW_UPDATE_SENT;
+retx return RETX;
+
+
 airwallconf  return AIRWALLCONF;
 \{           return OPENBRACE;
 \}           return CLOSEBRACE;
@@ -74,6 +88,7 @@ ul_defaultgw return UL_DEFAULTGW;
 
 tcp          return TCP;
 udp          return UDP;
+icmp         return ICMP;
 tcpudp       return TCPUDP;
 norgw        return NORGW;
 allow_anyport_primary return ALLOW_ANYPORT_PRIMARY;
