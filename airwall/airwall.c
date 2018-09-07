@@ -1356,7 +1356,6 @@ static void process_data(
     {
       proxied_port = entry->nat_port;
     }
-    entry->local_port = proxied_port;
 #ifdef ENABLE_ARP
     if (entry->version == 6)
     {
@@ -1384,6 +1383,7 @@ static void process_data(
 #else
     memcpy(&entry->local_ip, &entry->nat_ip, sizeof(entry->local_ip));
 #endif
+    entry->local_port = proxied_port;
     allocate_udp_port(airwall->porter, entry->nat_port, ntohl(entry->local_ip.ipv4), entry->local_port, 0);
     entry->port_alloced = 1;
     hash_table_add_nogrow_already_bucket_locked(
