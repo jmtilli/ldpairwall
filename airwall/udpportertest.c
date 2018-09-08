@@ -12,7 +12,7 @@ int main(int argc, char **argv)
 
   hash_seed_init();
 
-  init_udp_porter(&porter);
+  init_udp_porter(&porter, 32768, 65536);
   allocate_udp_port(&porter, 8080, local_ip, 22, 0);
   allocate_udp_port(&porter, 8080, local_ip, 22, 0);
   allocate_udp_port(&porter, 8080, local_ip, 22, 0);
@@ -25,7 +25,7 @@ int main(int argc, char **argv)
   deallocate_udp_port(&porter, 8080, !1);
   free_udp_porter(&porter);
 
-  init_udp_porter(&porter);
+  init_udp_porter(&porter, 32768, 65536);
 
   for (i = 0; i < 100; i++)
   {
