@@ -2171,6 +2171,7 @@ static void send_window_update(
   unsigned char *tcpopts;
   int version;
   size_t sz;
+  uint32_t sh;
 
   struct tcp_information info;
 
@@ -2216,11 +2217,13 @@ static void send_window_update(
 
   entry->wan_wscale = wscale;
   entry->wan_sent = tcp_seq_number(origtcp) + (!!was_keepalive);
-  entry->lan_max_window_unscaled = INITIAL_WINDOW >> entry->lan_wscale;
+  sh = (1<<airwall->conf->own_wscale) - 1;
+  entry->lan_max_window_unscaled = (INITIAL_WINDOW + sh) >> airwall->conf->own_wscale;
   entry->wan_acked = tcp_ack_number(origtcp);
   entry->wan_max =
     tcp_ack_number(origtcp) + (tcp_window(origtcp) << entry->wan_wscale);
-  entry->lan_max = tcp_seq_number(origtcp) + INITIAL_WINDOW;
+  entry->lan_max = tcp_seq_number(origtcp) +
+    (entry->lan_max_window_unscaled << airwall->conf->own_wscale);
   entry->lan_sent = tcp_ack_number(origtcp);
 
   entry->wan_max_window_unscaled = tcp_window(origtcp);
@@ -2330,7 +2333,8 @@ static void send_window_update(
 #endif
   tcp_set_seq_number(tcp, tcp_ack_number(origtcp));
   tcp_set_ack_number(tcp, tcp_seq_number(origtcp));
-  tcp_set_window(tcp, INITIAL_WINDOW>>airwall->conf->own_wscale);
+  sh = (1<<airwall->conf->own_wscale) - 1;
+  tcp_set_window(tcp, (INITIAL_WINDOW+sh)>>airwall->conf->own_wscale);
   tcpopts = &((unsigned char*)tcp)[20];
   if (info.options_valid && info.ts_present)
   {
@@ -4523,7 +4527,8 @@ int downlink(
   if (   tcp_ack(ippay)
       && entry->flag_state == FLAG_STATE_DOWNLINK_SYN_SENT
       && resend_request_is_valid_win(tcp_seq_number(ippay), entry->wan_sent,
-                                     INITIAL_WINDOW)
+                                     INITIAL_WINDOW +
+                                       (1<<airwall->conf->own_wscale) - 1)
       && resend_request_is_valid(tcp_ack_number(ippay), entry->wan_acked))
   {
     log_log(LOG_LEVEL_NOTICE, "WORKERDOWNLINK", "resending SYN");
