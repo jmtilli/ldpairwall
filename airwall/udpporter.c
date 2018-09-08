@@ -21,9 +21,18 @@ static uint32_t free_udp_port_hash_fn(struct hash_list_node *node, void *ud)
   return free_udp_port_hash(freeport);
 }
 
-void init_udp_porter(struct udp_porter *porter)
+void init_udp_porter(struct udp_porter *porter, uint32_t portrange_first,
+                     uint32_t portrange_last)
 {
   size_t i;
+  if (portrange_first > 65535)
+  {
+    abort();
+  }
+  if (portrange_last > 65536)
+  {
+    abort();
+  }
   if (hash_table_init(&porter->hash, 65536, free_udp_port_hash_fn, NULL) != 0)
   {
     abort();
@@ -41,8 +50,12 @@ void init_udp_porter(struct udp_porter *porter)
     porter->udpports[i].lan_ip = 0;
     porter->udpports[i].lan_port = 0;
   }
-  for (i = 32768; i < 65536; i++)
+  for (i = portrange_first; i < portrange_last; i++)
   {
+    if (i >= 65536)
+    {
+      abort();
+    }
     porter->udpports[i].available = 1;
     linked_list_add_tail(&porter->udpports[i].node, &porter->udpportcnts[0]);
   }

@@ -119,14 +119,17 @@ int main(int argc, char **argv)
 
   log_open("LDPAIRWALL", LOG_LEVEL_DEBUG, LOG_LEVEL_INFO);
 
-  init_udp_porter(&porter);
-  init_udp_porter(&udp_porter);
-  init_udp_porter(&icmp_porter);
-
   hash_seed_init();
 
   conf_init(&conf);
   confyydirparse(argv[0], "conf.txt", &conf, 0);
+
+  init_udp_porter(&porter,
+                  conf.portranges.tcp.first, conf.portranges.tcp.one_past_last);
+  init_udp_porter(&udp_porter,
+                  conf.portranges.udp.first, conf.portranges.udp.one_past_last);
+  init_udp_porter(&icmp_porter, 0, 65536);
+
   airwall_init(airwall, &conf, &porter, &udp_porter, &icmp_porter);
   worker_local_init(local, airwall, 1, 0, &intf); // FIXME change to non-deterministic
 

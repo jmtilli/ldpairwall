@@ -98,6 +98,8 @@ max_udp_connections return MAX_UDP_CONNECTIONS;
 max_icmp_connections return MAX_ICMP_CONNECTIONS;
 static_mappings return STATIC_MAPPINGS;
 reass_memory_max return REASS_MEMORY_MAX;
+\.\. return DOTS;
+portranges return PORTRANGES;
 
 [0-9]+       {
   char *endptr;

@@ -981,9 +981,9 @@ static void closed_port(int version)
   conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
-  init_udp_porter(&porter);
-  init_udp_porter(&udp_porter);
-  init_udp_porter(&icmp_porter);
+  init_udp_porter(&porter, 32768, 65536);
+  init_udp_porter(&udp_porter, 32768, 65536);
+  init_udp_porter(&icmp_porter, 0, 65536);
   airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
@@ -2389,9 +2389,9 @@ static void three_way_handshake_four_way_fin(int version)
   conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
-  init_udp_porter(&porter);
-  init_udp_porter(&udp_porter);
-  init_udp_porter(&icmp_porter);
+  init_udp_porter(&porter, 32768, 65536);
+  init_udp_porter(&udp_porter, 32768, 65536);
+  init_udp_porter(&icmp_porter, 0, 65536);
   airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
@@ -2453,9 +2453,9 @@ static void established_rst_uplink(int version)
   conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
-  init_udp_porter(&porter);
-  init_udp_porter(&udp_porter);
-  init_udp_porter(&icmp_porter);
+  init_udp_porter(&porter, 32768, 65536);
+  init_udp_porter(&udp_porter, 32768, 65536);
+  init_udp_porter(&icmp_porter, 0, 65536);
   airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
@@ -2607,9 +2607,9 @@ static void established_rst_downlink(int version)
   conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
-  init_udp_porter(&porter);
-  init_udp_porter(&udp_porter);
-  init_udp_porter(&icmp_porter);
+  init_udp_porter(&porter, 32768, 65536);
+  init_udp_porter(&udp_porter, 32768, 65536);
+  init_udp_porter(&icmp_porter, 0, 65536);
   airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
@@ -2762,9 +2762,9 @@ static void syn_proxy_rst_uplink(int version)
   conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
-  init_udp_porter(&porter);
-  init_udp_porter(&udp_porter);
-  init_udp_porter(&icmp_porter);
+  init_udp_porter(&porter, 32768, 65536);
+  init_udp_porter(&udp_porter, 32768, 65536);
+  init_udp_porter(&icmp_porter, 0, 65536);
   airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
@@ -2920,9 +2920,9 @@ static void syn_proxy_rst_downlink(int version)
   conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
-  init_udp_porter(&porter);
-  init_udp_porter(&udp_porter);
-  init_udp_porter(&icmp_porter);
+  init_udp_porter(&porter, 32768, 65536);
+  init_udp_porter(&udp_porter, 32768, 65536);
+  init_udp_porter(&icmp_porter, 0, 65536);
   airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
@@ -3062,9 +3062,9 @@ static void three_way_handshake_ulretransmit(int version)
   conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
-  init_udp_porter(&porter);
-  init_udp_porter(&udp_porter);
-  init_udp_porter(&icmp_porter);
+  init_udp_porter(&porter, 32768, 65536);
+  init_udp_porter(&udp_porter, 32768, 65536);
+  init_udp_porter(&icmp_porter, 0, 65536);
   airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
@@ -3113,9 +3113,9 @@ static void three_way_handshake_dlretransmit(int version)
   conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
-  init_udp_porter(&porter);
-  init_udp_porter(&udp_porter);
-  init_udp_porter(&icmp_porter);
+  init_udp_porter(&porter, 32768, 65536);
+  init_udp_porter(&udp_porter, 32768, 65536);
+  init_udp_porter(&icmp_porter, 0, 65536);
   airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
@@ -3164,9 +3164,9 @@ static void three_way_handshake_findlretransmit(int version)
   conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
-  init_udp_porter(&porter);
-  init_udp_porter(&udp_porter);
-  init_udp_porter(&icmp_porter);
+  init_udp_porter(&porter, 32768, 65536);
+  init_udp_porter(&udp_porter, 32768, 65536);
+  init_udp_porter(&icmp_porter, 0, 65536);
   airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
@@ -3215,9 +3215,9 @@ static void three_way_handshake_finulretransmit(int version)
   conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
-  init_udp_porter(&porter);
-  init_udp_porter(&udp_porter);
-  init_udp_porter(&icmp_porter);
+  init_udp_porter(&porter, 32768, 65536);
+  init_udp_porter(&udp_porter, 32768, 65536);
+  init_udp_porter(&icmp_porter, 0, 65536);
   airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
@@ -3269,9 +3269,9 @@ static void syn_proxy_handshake(int version)
   conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
-  init_udp_porter(&porter);
-  init_udp_porter(&udp_porter);
-  init_udp_porter(&icmp_porter);
+  init_udp_porter(&porter, 32768, 65536);
+  init_udp_porter(&udp_porter, 32768, 65536);
+  init_udp_porter(&icmp_porter, 0, 65536);
   airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
@@ -3327,9 +3327,9 @@ static void syn_proxy_uplink(int version)
   conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
-  init_udp_porter(&porter);
-  init_udp_porter(&udp_porter);
-  init_udp_porter(&icmp_porter);
+  init_udp_porter(&porter, 32768, 65536);
+  init_udp_porter(&udp_porter, 32768, 65536);
+  init_udp_porter(&icmp_porter, 0, 65536);
   airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
@@ -3364,9 +3364,9 @@ static void syn_proxy_uplink(int version)
   worker_local_free(&local);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
-  init_udp_porter(&porter);
-  init_udp_porter(&udp_porter);
-  init_udp_porter(&icmp_porter);
+  init_udp_porter(&porter, 32768, 65536);
+  init_udp_porter(&udp_porter, 32768, 65536);
+  init_udp_porter(&icmp_porter, 0, 65536);
   airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
@@ -3401,9 +3401,9 @@ static void syn_proxy_uplink(int version)
   worker_local_free(&local);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
-  init_udp_porter(&porter);
-  init_udp_porter(&udp_porter);
-  init_udp_porter(&icmp_porter);
+  init_udp_porter(&porter, 32768, 65536);
+  init_udp_porter(&udp_porter, 32768, 65536);
+  init_udp_porter(&icmp_porter, 0, 65536);
   airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
@@ -3470,9 +3470,9 @@ static void syn_proxy_downlink(int version)
   conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
-  init_udp_porter(&porter);
-  init_udp_porter(&udp_porter);
-  init_udp_porter(&icmp_porter);
+  init_udp_porter(&porter, 32768, 65536);
+  init_udp_porter(&udp_porter, 32768, 65536);
+  init_udp_porter(&icmp_porter, 0, 65536);
   airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
@@ -3507,9 +3507,9 @@ static void syn_proxy_downlink(int version)
   worker_local_free(&local);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
-  init_udp_porter(&porter);
-  init_udp_porter(&udp_porter);
-  init_udp_porter(&icmp_porter);
+  init_udp_porter(&porter, 32768, 65536);
+  init_udp_porter(&udp_porter, 32768, 65536);
+  init_udp_porter(&icmp_porter, 0, 65536);
   airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
@@ -3544,9 +3544,9 @@ static void syn_proxy_downlink(int version)
   worker_local_free(&local);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
-  init_udp_porter(&porter);
-  init_udp_porter(&udp_porter);
-  init_udp_porter(&icmp_porter);
+  init_udp_porter(&porter, 32768, 65536);
+  init_udp_porter(&udp_porter, 32768, 65536);
+  init_udp_porter(&icmp_porter, 0, 65536);
   airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
@@ -3614,9 +3614,9 @@ static void syn_proxy_uplink_downlink(int version)
   conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
-  init_udp_porter(&porter);
-  init_udp_porter(&udp_porter);
-  init_udp_porter(&icmp_porter);
+  init_udp_porter(&porter, 32768, 65536);
+  init_udp_porter(&udp_porter, 32768, 65536);
+  init_udp_porter(&icmp_porter, 0, 65536);
   airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
@@ -3684,9 +3684,9 @@ static void syn_proxy_closed_port(int version)
   conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
-  init_udp_porter(&porter);
-  init_udp_porter(&udp_porter);
-  init_udp_porter(&icmp_porter);
+  init_udp_porter(&porter, 32768, 65536);
+  init_udp_porter(&udp_porter, 32768, 65536);
+  init_udp_porter(&icmp_porter, 0, 65536);
   airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
@@ -3737,9 +3737,9 @@ static void syn_proxy_handshake_2_1_1(int version)
   conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
-  init_udp_porter(&porter);
-  init_udp_porter(&udp_porter);
-  init_udp_porter(&icmp_porter);
+  init_udp_porter(&porter, 32768, 65536);
+  init_udp_porter(&udp_porter, 32768, 65536);
+  init_udp_porter(&icmp_porter, 0, 65536);
   airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
@@ -3794,9 +3794,9 @@ static void syn_proxy_handshake_1_2_1(int version)
   conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
-  init_udp_porter(&porter);
-  init_udp_porter(&udp_porter);
-  init_udp_porter(&icmp_porter);
+  init_udp_porter(&porter, 32768, 65536);
+  init_udp_porter(&udp_porter, 32768, 65536);
+  init_udp_porter(&icmp_porter, 0, 65536);
   airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
@@ -3851,9 +3851,9 @@ static void syn_proxy_handshake_1_1_2(int version)
   conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
-  init_udp_porter(&porter);
-  init_udp_porter(&udp_porter);
-  init_udp_porter(&icmp_porter);
+  init_udp_porter(&porter, 32768, 65536);
+  init_udp_porter(&udp_porter, 32768, 65536);
+  init_udp_porter(&icmp_porter, 0, 65536);
   airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
@@ -3908,9 +3908,9 @@ static void syn_proxy_handshake_1_1_1_keepalive(int version)
   conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
-  init_udp_porter(&porter);
-  init_udp_porter(&udp_porter);
-  init_udp_porter(&icmp_porter);
+  init_udp_porter(&porter, 32768, 65536);
+  init_udp_porter(&udp_porter, 32768, 65536);
+  init_udp_porter(&icmp_porter, 0, 65536);
   airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)
@@ -3965,9 +3965,9 @@ static void syn_proxy_handshake_1_1_1_zerowindowprobe(int version)
   conf_init(&conf);
 
   confyydirparse(argv0, "conf.txt", &conf, 0);
-  init_udp_porter(&porter);
-  init_udp_porter(&udp_porter);
-  init_udp_porter(&icmp_porter);
+  init_udp_porter(&porter, 32768, 65536);
+  init_udp_porter(&udp_porter, 32768, 65536);
+  init_udp_porter(&icmp_porter, 0, 65536);
   airwall_init(&airwall, &conf, &porter, &udp_porter, &icmp_porter);
 
   if (ll_alloc_st_init(&st, POOL_SIZE, BLOCK_SIZE) != 0)

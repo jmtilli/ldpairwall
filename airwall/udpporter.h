@@ -22,7 +22,8 @@ struct udp_porter {
   struct hash_table hash;
 };
 
-void init_udp_porter(struct udp_porter *porter);
+void init_udp_porter(struct udp_porter *porter, uint32_t portrange_first,
+                     uint32_t portrange_last);
 
 void free_udp_porter(struct udp_porter *porter);
 

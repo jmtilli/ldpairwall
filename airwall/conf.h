@@ -27,6 +27,16 @@ struct ul_addr {
   uint32_t addr;
 };
 
+struct portrange {
+  uint32_t first;
+  uint32_t one_past_last;
+};
+
+struct portranges {
+  struct portrange tcp;
+  struct portrange udp;
+};
+
 struct static_mapping {
   uint32_t ext_addr;
   uint16_t ext_port;
@@ -106,6 +116,7 @@ struct conf {
   uint32_t max_icmp_connections;
   uint32_t reass_memory_max;
   struct timeouts timeouts;
+  struct portranges portranges;
 };
 
 static inline int ul_addr_is_mine(struct conf *conf, uint32_t addr)
@@ -187,6 +198,10 @@ static inline void conf_init(struct conf *conf)
   conf->max_udp_connections = 131072;
   conf->max_icmp_connections = 131072;
   conf->reass_memory_max = 33554432;
+  conf->portranges.tcp.first = 32768;
+  conf->portranges.tcp.one_past_last = 65536;
+  conf->portranges.udp.first = 32768;
+  conf->portranges.udp.one_past_last = 65536;
 }
 
 static inline void conf_free(struct conf *conf)

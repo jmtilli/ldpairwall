@@ -65,6 +65,8 @@ int confyywrap(yyscan_t scanner)
 %token ENABLE_ACK
 %token TCP UDP ICMP TCPUDP NORGW
 %token MAX_TCP_CONNECTIONS MAX_UDP_CONNECTIONS MAX_ICMP_CONNECTIONS
+%token DOTS
+%token PORTRANGES
 
 %token DL_ADDR
 %token UL_ADDR
@@ -147,6 +149,10 @@ ratehashlist:
 
 timeoutlist:
 | timeoutlist timeout_entry
+;
+
+portrangelist:
+| portrangelist portrange_entry
 ;
 
 ul_alternatives:
@@ -699,6 +705,7 @@ TEST_CONNECTIONS SEMICOLON
 | HOSTS EQUALS OPENBRACE hostslist_maybe CLOSEBRACE SEMICOLON
 | STATIC_MAPPINGS EQUALS OPENBRACE static_mappings_list_maybe CLOSEBRACE SEMICOLON
 | TIMEOUTS EQUALS OPENBRACE timeoutlist CLOSEBRACE SEMICOLON
+| PORTRANGES EQUALS OPENBRACE portrangelist CLOSEBRACE SEMICOLON
 ;
 
 protocol:
@@ -1017,5 +1024,46 @@ CONNECTED EQUALS INT_LITERAL SEMICOLON
     YYABORT;
   }
   conf->timeouts.icmp = $3;
+}
+;
+
+portrange_entry:
+UDP EQUALS INT_LITERAL DOTS INT_LITERAL SEMICOLON
+{
+  if ($3 <= 0 || $3 >= 65536)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
+            "invalid portrange value: %d at line %d col %d",
+            $3, @3.first_line, @3.first_column);
+    YYABORT;
+  }
+  if ($5 <= 0 || $5 > 65536)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
+            "invalid portrange value: %d at line %d col %d",
+            $5, @5.first_line, @5.first_column);
+    YYABORT;
+  }
+  conf->portranges.udp.first = $3;
+  conf->portranges.udp.one_past_last = $5;
+}
+| TCP EQUALS INT_LITERAL DOTS INT_LITERAL SEMICOLON
+{
+  if ($3 <= 0 || $3 >= 65536)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
+            "invalid portrange value: %d at line %d col %d",
+            $3, @3.first_line, @3.first_column);
+    YYABORT;
+  }
+  if ($5 <= 0 || $5 > 65536)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
+            "invalid portrange value: %d at line %d col %d",
+            $5, @5.first_line, @5.first_column);
+    YYABORT;
+  }
+  conf->portranges.tcp.first = $3;
+  conf->portranges.tcp.one_past_last = $5;
 }
 ;
