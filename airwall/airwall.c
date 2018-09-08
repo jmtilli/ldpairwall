@@ -12,7 +12,6 @@ const char http_connect_revdatabuf[19] = {
   '\r', '\n',
 };
 
-#define MAX_FRAG 65535
 #define INITIAL_WINDOW (1<<14)
 #define IPV6_FRAG_CUTOFF 512
 
@@ -4266,7 +4265,7 @@ int downlink(
             !between(
               entry->wan_acked - (entry->wan_max_window_unscaled<<entry->wan_wscale),
               tcp_ack_number(ippay),
-              entry->lan_sent + 1 + MAX_FRAG) ||
+              entry->lan_sent + 1) ||
             (!between(
                wan_min, first_seq, entry->lan_max+1)
              &&
@@ -4561,7 +4560,7 @@ int downlink(
   if (!between(
     entry->wan_acked - (entry->wan_max_window_unscaled<<entry->wan_wscale),
     tcp_ack_number(ippay),
-    entry->lan_sent + 1 + MAX_FRAG))
+    entry->lan_sent + 1))
   {
     airwall_entry_to_str(statebuf, sizeof(statebuf), entry);
     airwall_packet_to_str(packetbuf, sizeof(packetbuf), ether);
@@ -5607,7 +5606,7 @@ int uplink(
   if (!between(
     entry->lan_acked - (entry->lan_max_window_unscaled<<entry->lan_wscale),
     tcp_ack_number(ippay),
-    entry->wan_sent + 1 + MAX_FRAG))
+    entry->wan_sent + 1))
   {
     airwall_entry_to_str(statebuf, sizeof(statebuf), entry);
     airwall_packet_to_str(packetbuf, sizeof(packetbuf), ether);
