@@ -16,7 +16,7 @@ void reasshlctx_expiry_fn(
   LINKED_LIST_FOR_EACH_SAFE(node, tmp, &hl->list)
   {
     struct reasshlentry *e = CONTAINER_OF(node, struct reasshlentry, listnode);
-    if (time64 > e->time64 + REASS_TIMEOUT_SECS*1000ULL*1000ULL)
+    if (time64 > e->time64 + hl->timeout_secs*1000ULL*1000ULL)
     {
       comboctx_free(loc, &e->combo);
       hash_table_delete(&hl->hash, &e->node, reasshlhash(e));
@@ -26,7 +26,7 @@ void reasshlctx_expiry_fn(
       e = NULL;
     }
   }
-  hl->timer.time64 += REASS_TIMER_SECS*1000ULL*1000ULL;
+  hl->timer.time64 += hl->timer_secs*1000ULL*1000ULL;
   timer_linkheap_add(hl->heap, &hl->timer);
 }
 

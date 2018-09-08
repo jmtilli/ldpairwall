@@ -91,6 +91,8 @@ int confyywrap(yyscan_t scanner)
 %token RESETED
 %token WINDOW_UPDATE_SENT
 %token RETX
+%token REASS_TIMEOUT
+%token REASS_TIMER
 
 %type<i> sackconflictval
 %type<i> own_sack
@@ -1024,6 +1026,28 @@ CONNECTED EQUALS INT_LITERAL SEMICOLON
     YYABORT;
   }
   conf->timeouts.icmp = $3;
+}
+| REASS_TIMEOUT EQUALS INT_LITERAL SEMICOLON
+{
+  if ($3 <= 0)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
+            "invalid timeout: %d at line %d col %d",
+            $3, @3.first_line, @3.first_column);
+    YYABORT;
+  }
+  conf->timeouts.reass_timeout = $3;
+}
+| REASS_TIMER EQUALS INT_LITERAL SEMICOLON
+{
+  if ($3 <= 0)
+  {
+    log_log(LOG_LEVEL_CRIT, "CONFPARSER",
+            "invalid timeout: %d at line %d col %d",
+            $3, @3.first_line, @3.first_column);
+    YYABORT;
+  }
+  conf->timeouts.reass_timer = $3;
 }
 ;
 
