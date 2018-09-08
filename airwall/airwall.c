@@ -369,9 +369,9 @@ static size_t airwall_entry_to_str(
   off += snprintf(str + off, bufsiz - off, ", ");
   off += snprintf(str + off, bufsiz - off, "wscalediff=%d", e->wscalediff);
   off += snprintf(str + off, bufsiz - off, ", ");
-  off += snprintf(str + off, bufsiz - off, "lan_wscale=%d", e->lan_wscale);
+  off += snprintf(str + off, bufsiz - off, "lan_wscale=%d", e->statetrack.lan.wscale);
   off += snprintf(str + off, bufsiz - off, ", ");
-  off += snprintf(str + off, bufsiz - off, "wan_wscale=%d", e->wan_wscale);
+  off += snprintf(str + off, bufsiz - off, "wan_wscale=%d", e->statetrack.wan.wscale);
   off += snprintf(str + off, bufsiz - off, ", ");
   off += snprintf(str + off, bufsiz - off, "was_synproxied=%d", e->was_synproxied);
   off += snprintf(str + off, bufsiz - off, ", ");
@@ -381,21 +381,21 @@ static size_t airwall_entry_to_str(
   off += snprintf(str + off, bufsiz - off, ", ");
   off += snprintf(str + off, bufsiz - off, "tsoffset=%u", e->tsoffset);
   off += snprintf(str + off, bufsiz - off, ", ");
-  off += snprintf(str + off, bufsiz - off, "lan_sent=%u", e->lan_sent);
+  off += snprintf(str + off, bufsiz - off, "lan_sent=%u", e->statetrack.lan.sent);
   off += snprintf(str + off, bufsiz - off, ", ");
-  off += snprintf(str + off, bufsiz - off, "wan_sent=%u", e->wan_sent);
+  off += snprintf(str + off, bufsiz - off, "wan_sent=%u", e->statetrack.wan.sent);
   off += snprintf(str + off, bufsiz - off, ", ");
-  off += snprintf(str + off, bufsiz - off, "lan_acked=%u", e->lan_acked);
+  off += snprintf(str + off, bufsiz - off, "lan_acked=%u", e->statetrack.lan.acked);
   off += snprintf(str + off, bufsiz - off, ", ");
-  off += snprintf(str + off, bufsiz - off, "wan_acked=%u", e->wan_acked);
+  off += snprintf(str + off, bufsiz - off, "wan_acked=%u", e->statetrack.wan.acked);
   off += snprintf(str + off, bufsiz - off, ", ");
-  off += snprintf(str + off, bufsiz - off, "lan_max=%u", e->lan_max);
+  off += snprintf(str + off, bufsiz - off, "lan_max=%u", e->statetrack.lan.max);
   off += snprintf(str + off, bufsiz - off, ", ");
-  off += snprintf(str + off, bufsiz - off, "wan_max=%u", e->wan_max);
+  off += snprintf(str + off, bufsiz - off, "wan_max=%u", e->statetrack.wan.max);
   off += snprintf(str + off, bufsiz - off, ", ");
-  off += snprintf(str + off, bufsiz - off, "lan_max_window_unscaled=%u", e->lan_max_window_unscaled);
+  off += snprintf(str + off, bufsiz - off, "lan_max_window_unscaled=%u", e->statetrack.lan.max_window_unscaled);
   off += snprintf(str + off, bufsiz - off, ", ");
-  off += snprintf(str + off, bufsiz - off, "wan_max_window_unscaled=%u", e->wan_max_window_unscaled);
+  off += snprintf(str + off, bufsiz - off, "wan_max_window_unscaled=%u", e->statetrack.wan.max_window_unscaled);
   return off;
 }
 
@@ -529,6 +529,22 @@ static inline int rst_is_valid(uint32_t rst_seq, uint32_t ref_seq)
   }
   return diff >= -3;
 }
+
+
+static inline int
+rst_is_valid_downlink(uint32_t seq, struct tcp_statetrack_entry *statetrack)
+{
+  return rst_is_valid(seq, statetrack->wan.sent) ||
+         rst_is_valid(seq, statetrack->lan.acked);
+}
+
+static inline int
+rst_is_valid_uplink(uint32_t seq, struct tcp_statetrack_entry *statetrack)
+{
+  return rst_is_valid(seq, statetrack->lan.sent) ||
+         rst_is_valid(seq, statetrack->wan.acked);
+}
+
 
 static inline int resend_request_is_valid_win(uint32_t seq, uint32_t ref_seq,
                                               uint32_t window)
@@ -723,6 +739,202 @@ static inline uint32_t between(uint32_t a, uint32_t x, uint32_t b)
   else
   {
     return x >= a || x < b;
+  }
+}
+
+struct seqs {
+  uint32_t first_seq;
+  uint32_t last_seq;
+};
+
+static inline int
+seqs_valid_downlink(struct airwall_hash_entry *entry,
+                    struct seqs *seqs,
+                    const char *ether, const char *ip, const char *ippay,
+                    int log,
+                    char *statebuf, size_t statebufsiz,
+                    char *packetbuf, size_t packetbufsiz)
+{
+  uint32_t wan_min;
+
+  if (!between(
+    entry->statetrack.wan.acked -
+      (entry->statetrack.wan.max_window_unscaled<<entry->statetrack.wan.wscale),
+    tcp_ack_number(ippay),
+    entry->statetrack.lan.sent + 1))
+  {
+    if (log)
+    {
+      airwall_entry_to_str(statebuf, statebufsiz, entry);
+      airwall_packet_to_str(packetbuf, packetbufsiz, ether);
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "packet has invalid ACK number, state: %s, packet: %s", statebuf, packetbuf);
+    }
+    return 0;
+  }
+  if (unlikely(tcp_fin(ippay)))
+  {
+    if (ip46_hdr_cksum_calc(ip) != 0)
+    {
+      if (log)
+      {
+        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "invalid IP hdr cksum");
+      }
+      return 0;
+    }
+    if (tcp46_cksum_calc(ip) != 0)
+    {
+      if (log)
+      {
+        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "invalid TCP hdr cksum");
+      }
+      return 0;
+    }
+  }
+  wan_min =
+    entry->statetrack.wan.sent -
+      (entry->statetrack.lan.max_window_unscaled<<entry->statetrack.lan.wscale);
+  if (
+    !between(
+      wan_min, seqs->first_seq, entry->statetrack.lan.max+1)
+    &&
+    !between(
+      wan_min, seqs->last_seq, entry->statetrack.lan.max+1)
+    )
+  {
+    if (log)
+    {
+      airwall_entry_to_str(statebuf, statebufsiz, entry);
+      airwall_packet_to_str(packetbuf, packetbufsiz, ether);
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "packet has invalid SEQ number, state: %s, packet: %s", statebuf, packetbuf);
+    }
+    return 0;
+  }
+  return 1;
+}
+
+static inline int
+seqs_valid_uplink(struct airwall_hash_entry *entry,
+                  struct seqs *seqs,
+                  const char *ether, const char *ip, const char *ippay,
+                  int log,
+                  char *statebuf, size_t statebufsiz,
+                  char *packetbuf, size_t packetbufsiz)
+{
+  uint32_t lan_min;
+
+  if (!between(
+    entry->statetrack.lan.acked -
+      (entry->statetrack.lan.max_window_unscaled<<entry->statetrack.lan.wscale),
+    tcp_ack_number(ippay),
+    entry->statetrack.wan.sent + 1))
+  {
+    if (log)
+    {
+      airwall_entry_to_str(statebuf, statebufsiz, entry);
+      airwall_packet_to_str(packetbuf, packetbufsiz, ether);
+      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "packet has invalid ACK number, state: %s, packet: %s", statebuf, packetbuf);
+    }
+    return 0;
+  }
+  if (unlikely(tcp_fin(ippay)))
+  {
+    if (ip46_hdr_cksum_calc(ip) != 0)
+    {
+      if (log)
+      {
+        log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "invalid IP hdr cksum");
+      }
+      return 0;
+    }
+    if (tcp46_cksum_calc(ip) != 0)
+    {
+      if (log)
+      {
+        log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "invalid TCP hdr cksum");
+      }
+      return 0;
+    }
+  }
+  lan_min =
+    entry->statetrack.lan.sent -
+      (entry->statetrack.wan.max_window_unscaled<<entry->statetrack.wan.wscale);
+  if (
+    !between(
+      lan_min, seqs->first_seq, entry->statetrack.wan.max+1)
+    &&
+    !between(
+      lan_min, seqs->last_seq, entry->statetrack.wan.max+1)
+    )
+  {
+    if (log)
+    {
+      airwall_entry_to_str(statebuf, statebufsiz, entry);
+      airwall_packet_to_str(packetbuf, packetbufsiz, ether);
+      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "packet has invalid SEQ number, state: %s, packet: %s", statebuf, packetbuf);
+    }
+    return 0;
+  }
+  return 1;
+}
+
+static inline void
+calc_seqs(struct seqs *seqs, const char *ip, const char *ippay, uint32_t offset)
+{
+  int32_t data_len;
+  uint32_t ip_len = ip_total_len(ip);
+  uint32_t ihl = ip_hdr_len(ip);
+
+  seqs->first_seq = tcp_seq_number(ippay);
+  data_len =
+    ((int32_t)ip_len) - ((int32_t)ihl) - ((int32_t)tcp_data_offset(ippay));
+  if (data_len < 0)
+  {
+    // This can occur in fragmented packets. We don't then know the true
+    // data length, and can therefore drop packets that would otherwise be
+    // valid.
+    data_len = 0;
+  }
+  seqs->last_seq = seqs->first_seq + data_len - 1;
+
+  seqs->first_seq += offset;
+  seqs->last_seq += offset;
+
+  if (unlikely(tcp_fin(ippay)))
+  {
+    seqs->last_seq += 1;
+  }
+}
+
+
+static inline void
+update_side(struct tcp_statetrackside_entry *side,
+            struct seqs *seqs, const char *ippay)
+{
+  if (tcp_window(ippay) > side->max_window_unscaled)
+  {
+    side->max_window_unscaled = tcp_window(ippay);
+    if (side->max_window_unscaled == 0)
+    {
+      side->max_window_unscaled = 1;
+    }
+  }
+
+  if (seq_cmp(seqs->last_seq, side->sent) >= 0)
+  {
+    side->sent = seqs->last_seq + 1;
+  }
+  if (likely(tcp_ack(ippay)))
+  {
+    uint32_t ack = tcp_ack_number(ippay);
+    uint16_t window = tcp_window(ippay);
+    if (seq_cmp(ack, side->acked) >= 0)
+    {
+      side->acked = ack;
+    }
+    if (seq_cmp(ack + (window << side->wscale), side->max) >= 0)
+    {
+      side->max = ack + (window << side->wscale);
+    }
   }
 }
 
@@ -1836,7 +2048,7 @@ static void send_or_resend_syn(
   // pad, kind 0 len 1
   tcpopts[0] = 3;
   tcpopts[1] = 3;
-  tcpopts[2] = entry->wan_wscale;
+  tcpopts[2] = entry->statetrack.wan.wscale;
   tcpopts[3] = 1;
   tcpopts[4] = 2;
   tcpopts[5] = 4;
@@ -1901,6 +2113,18 @@ static void send_or_resend_syn(
   port->portfunc(pktstruct, port->userdata);
 }
 
+static inline uint32_t get_wan_min(struct tcp_statetrack_entry *statetrack)
+{
+  return statetrack->wan.sent -
+    (statetrack->lan.max_window_unscaled<<statetrack->lan.wscale);
+}
+
+static inline uint32_t get_lan_min(struct tcp_statetrack_entry *statetrack)
+{
+  return statetrack->lan.sent -
+    (statetrack->wan.max_window_unscaled<<statetrack->wan.wscale);
+}
+
 static void resend_syn(
   void *orig, struct worker_local *local, struct port *port,
   struct ll_alloc_st *st,
@@ -1909,6 +2133,7 @@ static void resend_syn(
 {
   void *origip;
   void *origtcp;
+  struct seqs seqs;
 
   if (entry->flag_state != FLAG_STATE_DOWNLINK_SYN_SENT)
   {
@@ -1918,26 +2143,9 @@ static void resend_syn(
   origip = ether_payload(orig);
   origtcp = ip46_payload(origip);
 
-  if (seq_cmp(tcp_seq_number(origtcp), entry->wan_sent) >= 0)
-  {
-    entry->wan_sent = tcp_seq_number(origtcp);
-  }
-  if (seq_cmp(tcp_ack_number(origtcp), entry->wan_acked) >= 0)
-  {
-    entry->wan_acked = tcp_ack_number(origtcp);
-  }
-  if (seq_cmp(
-    tcp_ack_number(origtcp) + (tcp_window(origtcp) << entry->wan_wscale),
-    entry->wan_max) >= 0)
-  {
-    entry->wan_max =
-      tcp_ack_number(origtcp) + (tcp_window(origtcp) << entry->wan_wscale);
-  }
+  calc_seqs(&seqs, origip, origtcp, 0);
+  update_side(&entry->statetrack.wan, &seqs, origtcp);
 
-  if (tcp_window(origtcp) > entry->wan_max_window_unscaled)
-  {
-    entry->wan_max_window_unscaled = tcp_window(origtcp);
-  }
   entry->timer.time64 = time64 + local->airwall->conf->timeouts.dl_syn_sent*1000ULL*1000ULL;
   timer_linkheap_modify(&local->timers, &entry->timer);
 
@@ -2012,9 +2220,9 @@ static void send_data_only(
     {
       curpay = entry->detect->acked - curstart;
     }
-    if (curpay > ((uint32_t)tcp_window(origtcp)) << entry->lan_wscale)
+    if (curpay > ((uint32_t)tcp_window(origtcp)) << entry->statetrack.lan.wscale)
     {
-      curpay = tcp_window(origtcp) << entry->lan_wscale;
+      curpay = tcp_window(origtcp) << entry->statetrack.lan.wscale;
     }
   
     memcpy(ether_src(data), ether_dst(orig), 6);
@@ -2043,7 +2251,7 @@ static void send_data_only(
     tcp_set_seq_number(tcp, curstart + entry->remote_isn + 1);
     tcp_set_ack_number(tcp,
       entry->local_isn+1-entry->seqoffset); // FIXME entry->wan_acked?
-    tcp_set_window(tcp, entry->wan_max_window_unscaled);
+    tcp_set_window(tcp, entry->statetrack.wan.max_window_unscaled);
   
     tcpopts = &((unsigned char*)tcp)[20];
   
@@ -2130,7 +2338,7 @@ static void send_ack_only(
   tcp_set_data_offset(tcp, sizeof(ack) - 14 - 40);
   tcp_set_seq_number(tcp, tcp_ack_number(origtcp));
   tcp_set_ack_number(tcp, tcp_seq_number(origtcp)+1);
-  tcp_set_window(tcp, entry->wan_max_window_unscaled);
+  tcp_set_window(tcp, entry->statetrack.wan.max_window_unscaled);
 
   tcpopts = &((unsigned char*)tcp)[20];
 
@@ -2215,21 +2423,22 @@ static void send_window_update(
     entry->state_data.downlink_syn_sent.remote_timestamp = info.ts;
   }
 
-  entry->wan_wscale = wscale;
-  entry->wan_sent = tcp_seq_number(origtcp) + (!!was_keepalive);
+  entry->statetrack.wan.wscale = wscale;
+  entry->statetrack.wan.sent = tcp_seq_number(origtcp) + (!!was_keepalive);
   sh = (1<<airwall->conf->own_wscale) - 1;
-  entry->lan_max_window_unscaled = (INITIAL_WINDOW + sh) >> airwall->conf->own_wscale;
-  entry->wan_acked = tcp_ack_number(origtcp);
-  entry->wan_max =
-    tcp_ack_number(origtcp) + (tcp_window(origtcp) << entry->wan_wscale);
-  entry->lan_max = tcp_seq_number(origtcp) +
-    (entry->lan_max_window_unscaled << airwall->conf->own_wscale);
-  entry->lan_sent = tcp_ack_number(origtcp);
+  entry->statetrack.lan.max_window_unscaled = (INITIAL_WINDOW + sh) >> airwall->conf->own_wscale;
+  entry->statetrack.wan.acked = tcp_ack_number(origtcp);
+  entry->statetrack.wan.max =
+    tcp_ack_number(origtcp) +
+      (tcp_window(origtcp) << entry->statetrack.wan.wscale);
+  entry->statetrack.lan.max = tcp_seq_number(origtcp) +
+    (entry->statetrack.lan.max_window_unscaled << airwall->conf->own_wscale);
+  entry->statetrack.lan.sent = tcp_ack_number(origtcp);
 
-  entry->wan_max_window_unscaled = tcp_window(origtcp);
-  if (entry->wan_max_window_unscaled == 0)
+  entry->statetrack.wan.max_window_unscaled = tcp_window(origtcp);
+  if (entry->statetrack.wan.max_window_unscaled == 0)
   {
-    entry->wan_max_window_unscaled = 1;
+    entry->statetrack.wan.max_window_unscaled = 1;
   }
 
 #if 0 // Not yet needed at this stage, only after first data arrives
@@ -2562,9 +2771,13 @@ static void send_ack_and_window_update(
   if (entry->revdata)
   {
     // FIXME we need capability to retransmit!!! Otherwise will work badly!!!
+    struct seqs seqs;
     char *tcppay = ((char*)tcp) + tcp_data_offset(tcp);
     memcpy(tcppay, http_connect_revdatabuf, rsz);
     entry->seqoffset += rsz;
+
+    calc_seqs(&seqs, ip, tcp, 0);
+    update_side(&entry->statetrack.lan, &seqs, tcp);
 
     entry->retx_timer.time64 = time64 + local->airwall->conf->timeouts.retx*1000ULL*1000ULL;
     entry->retx_timer.fn = airwall_retx_fn;
@@ -3672,6 +3885,776 @@ static int downlink_udp(
   return 0;
 }
 
+static inline void update_tcp_timeout(struct airwall_hash_entry *entry,
+                                      struct worker_local *local,
+                                      uint64_t time64)
+{
+  uint64_t next64;
+  if (entry->flag_state == FLAG_STATE_RESETED)
+  {
+    next64 = time64 + local->airwall->conf->timeouts.reseted*1000ULL*1000ULL;
+  }
+  else if ((entry->flag_state & FLAG_STATE_UPLINK_FIN) &&
+           (entry->flag_state & FLAG_STATE_DOWNLINK_FIN))
+  {
+    next64 = time64 + local->airwall->conf->timeouts.both_fin*1000ULL*1000ULL;
+  }
+  else if (entry->flag_state & (FLAG_STATE_UPLINK_FIN|FLAG_STATE_DOWNLINK_FIN))
+  {
+    next64 = time64 + local->airwall->conf->timeouts.one_fin*1000ULL*1000ULL;
+  }
+  else
+  {
+    next64 = time64 + local->airwall->conf->timeouts.connected*1000ULL*1000ULL;
+  }
+  if (abs(next64 - entry->timer.time64) >= 1000*1000)
+  {
+    worker_local_wrlock(local);
+    entry->timer.time64 = next64;
+    timer_linkheap_modify(&local->timers, &entry->timer);
+    worker_local_wrunlock(local);
+  }
+}
+
+static void
+handle_ack_cookie(void *ether, void *ip, void *ippay, // RFE const
+                  int version,
+                  struct airwall_hash_entry *entry,
+                  struct worker_local *local,
+                  struct airwall *airwall,
+                  uint64_t time64,
+                  char *packetbuf, size_t packetbufsiz,
+                  char *statebuf, size_t statebufsiz,
+                  struct port *port,
+                  struct ll_alloc_st *st)
+{
+  uint32_t ack_num = tcp_ack_number(ippay);
+  uint32_t other_seq = tcp_seq_number(ippay);
+  uint16_t mss;
+  uint16_t tsmss;
+  uint8_t tswscale;
+  uint8_t wscale, sack_permitted;
+  int ok;
+  int was_keepalive = 0;
+  struct tcp_information tcpinfo;
+  if (ip46_hdr_cksum_calc(ip) != 0)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "invalid IP hdr cksum");
+    return;
+  }
+  if (tcp46_cksum_calc(ip) != 0)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "invalid TCP hdr cksum");
+    return;
+  }
+  if (version == 4)
+  {
+    ok = verify_cookie(
+      &local->info, airwall, ip_dst(ip), ip_src(ip),
+      tcp_dst_port(ippay), tcp_src_port(ippay), ack_num - 1,
+      &mss, &wscale, &sack_permitted, other_seq - 1);
+    if (!ok)
+    {
+      other_seq++;
+      ok = verify_cookie(
+        &local->info, airwall, ip_dst(ip), ip_src(ip),
+        tcp_dst_port(ippay), tcp_src_port(ippay), ack_num - 1,
+        &mss, &wscale, &sack_permitted, other_seq - 1);
+      if (ok)
+      {
+        airwall_packet_to_str(packetbuf, packetbufsiz, ether);
+        log_log(
+          LOG_LEVEL_NOTICE, "WORKERDOWNLINK",
+          "SYN proxy detected keepalive packet opening connection: %s",
+          packetbuf);
+        was_keepalive = 1;
+      }
+    }
+  }
+  else
+  {
+    ok = verify_cookie6(
+      &local->info, airwall, ipv6_const_dst(ip), ipv6_const_src(ip),
+      tcp_dst_port(ippay), tcp_src_port(ippay), ack_num - 1,
+      &mss, &wscale, &sack_permitted, other_seq - 1);
+    if (!ok)
+    {
+      other_seq++;
+      ok = verify_cookie6(
+        &local->info, airwall, ipv6_const_dst(ip), ipv6_const_src(ip),
+        tcp_dst_port(ippay), tcp_src_port(ippay), ack_num - 1,
+        &mss, &wscale, &sack_permitted, other_seq - 1);
+      if (ok)
+      {
+        airwall_packet_to_str(packetbuf, packetbufsiz, ether);
+        log_log(
+          LOG_LEVEL_NOTICE, "WORKERDOWNLINK",
+          "SYN proxy detected keepalive packet opening connection6: %s",
+          packetbuf);
+        was_keepalive = 1;
+      }
+    }
+  }
+  if (ok)
+  {
+    tcp_parse_options(ippay, &tcpinfo); // XXX send_syn reparses
+    if (tcpinfo.options_valid && tcpinfo.ts_present)
+    {
+      if (version == 4)
+      {
+        if (verify_timestamp(
+          &local->info, airwall, ip_dst(ip), ip_src(ip),
+          tcp_dst_port(ippay), tcp_src_port(ippay), tcpinfo.tsecho,
+          &tsmss, &tswscale))
+        {
+          if (tsmss > mss)
+          {
+            mss = tsmss;
+          }
+          if (tswscale > wscale)
+          {
+            wscale = tswscale;
+          }
+        }
+      }
+      else
+      {
+        if (verify_timestamp6(
+          &local->info, airwall, ipv6_const_dst(ip), ipv6_const_src(ip),
+          tcp_dst_port(ippay), tcp_src_port(ippay), tcpinfo.tsecho,
+          &tsmss, &tswscale))
+        {
+          if (tsmss > mss)
+          {
+            mss = tsmss;
+          }
+          if (tswscale > wscale)
+          {
+            wscale = tswscale;
+          }
+        }
+      }
+    }
+  }
+  if (!ok)
+  {
+    if (entry != NULL)
+    {
+      airwall_entry_to_str(statebuf, statebufsiz, entry);
+      airwall_packet_to_str(packetbuf, packetbufsiz, ether);
+      log_log(
+        LOG_LEVEL_ERR, "WORKERDOWNLINK",
+        "entry found, A/SAFR set, SYN cookie invalid, state: %s, packet: %s", statebuf, packetbuf);
+    }
+    else
+    {
+      airwall_packet_to_str(packetbuf, packetbufsiz, ether);
+      log_log(
+        LOG_LEVEL_ERR, "WORKERDOWNLINK",
+        "entry not found but A/SAFR set, SYN cookie invalid, packet: %s", packetbuf);
+    }
+    return;
+  }
+  worker_local_wrlock(local);
+  if (version == 4)
+  {
+    ip_increment_one(
+      ip_src(ip), airwall->conf->ratehash.network_prefix, &local->ratelimit);
+  }
+  else
+  {
+    ipv6_increment_one(
+      ipv6_const_src(ip), airwall->conf->ratehash.network_prefix6, &local->ratelimit);
+  }
+  worker_local_wrunlock(local);
+  airwall_packet_to_str(packetbuf, packetbufsiz, ether);
+  log_log(
+    LOG_LEVEL_NOTICE, "WORKERDOWNLINK", "SYN proxy sending WINUPD, packet: %s",
+    packetbuf);
+  if (entry != NULL)
+  {
+    delete_closing_already_bucket_locked(airwall, local, entry);
+    entry = NULL;
+  }
+  send_window_update(ether, local, entry, port, airwall, st, mss,
+                     !!sack_permitted, wscale, was_keepalive, time64);
+}
+
+static int
+handle_downlink_fin(struct airwall_hash_entry *entry, void *ip,
+                    struct seqs *seqs, int version)
+{
+  if (version == 4 && ip_more_frags(ip)) // FIXME for IPv6 also
+  {
+    log_log(LOG_LEVEL_WARNING, "WORKERDOWNLINK", "FIN with more frags");
+  }
+  if (entry->flag_state & FLAG_STATE_DOWNLINK_FIN)
+  {
+    if (entry->state_data.established.downfin != seqs->last_seq)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "FIN seq changed");
+      //airwall_hash_unlock(local, &ctx);
+      return 1;
+    }
+  }
+  entry->state_data.established.downfin = seqs->last_seq;
+  // We may receive downlink SYN on WINDOW_UPDATE_SENT state, move directly
+  // to ESTABLISHED and then add the DOWNLINK_FIN specifier.
+  if (entry->flag_state & FLAG_STATE_WINDOW_UPDATE_SENT)
+  {
+    entry->flag_state &= ~FLAG_STATE_WINDOW_UPDATE_SENT;
+    entry->flag_state |= FLAG_STATE_ESTABLISHED;
+  }
+  entry->flag_state |= FLAG_STATE_DOWNLINK_FIN;
+  return 0;
+}
+
+static int
+handle_uplink_fin(struct airwall_hash_entry *entry, void *ip,
+                  struct seqs *seqs, int version)
+{
+  if (version == 4 && ip_more_frags(ip)) // FIXME for IPv6
+  {
+    log_log(LOG_LEVEL_WARNING, "WORKERUPLINK", "FIN with more frags");
+  }
+  if (entry->flag_state & FLAG_STATE_UPLINK_FIN)
+  {
+    if (entry->state_data.established.upfin != seqs->last_seq)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "FIN seq changed");
+      //airwall_hash_unlock(local, &ctx);
+      return 1;
+    }
+  }
+  entry->state_data.established.upfin = seqs->last_seq;
+  entry->flag_state |= FLAG_STATE_UPLINK_FIN;
+  return 0;
+}
+
+static int
+handle_downlink_rst(void *ip, void *ippay,
+                    struct airwall_hash_entry *entry,
+                    struct worker_local *local,
+                    struct airwall *airwall,
+                    struct port *port,
+                    struct ll_alloc_st *st,
+                    int version,
+                    struct packet *pkt,
+                    uint64_t time64)
+{
+  uint32_t tcp_len;
+  tcp_len = ip46_total_len(ip) - ip46_hdr_len(ip);
+  if (ip46_hdr_cksum_calc(ip) != 0)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "invalid IP hdr cksum");
+    //airwall_hash_unlock(local, &ctx);
+    return 1;
+  }
+  if (tcp46_cksum_calc(ip) != 0)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "invalid TCP hdr cksum");
+    //airwall_hash_unlock(local, &ctx);
+    return 1;
+  }
+  if (entry->flag_state == FLAG_STATE_UPLINK_SYN_SENT)
+  {
+    if (!tcp_ack(ippay))
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "R/RA in UPLINK_SYN_SENT");
+      //airwall_hash_unlock(local, &ctx);
+      return 1;
+    }
+    if (tcp_ack_number(ippay) != entry->state_data.uplink_syn_sent.isn + 1)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "RA/RA in UL_SYN_SENT, bad seq");
+      //airwall_hash_unlock(local, &ctx);
+      return 1;
+    }
+  }
+  else if (entry->flag_state == FLAG_STATE_DOWNLINK_SYN_SENT)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "dropping RST in DOWNLINK_SYN_SENT");
+    //airwall_hash_unlock(local, &ctx);
+    return 1;
+  }
+  else
+  {
+    uint32_t seq = tcp_seq_number(ippay);
+    if (tcp_ack(ippay) && entry->flag_state == FLAG_STATE_RESETED)
+    {
+      // Don't spam the log in this common case
+      //airwall_hash_unlock(local, &ctx);
+      return 1;
+    }
+    if (!rst_is_valid_downlink(seq, &entry->statetrack))
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK",
+              "RST has invalid SEQ number, %u/%u/%u",
+              seq, entry->statetrack.wan.sent, entry->statetrack.lan.acked);
+      //airwall_hash_unlock(local, &ctx);
+      return 1;
+    }
+  }
+  if (tcp_ack(ippay))
+  {
+    tcp_set_ack_number_cksum_update(
+      ippay, tcp_len, tcp_ack_number(ippay)-entry->seqoffset);
+  }
+  entry->flag_state = FLAG_STATE_RESETED;
+  worker_local_wrlock(local);
+  entry->timer.time64 = time64 + local->airwall->conf->timeouts.reseted*1000ULL*1000ULL;
+  timer_linkheap_modify(&local->timers, &entry->timer);
+  worker_local_wrunlock(local);
+  //airwall_hash_unlock(local, &ctx);
+  //port->portfunc(pkt, port->userdata);
+  tcp_set_dst_port_cksum_update(ippay, tcp_len, entry->local_port);
+  if (version == 4)
+  {
+    ip_set_dst_cksum_update(ip, ip46_total_len(ip), 6, ippay, tcp_len,
+                            hdr_get32n(&entry->local_ip));
+  }
+  else
+  {
+    abort();
+  }
+#ifdef ENABLE_ARP
+  if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
+  {
+    return 1;
+  }
+#endif
+  return 0;
+}
+
+static int
+check_downlink_finack(struct airwall_hash_entry *entry, void *ip, void *ippay)
+{
+  int todelete = 0;
+  uint32_t fin = entry->state_data.established.upfin;
+  if (tcp_ack(ippay) && tcp_ack_number(ippay) == fin + 1)
+  {
+    if (ip46_hdr_cksum_calc(ip) != 0)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "invalid IP hdr cksum");
+      //airwall_hash_unlock(local, &ctx);
+      return -1;
+    }
+    if (tcp46_cksum_calc(ip) != 0)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "invalid TCP hdr cksum");
+      //airwall_hash_unlock(local, &ctx);
+      return -1;
+    }
+    entry->flag_state |= FLAG_STATE_UPLINK_FIN_ACK;
+    if (entry->flag_state & FLAG_STATE_DOWNLINK_FIN_ACK)
+    {
+      todelete = 1;
+    }
+  }
+  return todelete;
+}
+
+static int
+check_uplink_finack(struct airwall_hash_entry *entry, void *ip, void *ippay)
+{
+  int todelete = 0;
+  uint32_t fin = entry->state_data.established.downfin;
+  if (tcp_ack(ippay) && tcp_ack_number(ippay) == fin + 1)
+  {
+    if (ip46_hdr_cksum_calc(ip) != 0)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "invalid IP hdr cksum");
+      //airwall_hash_unlock(local, &ctx);
+      return -1;
+    }
+    if (tcp46_cksum_calc(ip) != 0)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "invalid TCP hdr cksum");
+      //airwall_hash_unlock(local, &ctx);
+      return -1;
+    }
+    entry->flag_state |= FLAG_STATE_DOWNLINK_FIN_ACK;
+    if (entry->flag_state & FLAG_STATE_UPLINK_FIN_ACK)
+    {
+      todelete = 1;
+    }
+  }
+  return todelete;
+}
+
+static void
+handle_downlink_half_open(struct airwall_hash_entry *entry,
+                          struct worker_local *local, struct airwall *airwall,
+                          struct port *port, struct ll_alloc_st *st,
+                          void *ether, void *ip, void *ippay, int version,
+                          uint64_t time64)
+{
+  if (tcp_rst(ippay))
+  {
+    /*
+     * Ok, here we could verify that the RST is valid and drop the half-open
+     * state. But it's extremely unlikely that someone opens a connection
+     * with SYN and then to the SYN+ACK responds with RST. Also, the timeout
+     * for downlink half-open connections is 64 seconds, and the timeout for
+     * connections in the RST state is 45 seconds. So, the additional benefit
+     * for moving the connection to RST state is minimal. Also, by maintaining
+     * the connection in DOWNLINK_HALF_OPEN state, we can use the linked list
+     * to remove old expired connections. In reseted connections, there is no
+     * such list. So, the short summary is that moving the connection to the
+     * RST state is not worth it.
+     */
+  }
+  if (tcp_ack(ippay) && !tcp_fin(ippay) && !tcp_rst(ippay) && !tcp_syn(ippay))
+  {
+    uint32_t ack_num = tcp_ack_number(ippay);
+    if (ip46_hdr_cksum_calc(ip) != 0)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "invalid IP hdr cksum");
+      return;
+    }
+    if (tcp46_cksum_calc(ip) != 0)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "invalid TCP hdr cksum");
+      return;
+    }
+    if (((uint32_t)(entry->state_data.downlink_half_open.local_isn + 1)) != ack_num)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "invalid TCP ACK number");
+      return;
+    }
+    if (((uint32_t)(entry->remote_isn + 1)) != tcp_seq_number(ippay))
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "invalid TCP SEQ number");
+      return;
+    }
+    worker_local_wrlock(local);
+    if (version == 4)
+    {
+      ip_increment_one(
+        ip_src(ip), airwall->conf->ratehash.network_prefix, &local->ratelimit);
+    }
+    else
+    {
+      ipv6_increment_one(
+        ipv6_src(ip), airwall->conf->ratehash.network_prefix6, &local->ratelimit);
+    }
+    log_log(
+      LOG_LEVEL_NOTICE, "WORKERDOWNLINK", "SYN proxy sending WINUPD, found");
+    linked_list_delete(&entry->state_data.downlink_half_open.listnode);
+    if (local->half_open_connections <= 0)
+    {
+      abort();
+    }
+    local->half_open_connections--;
+    worker_local_wrunlock(local);
+    send_window_update(
+      ether, local, entry, port, airwall, st,
+      entry->state_data.downlink_half_open.mss,
+      entry->state_data.downlink_half_open.sack_permitted,
+      entry->state_data.downlink_half_open.wscale, 0, time64);
+    return;
+  }
+  log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "entry is HALF_OPEN");
+}
+
+static int
+handle_downlink_syn(struct packet *pkt, void *ether, void *ip, void *ippay,
+                    struct worker_local *local, struct airwall *airwall,
+                    struct port *port, struct ll_alloc_st *st,
+                    int version, uint64_t time64)
+{
+  struct airwall_hash_entry *entry;
+  uint32_t ip_len = ip46_total_len(ip);
+  uint32_t tcp_len = ip_len - ip46_hdr_len(ip);
+  uint16_t lan_port = tcp_dst_port(ippay);
+  uint16_t remote_port = tcp_src_port(ippay);
+  const void *lan_ip = ip_dst_ptr(ip);
+  const void *remote_ip = ip_src_ptr(ip);
+  if (ip46_hdr_cksum_calc(ip) != 0)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "invalid IP hdr cksum");
+    return 1;
+  }
+  if (tcp46_cksum_calc(ip) != 0)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "invalid TCP hdr cksum");
+    return 1;
+  }
+  if (tcp_fin(ippay) || tcp_rst(ippay))
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "SYN packet contains FIN or RST");
+    return 1;
+  }
+  if (!tcp_ack(ippay))
+  {
+    worker_local_wrlock(local);
+    if (version == 4)
+    {
+      if (!ip_permitted(
+        ip_src(ip), airwall->conf->ratehash.network_prefix, &local->ratelimit))
+      {
+        worker_local_wrunlock(local);
+        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "IP ratelimited");
+        return 1;
+      }
+    }
+    else
+    {
+      if (!ipv6_permitted(
+        ipv6_src(ip), airwall->conf->ratehash.network_prefix6, &local->ratelimit))
+      {
+        worker_local_wrunlock(local);
+        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "IPv6 ratelimited");
+        return 1;
+      }
+    }
+    send_synack(ether, local, airwall, port, st, time64);
+    worker_local_wrunlock(local);
+    return 1;
+  }
+  else
+  {
+    struct tcp_information tcpinfo;
+    struct airwall_hash_ctx ctx;
+    //ctx.locked = 0;
+    entry = airwall_hash_get_nat(
+      local, version, lan_ip, lan_port, remote_ip, remote_port, &ctx);
+    if (entry == NULL)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "SA/SA but entry nonexistent");
+      //airwall_hash_unlock(local, &ctx);
+      return 1;
+    }
+    if (entry->flag_state == FLAG_STATE_UPLINK_SYN_RCVD &&
+        entry->state_data.uplink_syn_rcvd.isn == tcp_seq_number(ippay))
+    {
+      // retransmit of SYN+ACK
+      if (airwall->conf->mss_clamp_enabled)
+      {
+        uint16_t mss;
+        tcp_parse_options(ippay, &tcpinfo);
+        if (tcpinfo.options_valid)
+        {
+          mss = tcpinfo.mss;
+          if (mss > airwall->conf->mss_clamp)
+          {
+            mss = airwall->conf->mss_clamp;
+          }
+          if (tcpinfo.mssoff)
+          {
+            tcp_set_mss_cksum_update(ippay, &tcpinfo, mss);
+          }
+        }
+      }
+      //airwall_hash_unlock(local, &ctx);
+      //port->portfunc(pkt, port->userdata);
+      tcp_set_dst_port_cksum_update(ippay, tcp_len, entry->local_port);
+      if (version == 4)
+      {
+        ip_set_dst_cksum_update(ip, ip_len, 6, ippay, tcp_len,
+                                hdr_get32n(&entry->local_ip));
+      }
+      else
+      {
+        abort();
+      }
+#ifdef ENABLE_ARP
+      if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
+      {
+        return 1;
+      }
+#endif
+      return 0;
+    }
+    if (entry->flag_state == FLAG_STATE_ESTABLISHED &&
+        entry->statetrack.wan.sent-1 == tcp_seq_number(ippay))
+    {
+      // retransmit of SYN+ACK
+      // FIXME should store the ISN for a longer duration of time...
+      if (airwall->conf->mss_clamp_enabled)
+      {
+        uint16_t mss;
+        tcp_parse_options(ippay, &tcpinfo);
+        if (tcpinfo.options_valid)
+        {
+          mss = tcpinfo.mss;
+          if (mss > airwall->conf->mss_clamp)
+          {
+            mss = airwall->conf->mss_clamp;
+          }
+          if (tcpinfo.mssoff)
+          {
+            tcp_set_mss_cksum_update(ippay, &tcpinfo, mss);
+          }
+        }
+      }
+      //airwall_hash_unlock(local, &ctx);
+      //port->portfunc(pkt, port->userdata);
+      tcp_set_dst_port_cksum_update(ippay, tcp_len, entry->local_port);
+      if (version == 4)
+      {
+        ip_set_dst_cksum_update(ip, ip_len, 6, ippay, tcp_len,
+                                hdr_get32n(&entry->local_ip));
+      }
+      else
+      {
+        abort();
+      }
+#ifdef ENABLE_ARP
+      if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
+      {
+        return 1;
+      }
+#endif
+      return 0;
+    }
+    if (entry->flag_state != FLAG_STATE_UPLINK_SYN_SENT)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "SA/SA, entry != UL_SYN_SENT");
+      //airwall_hash_unlock(local, &ctx);
+      return 1;
+    }
+    if (tcp_ack_number(ippay) != entry->state_data.uplink_syn_sent.isn + 1)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "SA/SA, invalid ACK num");
+      //airwall_hash_unlock(local, &ctx);
+      return 1;
+    }
+    tcp_parse_options(ippay, &tcpinfo);
+    if (!tcpinfo.options_valid)
+    {
+      tcpinfo.wscale = 0;
+      tcpinfo.mssoff = 0;
+      tcpinfo.mss = 1460;
+    }
+    entry->statetrack.wan.wscale = tcpinfo.wscale;
+    entry->statetrack.wan.max_window_unscaled = tcp_window(ippay);
+    if (entry->statetrack.wan.max_window_unscaled == 0)
+    {
+      entry->statetrack.wan.max_window_unscaled = 1;
+    }
+    entry->state_data.uplink_syn_rcvd.isn = tcp_seq_number(ippay);
+    entry->statetrack.wan.sent = tcp_seq_number(ippay) + 1;
+    entry->statetrack.wan.acked = tcp_ack_number(ippay);
+    entry->statetrack.wan.max =
+      entry->statetrack.wan.acked +
+        (tcp_window(ippay) << entry->statetrack.wan.wscale);
+    entry->flag_state = FLAG_STATE_UPLINK_SYN_RCVD;
+    worker_local_wrlock(local);
+    entry->timer.time64 = time64 + local->airwall->conf->timeouts.ul_syn_rcvd*1000ULL*1000ULL;
+    timer_linkheap_modify(&local->timers, &entry->timer);
+    worker_local_wrunlock(local);
+    if (airwall->conf->mss_clamp_enabled)
+    {
+      uint16_t mss;
+      mss = tcpinfo.mss;
+      if (mss > airwall->conf->mss_clamp)
+      {
+        mss = airwall->conf->mss_clamp;
+      }
+      if (tcpinfo.mssoff)
+      {
+        tcp_set_mss_cksum_update(ippay, &tcpinfo, mss);
+      }
+    }
+    //airwall_hash_unlock(local, &ctx);
+    //port->portfunc(pkt, port->userdata);
+    tcp_set_dst_port_cksum_update(ippay, tcp_len, entry->local_port);
+    if (version == 4)
+    {
+      ip_set_dst_cksum_update(ip, ip_len, 6, ippay, tcp_len,
+                              hdr_get32n(&entry->local_ip));
+    }
+    else
+    {
+      abort();
+    }
+#ifdef ENABLE_ARP
+    if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
+    {
+      return 1;
+    }
+#endif
+    return 0;
+  }
+}
+
+static void handle_downlink_arp(struct packet *pkt,
+                                struct worker_local *local,
+                                struct airwall *airwall,
+                                struct port *port, struct ll_alloc_st *st,
+                                uint64_t time64)
+{
+  void *ether = pkt->data;
+  const void *arp = ether_payload(ether);
+  size_t ether_len = pkt->sz;
+  if (ether_len < ETHER_HDR_LEN + 28 || !arp_is_valid_reqresp(arp))
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "ARP is not valid");
+    return;
+  }
+  if (arp_is_req(arp))
+  {
+    if (arp_cache_get_accept_invalid(&local->ul_arp_cache, arp_spa(arp)))
+    {
+      uint32_t spa = arp_spa(arp);
+      const unsigned char *sha = arp_const_sha(arp);
+      log_log(LOG_LEVEL_INFO, "WORKERDOWNLINK",
+              "%d.%d.%d.%d is at %.2x:%.2x:%.2x:%.2x:%.2x:%.2x",
+              (spa>>24)&0xFF, (spa>>16)&0xFF, (spa>>8)&0xFF, (spa>>0)&0xFF,
+              sha[0], sha[1], sha[2], sha[3], sha[4], sha[5]);
+      arp_cache_put(&local->ul_arp_cache, port, arp_spa(arp), arp_const_sha(arp), &local->timers, time64);
+    }
+    if (!ul_addr_is_mine(airwall->conf, arp_tpa(arp)))
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "ARP is not to us");
+      return;
+    }
+    char etherarp[14+28] = {0};
+    char *arp2 = ether_payload(etherarp);
+    memcpy(ether_src(etherarp), airwall->ul_mac, 6);
+    memcpy(ether_dst(etherarp), arp_const_sha(arp), 6);
+    ether_set_type(etherarp, ETHER_TYPE_ARP);
+    arp_set_ether(arp2);
+    arp_set_resp(arp2);
+    memcpy(arp_sha(arp2), airwall->ul_mac, 6);
+    memcpy(arp_tha(arp2), arp_const_sha(arp), 6);
+    arp_set_spa(arp2, arp_tpa(arp));
+    arp_set_tpa(arp2, arp_spa(arp));
+
+    struct packet *pktstruct = ll_alloc_st(st, packet_size(sizeof(etherarp)));
+    pktstruct->data = packet_calc_data(pktstruct);
+    pktstruct->direction = PACKET_DIRECTION_UPLINK;
+    pktstruct->sz = sizeof(etherarp);
+    memcpy(pktstruct->data, etherarp, sizeof(etherarp));
+    port->portfunc(pktstruct, port->userdata);
+    return;
+  }
+  else if (arp_is_resp(arp))
+  {
+    if (arp_cache_get_accept_invalid(&local->ul_arp_cache, arp_spa(arp)))
+    {
+      uint32_t spa = arp_spa(arp);
+      const unsigned char *sha = arp_const_sha(arp);
+      log_log(LOG_LEVEL_INFO, "WORKERDOWNLINK",
+              "%d.%d.%d.%d is at %.2x:%.2x:%.2x:%.2x:%.2x:%.2x",
+              (spa>>24)&0xFF, (spa>>16)&0xFF, (spa>>8)&0xFF, (spa>>0)&0xFF,
+              sha[0], sha[1], sha[2], sha[3], sha[4], sha[5]);
+      arp_cache_put(&local->ul_arp_cache, port, arp_spa(arp), arp_const_sha(arp), &local->timers, time64);
+    }
+    else
+    {
+      uint32_t spa = arp_spa(arp);
+      const unsigned char *sha = arp_const_sha(arp);
+      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK",
+              "%d.%d.%d.%d would be at %.2x:%.2x:%.2x:%.2x:%.2x:%.2x",
+              (spa>>24)&0xFF, (spa>>16)&0xFF, (spa>>8)&0xFF, (spa>>0)&0xFF,
+              sha[0], sha[1], sha[2], sha[3], sha[4], sha[5]);
+    }
+    return;
+  }
+}
+
 int downlink(
   struct airwall *airwall, struct worker_local *local, struct packet *pkt,
   struct port *port, uint64_t time64, struct ll_alloc_st *st)
@@ -3690,15 +4673,12 @@ int downlink(
   uint16_t tcp_len;
   struct airwall_hash_entry *entry;
   struct airwall_hash_ctx ctx;
-  uint32_t first_seq;
-  uint32_t last_seq;
-  int32_t data_len;
   int todelete = 0;
-  uint32_t wan_min;
   struct sack_ts_headers hdrs;
   char statebuf[8192];
   char packetbuf[8192];
   int version;
+  struct seqs seqs;
 
   if (ether_len < ETHER_HDR_LEN)
   {
@@ -3721,72 +4701,8 @@ int downlink(
 #ifdef ENABLE_ARP
   if (ether_type(ether) == ETHER_TYPE_ARP)
   {
-    const void *arp = ether_payload(ether);
-    if (ether_len < ETHER_HDR_LEN + 28 || !arp_is_valid_reqresp(arp))
-    {
-      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "ARP is not valid");
-      return 1;
-    }
-    if (arp_is_req(arp))
-    {
-      if (arp_cache_get_accept_invalid(&local->ul_arp_cache, arp_spa(arp)))
-      {
-        uint32_t spa = arp_spa(arp);
-        const unsigned char *sha = arp_const_sha(arp);
-        log_log(LOG_LEVEL_INFO, "WORKERDOWNLINK",
-                "%d.%d.%d.%d is at %.2x:%.2x:%.2x:%.2x:%.2x:%.2x",
-                (spa>>24)&0xFF, (spa>>16)&0xFF, (spa>>8)&0xFF, (spa>>0)&0xFF,
-                sha[0], sha[1], sha[2], sha[3], sha[4], sha[5]);
-        arp_cache_put(&local->ul_arp_cache, port, arp_spa(arp), arp_const_sha(arp), &local->timers, time64);
-      }
-      if (!ul_addr_is_mine(airwall->conf, arp_tpa(arp)))
-      {
-        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "ARP is not to us");
-        return 1;
-      }
-      char etherarp[14+28] = {0};
-      char *arp2 = ether_payload(etherarp);
-      memcpy(ether_src(etherarp), airwall->ul_mac, 6);
-      memcpy(ether_dst(etherarp), arp_const_sha(arp), 6);
-      ether_set_type(etherarp, ETHER_TYPE_ARP);
-      arp_set_ether(arp2);
-      arp_set_resp(arp2);
-      memcpy(arp_sha(arp2), airwall->ul_mac, 6);
-      memcpy(arp_tha(arp2), arp_const_sha(arp), 6);
-      arp_set_spa(arp2, arp_tpa(arp));
-      arp_set_tpa(arp2, arp_spa(arp));
-
-      struct packet *pktstruct = ll_alloc_st(st, packet_size(sizeof(etherarp)));
-      pktstruct->data = packet_calc_data(pktstruct);
-      pktstruct->direction = PACKET_DIRECTION_UPLINK;
-      pktstruct->sz = sizeof(etherarp);
-      memcpy(pktstruct->data, etherarp, sizeof(etherarp));
-      port->portfunc(pktstruct, port->userdata);
-      return 1;
-    }
-    else if (arp_is_resp(arp))
-    {
-      if (arp_cache_get_accept_invalid(&local->ul_arp_cache, arp_spa(arp)))
-      {
-        uint32_t spa = arp_spa(arp);
-        const unsigned char *sha = arp_const_sha(arp);
-        log_log(LOG_LEVEL_INFO, "WORKERDOWNLINK",
-                "%d.%d.%d.%d is at %.2x:%.2x:%.2x:%.2x:%.2x:%.2x",
-                (spa>>24)&0xFF, (spa>>16)&0xFF, (spa>>8)&0xFF, (spa>>0)&0xFF,
-                sha[0], sha[1], sha[2], sha[3], sha[4], sha[5]);
-        arp_cache_put(&local->ul_arp_cache, port, arp_spa(arp), arp_const_sha(arp), &local->timers, time64);
-      }
-      else
-      {
-        uint32_t spa = arp_spa(arp);
-        const unsigned char *sha = arp_const_sha(arp);
-        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK",
-                "%d.%d.%d.%d would be at %.2x:%.2x:%.2x:%.2x:%.2x:%.2x",
-                (spa>>24)&0xFF, (spa>>16)&0xFF, (spa>>8)&0xFF, (spa>>0)&0xFF,
-                sha[0], sha[1], sha[2], sha[3], sha[4], sha[5]);
-      }
-      return 1;
-    }
+    handle_downlink_arp(pkt, local, airwall, port, st, time64);
+    return 1;
   }
 #else
   if (ether_type(ether) == ETHER_TYPE_ARP)
@@ -3951,288 +4867,20 @@ int downlink(
   }
   if (unlikely(tcp_syn(ippay)))
   {
-    if (ip46_hdr_cksum_calc(ip) != 0)
-    {
-      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "invalid IP hdr cksum");
-      return 1;
-    }
-    if (tcp46_cksum_calc(ip) != 0)
-    {
-      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "invalid TCP hdr cksum");
-      return 1;
-    }
-    if (tcp_fin(ippay) || tcp_rst(ippay))
-    {
-      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "SYN packet contains FIN or RST");
-      return 1;
-    }
-    if (!tcp_ack(ippay))
-    {
-      worker_local_wrlock(local);
-      if (version == 4)
-      {
-        if (!ip_permitted(
-          ip_src(ip), airwall->conf->ratehash.network_prefix, &local->ratelimit))
-        {
-          worker_local_wrunlock(local);
-          log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "IP ratelimited");
-          return 1;
-        }
-      }
-      else
-      {
-        if (!ipv6_permitted(
-          ipv6_src(ip), airwall->conf->ratehash.network_prefix6, &local->ratelimit))
-        {
-          worker_local_wrunlock(local);
-          log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "IPv6 ratelimited");
-          return 1;
-        }
-      }
-      send_synack(ether, local, airwall, port, st, time64);
-      worker_local_wrunlock(local);
-      return 1;
-    }
-    else
-    {
-      struct tcp_information tcpinfo;
-      //ctx.locked = 0;
-      entry = airwall_hash_get_nat(
-        local, version, lan_ip, lan_port, remote_ip, remote_port, &ctx);
-      if (entry == NULL)
-      {
-        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "SA/SA but entry nonexistent");
-        //airwall_hash_unlock(local, &ctx);
-        return 1;
-      }
-      if (entry->flag_state == FLAG_STATE_UPLINK_SYN_RCVD &&
-          entry->state_data.uplink_syn_rcvd.isn == tcp_seq_number(ippay))
-      {
-        // retransmit of SYN+ACK
-        if (airwall->conf->mss_clamp_enabled)
-        {
-          uint16_t mss;
-          tcp_parse_options(ippay, &tcpinfo);
-          if (tcpinfo.options_valid)
-          {
-            mss = tcpinfo.mss;
-            if (mss > airwall->conf->mss_clamp)
-            {
-              mss = airwall->conf->mss_clamp;
-            }
-            if (tcpinfo.mssoff)
-            {
-              tcp_set_mss_cksum_update(ippay, &tcpinfo, mss);
-            }
-          }
-        }
-        //airwall_hash_unlock(local, &ctx);
-        //port->portfunc(pkt, port->userdata);
-        tcp_set_dst_port_cksum_update(ippay, tcp_len, entry->local_port);
-        if (version == 4)
-        {
-          ip_set_dst_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
-                                  hdr_get32n(&entry->local_ip));
-        }
-        else
-        {
-          abort();
-        }
-#ifdef ENABLE_ARP
-        if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
-        {
-          return 1;
-        }
-#endif
-        return 0;
-      }
-      if (entry->flag_state == FLAG_STATE_ESTABLISHED &&
-          entry->wan_sent-1 == tcp_seq_number(ippay))
-      {
-        // retransmit of SYN+ACK
-        // FIXME should store the ISN for a longer duration of time...
-        if (airwall->conf->mss_clamp_enabled)
-        {
-          uint16_t mss;
-          tcp_parse_options(ippay, &tcpinfo);
-          if (tcpinfo.options_valid)
-          {
-            mss = tcpinfo.mss;
-            if (mss > airwall->conf->mss_clamp)
-            {
-              mss = airwall->conf->mss_clamp;
-            }
-            if (tcpinfo.mssoff)
-            {
-              tcp_set_mss_cksum_update(ippay, &tcpinfo, mss);
-            }
-          }
-        }
-        //airwall_hash_unlock(local, &ctx);
-        //port->portfunc(pkt, port->userdata);
-        tcp_set_dst_port_cksum_update(ippay, tcp_len, entry->local_port);
-        if (version == 4)
-        {
-          ip_set_dst_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
-                                  hdr_get32n(&entry->local_ip));
-        }
-        else
-        {
-          abort();
-        }
-#ifdef ENABLE_ARP
-        if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
-        {
-          return 1;
-        }
-#endif
-        return 0;
-      }
-      if (entry->flag_state != FLAG_STATE_UPLINK_SYN_SENT)
-      {
-        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "SA/SA, entry != UL_SYN_SENT");
-        //airwall_hash_unlock(local, &ctx);
-        return 1;
-      }
-      if (tcp_ack_number(ippay) != entry->state_data.uplink_syn_sent.isn + 1)
-      {
-        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "SA/SA, invalid ACK num");
-        //airwall_hash_unlock(local, &ctx);
-        return 1;
-      }
-      tcp_parse_options(ippay, &tcpinfo);
-      if (!tcpinfo.options_valid)
-      {
-        tcpinfo.wscale = 0;
-        tcpinfo.mssoff = 0;
-        tcpinfo.mss = 1460;
-      }
-      entry->wan_wscale = tcpinfo.wscale;
-      entry->wan_max_window_unscaled = tcp_window(ippay);
-      if (entry->wan_max_window_unscaled == 0)
-      {
-        entry->wan_max_window_unscaled = 1;
-      }
-      entry->state_data.uplink_syn_rcvd.isn = tcp_seq_number(ippay);
-      entry->wan_sent = tcp_seq_number(ippay) + 1;
-      entry->wan_acked = tcp_ack_number(ippay);
-      entry->wan_max =
-        entry->wan_acked + (tcp_window(ippay) << entry->wan_wscale);
-      entry->flag_state = FLAG_STATE_UPLINK_SYN_RCVD;
-      worker_local_wrlock(local);
-      entry->timer.time64 = time64 + local->airwall->conf->timeouts.ul_syn_rcvd*1000ULL*1000ULL;
-      timer_linkheap_modify(&local->timers, &entry->timer);
-      worker_local_wrunlock(local);
-      if (airwall->conf->mss_clamp_enabled)
-      {
-        uint16_t mss;
-        mss = tcpinfo.mss;
-        if (mss > airwall->conf->mss_clamp)
-        {
-          mss = airwall->conf->mss_clamp;
-        }
-        if (tcpinfo.mssoff)
-        {
-          tcp_set_mss_cksum_update(ippay, &tcpinfo, mss);
-        }
-      }
-      //airwall_hash_unlock(local, &ctx);
-      //port->portfunc(pkt, port->userdata);
-      tcp_set_dst_port_cksum_update(ippay, tcp_len, entry->local_port);
-      if (version == 4)
-      {
-        ip_set_dst_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
-                                hdr_get32n(&entry->local_ip));
-      }
-      else
-      {
-        abort();
-      }
-#ifdef ENABLE_ARP
-      if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
-      {
-        return 1;
-      }
-#endif
-      return 0;
-    }
+    int ret;
+    ret = handle_downlink_syn(pkt, ether, ip, ippay,
+                              local, airwall,
+                              port, st,
+                              version, time64);
+    return ret;
   }
   //ctx.locked = 0;
   entry = airwall_hash_get_nat(
     local, version, lan_ip, lan_port, remote_ip, remote_port, &ctx);
   if (entry != NULL && entry->flag_state == FLAG_STATE_DOWNLINK_HALF_OPEN)
   {
-    if (tcp_rst(ippay))
-    {
-      /*
-       * Ok, here we could verify that the RST is valid and drop the half-open
-       * state. But it's extremely unlikely that someone opens a connection
-       * with SYN and then to the SYN+ACK responds with RST. Also, the timeout
-       * for downlink half-open connections is 64 seconds, and the timeout for
-       * connections in the RST state is 45 seconds. So, the additional benefit
-       * for moving the connection to RST state is minimal. Also, by maintaining
-       * the connection in DOWNLINK_HALF_OPEN state, we can use the linked list
-       * to remove old expired connections. In reseted connections, there is no
-       * such list. So, the short summary is that moving the connection to the
-       * RST state is not worth it.
-       */
-    }
-    if (tcp_ack(ippay) && !tcp_fin(ippay) && !tcp_rst(ippay) && !tcp_syn(ippay))
-    {
-      uint32_t ack_num = tcp_ack_number(ippay);
-      if (ip46_hdr_cksum_calc(ip) != 0)
-      {
-        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "invalid IP hdr cksum");
-        //airwall_hash_unlock(local, &ctx);
-        return 1;
-      }
-      if (tcp46_cksum_calc(ip) != 0)
-      {
-        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "invalid TCP hdr cksum");
-        //airwall_hash_unlock(local, &ctx);
-        return 1;
-      }
-      if (((uint32_t)(entry->state_data.downlink_half_open.local_isn + 1)) != ack_num)
-      {
-        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "invalid TCP ACK number");
-        //airwall_hash_unlock(local, &ctx);
-        return 1;
-      }
-      if (((uint32_t)(entry->remote_isn + 1)) != tcp_seq_number(ippay))
-      {
-        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "invalid TCP SEQ number");
-        //airwall_hash_unlock(local, &ctx);
-        return 1;
-      }
-      worker_local_wrlock(local);
-      if (version == 4)
-      {
-        ip_increment_one(
-          ip_src(ip), airwall->conf->ratehash.network_prefix, &local->ratelimit);
-      }
-      else
-      {
-        ipv6_increment_one(
-          ipv6_src(ip), airwall->conf->ratehash.network_prefix6, &local->ratelimit);
-      }
-      log_log(
-        LOG_LEVEL_NOTICE, "WORKERDOWNLINK", "SYN proxy sending WINUPD, found");
-      linked_list_delete(&entry->state_data.downlink_half_open.listnode);
-      if (local->half_open_connections <= 0)
-      {
-        abort();
-      }
-      local->half_open_connections--;
-      worker_local_wrunlock(local);
-      send_window_update(
-        ether, local, entry, port, airwall, st,
-        entry->state_data.downlink_half_open.mss,
-        entry->state_data.downlink_half_open.sack_permitted,
-        entry->state_data.downlink_half_open.wscale, 0, time64);
-      //airwall_hash_unlock(local, &ctx);
-      return 1;
-    }
-    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "entry is HALF_OPEN");
+    handle_downlink_half_open(entry, local, airwall, port, st,
+                              ether, ip, ippay, version, time64);
     //airwall_hash_unlock(local, &ctx);
     return 1;
   }
@@ -4241,194 +4889,23 @@ int downlink(
       ((entry->flag_state & FLAG_STATE_UPLINK_FIN) &&
        (entry->flag_state & FLAG_STATE_DOWNLINK_FIN)))
   {
-    first_seq = tcp_seq_number(ippay);
-    data_len =
-      ((int32_t)ip_len) - ((int32_t)ihl) - ((int32_t)tcp_data_offset(ippay));
-    if (data_len < 0)
-    {
-      // This can occur in fragmented packets. We don't then know the true
-      // data length, and can therefore drop packets that would otherwise be
-      // valid.
-      data_len = 0;
-    }
-    last_seq = first_seq + data_len - 1;
-    if (entry != NULL)
-    {
-      wan_min =
-        entry->wan_sent - (entry->lan_max_window_unscaled<<entry->lan_wscale);
-    }
-
     /*
      * If entry is NULL, it can only be ACK of a SYN+ACK so we verify cookie
      * If entry is non-NULL, it can be ACK of FIN or ACK of SYN+ACK
      * In the latter case, we verify whether the SEQ/ACK numbers look fine.
      * If either SEQ or ACK number is invalid, it has to be ACK of SYN+ACK
      */
+    calc_seqs(&seqs, ip, ippay, 0);
     if (tcp_ack(ippay) && !tcp_fin(ippay) && !tcp_rst(ippay) && !tcp_syn(ippay)
         && (entry == NULL ||
-            !between(
-              entry->wan_acked - (entry->wan_max_window_unscaled<<entry->wan_wscale),
-              tcp_ack_number(ippay),
-              entry->lan_sent + 1) ||
-            (!between(
-               wan_min, first_seq, entry->lan_max+1)
-             &&
-             !between(
-               wan_min, last_seq, entry->lan_max+1))))
+            (!seqs_valid_downlink(entry, &seqs, ether, ip, ippay, 0,
+                                  NULL, 0, NULL, 0))))
     {
-      uint32_t ack_num = tcp_ack_number(ippay);
-      uint32_t other_seq = tcp_seq_number(ippay);
-      uint16_t mss;
-      uint16_t tsmss;
-      uint8_t tswscale;
-      uint8_t wscale, sack_permitted;
-      int ok;
-      int was_keepalive = 0;
-      struct tcp_information tcpinfo;
-      if (ip46_hdr_cksum_calc(ip) != 0)
-      {
-        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "invalid IP hdr cksum");
-        //airwall_hash_unlock(local, &ctx);
-        return 1;
-      }
-      if (tcp46_cksum_calc(ip) != 0)
-      {
-        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "invalid TCP hdr cksum");
-        //airwall_hash_unlock(local, &ctx);
-        return 1;
-      }
-      if (version == 4)
-      {
-        ok = verify_cookie(
-          &local->info, airwall, ip_dst(ip), ip_src(ip),
-          tcp_dst_port(ippay), tcp_src_port(ippay), ack_num - 1,
-          &mss, &wscale, &sack_permitted, other_seq - 1);
-        if (!ok)
-        {
-          other_seq++;
-          ok = verify_cookie(
-            &local->info, airwall, ip_dst(ip), ip_src(ip),
-            tcp_dst_port(ippay), tcp_src_port(ippay), ack_num - 1,
-            &mss, &wscale, &sack_permitted, other_seq - 1);
-          if (ok)
-          {
-            airwall_packet_to_str(packetbuf, sizeof(packetbuf), ether);
-            log_log(
-              LOG_LEVEL_NOTICE, "WORKERDOWNLINK",
-              "SYN proxy detected keepalive packet opening connection: %s",
-              packetbuf);
-            was_keepalive = 1;
-          }
-        }
-      }
-      else
-      {
-        ok = verify_cookie6(
-          &local->info, airwall, ipv6_dst(ip), ipv6_src(ip),
-          tcp_dst_port(ippay), tcp_src_port(ippay), ack_num - 1,
-          &mss, &wscale, &sack_permitted, other_seq - 1);
-        if (!ok)
-        {
-          other_seq++;
-          ok = verify_cookie6(
-            &local->info, airwall, ipv6_dst(ip), ipv6_src(ip),
-            tcp_dst_port(ippay), tcp_src_port(ippay), ack_num - 1,
-            &mss, &wscale, &sack_permitted, other_seq - 1);
-          if (ok)
-          {
-            airwall_packet_to_str(packetbuf, sizeof(packetbuf), ether);
-            log_log(
-              LOG_LEVEL_NOTICE, "WORKERDOWNLINK",
-              "SYN proxy detected keepalive packet opening connection6: %s",
-              packetbuf);
-            was_keepalive = 1;
-          }
-        }
-      }
-      if (ok)
-      {
-        tcp_parse_options(ippay, &tcpinfo); // XXX send_syn reparses
-        if (tcpinfo.options_valid && tcpinfo.ts_present)
-        {
-          if (version == 4)
-          {
-            if (verify_timestamp(
-              &local->info, airwall, ip_dst(ip), ip_src(ip),
-              tcp_dst_port(ippay), tcp_src_port(ippay), tcpinfo.tsecho,
-              &tsmss, &tswscale))
-            {
-              if (tsmss > mss)
-              {
-                mss = tsmss;
-              }
-              if (tswscale > wscale)
-              {
-                wscale = tswscale;
-              }
-            }
-          }
-          else
-          {
-            if (verify_timestamp6(
-              &local->info, airwall, ipv6_dst(ip), ipv6_src(ip),
-              tcp_dst_port(ippay), tcp_src_port(ippay), tcpinfo.tsecho,
-              &tsmss, &tswscale))
-            {
-              if (tsmss > mss)
-              {
-                mss = tsmss;
-              }
-              if (tswscale > wscale)
-              {
-                wscale = tswscale;
-              }
-            }
-          }
-        }
-      }
-      if (!ok)
-      {
-        if (entry != NULL)
-        {
-          airwall_entry_to_str(statebuf, sizeof(statebuf), entry);
-          airwall_packet_to_str(packetbuf, sizeof(packetbuf), ether);
-          log_log(
-            LOG_LEVEL_ERR, "WORKERDOWNLINK",
-            "entry found, A/SAFR set, SYN cookie invalid, state: %s, packet: %s", statebuf, packetbuf);
-        }
-        else
-        {
-          airwall_packet_to_str(packetbuf, sizeof(packetbuf), ether);
-          log_log(
-            LOG_LEVEL_ERR, "WORKERDOWNLINK",
-            "entry not found but A/SAFR set, SYN cookie invalid, packet: %s", packetbuf);
-        }
-        //airwall_hash_unlock(local, &ctx);
-        return 1;
-      }
-      worker_local_wrlock(local);
-      if (version == 4)
-      {
-        ip_increment_one(
-          ip_src(ip), airwall->conf->ratehash.network_prefix, &local->ratelimit);
-      }
-      else
-      {
-        ipv6_increment_one(
-          ipv6_src(ip), airwall->conf->ratehash.network_prefix6, &local->ratelimit);
-      }
-      worker_local_wrunlock(local);
-      airwall_packet_to_str(packetbuf, sizeof(packetbuf), ether);
-      log_log(
-        LOG_LEVEL_NOTICE, "WORKERDOWNLINK", "SYN proxy sending WINUPD, packet: %s",
-        packetbuf);
-      if (entry != NULL)
-      {
-        delete_closing_already_bucket_locked(airwall, local, entry);
-        entry = NULL;
-      }
-      send_window_update(ether, local, entry, port, airwall, st, mss,
-                         !!sack_permitted, wscale, was_keepalive, time64);
+      handle_ack_cookie(ether, ip, ippay, version,
+                        entry, local, airwall, time64,
+                        packetbuf, sizeof(packetbuf),
+                        statebuf, sizeof(statebuf),
+                        port, st);
       //airwall_hash_unlock(local, &ctx);
       return 1;
     }
@@ -4442,94 +4919,18 @@ int downlink(
   }
   if (unlikely(tcp_rst(ippay)))
   {
-    if (ip46_hdr_cksum_calc(ip) != 0)
-    {
-      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "invalid IP hdr cksum");
-      //airwall_hash_unlock(local, &ctx);
-      return 1;
-    }
-    if (tcp46_cksum_calc(ip) != 0)
-    {
-      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "invalid TCP hdr cksum");
-      //airwall_hash_unlock(local, &ctx);
-      return 1;
-    }
-    if (entry->flag_state == FLAG_STATE_UPLINK_SYN_SENT)
-    {
-      if (!tcp_ack(ippay))
-      {
-        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "R/RA in UPLINK_SYN_SENT");
-        //airwall_hash_unlock(local, &ctx);
-        return 1;
-      }
-      if (tcp_ack_number(ippay) != entry->state_data.uplink_syn_sent.isn + 1)
-      {
-        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "RA/RA in UL_SYN_SENT, bad seq");
-        //airwall_hash_unlock(local, &ctx);
-        return 1;
-      }
-    }
-    else if (entry->flag_state == FLAG_STATE_DOWNLINK_SYN_SENT)
-    {
-      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "dropping RST in DOWNLINK_SYN_SENT");
-      //airwall_hash_unlock(local, &ctx);
-      return 1;
-    }
-    else
-    {
-      uint32_t seq = tcp_seq_number(ippay);
-      if (tcp_ack(ippay) && entry->flag_state == FLAG_STATE_RESETED)
-      {
-        // Don't spam the log in this common case
-        //airwall_hash_unlock(local, &ctx);
-        return 1;
-      }
-      if (!rst_is_valid(seq, entry->wan_sent) &&
-          !rst_is_valid(seq, entry->lan_acked))
-      {
-        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK",
-                "RST has invalid SEQ number, %u/%u/%u",
-                seq, entry->wan_sent, entry->lan_acked);
-        //airwall_hash_unlock(local, &ctx);
-        return 1;
-      }
-    }
-    if (tcp_ack(ippay))
-    {
-      tcp_set_ack_number_cksum_update(
-        ippay, tcp_len, tcp_ack_number(ippay)-entry->seqoffset);
-    }
-    entry->flag_state = FLAG_STATE_RESETED;
-    worker_local_wrlock(local);
-    entry->timer.time64 = time64 + local->airwall->conf->timeouts.reseted*1000ULL*1000ULL;
-    timer_linkheap_modify(&local->timers, &entry->timer);
-    worker_local_wrunlock(local);
-    //airwall_hash_unlock(local, &ctx);
-    //port->portfunc(pkt, port->userdata);
-    tcp_set_dst_port_cksum_update(ippay, tcp_len, entry->local_port);
-    if (version == 4)
-    {
-      ip_set_dst_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
-                              hdr_get32n(&entry->local_ip));
-    }
-    else
-    {
-      abort();
-    }
-#ifdef ENABLE_ARP
-    if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
-    {
-      return 1;
-    }
-#endif
-    return 0;
+    return handle_downlink_rst(ip, ippay, entry,
+                               local, airwall, port, st,
+                               version, pkt, time64);
   }
   if (   tcp_ack(ippay)
       && entry->flag_state == FLAG_STATE_DOWNLINK_SYN_SENT
-      && resend_request_is_valid_win(tcp_seq_number(ippay), entry->wan_sent,
+      && resend_request_is_valid_win(tcp_seq_number(ippay),
+                                     entry->statetrack.wan.sent,
                                      INITIAL_WINDOW +
                                        (1<<airwall->conf->own_wscale) - 1)
-      && resend_request_is_valid(tcp_ack_number(ippay), entry->wan_acked))
+      && resend_request_is_valid(tcp_ack_number(ippay),
+                                 entry->statetrack.wan.acked))
   {
     log_log(LOG_LEVEL_NOTICE, "WORKERDOWNLINK", "resending SYN");
     worker_local_wrlock(local);
@@ -4562,164 +4963,39 @@ int downlink(
     log_log(LOG_LEVEL_NOTICE, "WORKERDOWNLINK", "removing retx timer");
     retx_timer_del(entry, local);
   }
-  if (!between(
-    entry->wan_acked - (entry->wan_max_window_unscaled<<entry->wan_wscale),
-    tcp_ack_number(ippay),
-    entry->lan_sent + 1))
+
+  calc_seqs(&seqs, ip, ippay, 0);
+
+  if (!seqs_valid_downlink(entry, &seqs, ether, ip, ippay, 1,
+                           statebuf, sizeof(statebuf),
+                           packetbuf, sizeof(packetbuf)))
   {
-    airwall_entry_to_str(statebuf, sizeof(statebuf), entry);
-    airwall_packet_to_str(packetbuf, sizeof(packetbuf), ether);
-    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "packet has invalid ACK number, state: %s, packet: %s", statebuf, packetbuf);
-    //airwall_hash_unlock(local, &ctx);
-    return 1;
-  }
-  first_seq = tcp_seq_number(ippay);
-  data_len =
-    ((int32_t)ip_len) - ((int32_t)ihl) - ((int32_t)tcp_data_offset(ippay));
-  if (data_len < 0)
-  {
-    // This can occur in fragmented packets. We don't then know the true
-    // data length, and can therefore drop packets that would otherwise be
-    // valid.
-    data_len = 0;
-  }
-  last_seq = first_seq + data_len - 1;
-  if (unlikely(tcp_fin(ippay)))
-  {
-    if (ip46_hdr_cksum_calc(ip) != 0)
-    {
-      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "invalid IP hdr cksum");
-      //airwall_hash_unlock(local, &ctx);
-      return 1;
-    }
-    if (tcp46_cksum_calc(ip) != 0)
-    {
-      log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "invalid TCP hdr cksum");
-      //airwall_hash_unlock(local, &ctx);
-      return 1;
-    }
-    last_seq += 1;
-  }
-  wan_min =
-    entry->wan_sent - (entry->lan_max_window_unscaled<<entry->lan_wscale);
-  if (
-    !between(
-      wan_min, first_seq, entry->lan_max+1)
-    &&
-    !between(
-      wan_min, last_seq, entry->lan_max+1)
-    )
-  {
-    airwall_entry_to_str(statebuf, sizeof(statebuf), entry);
-    airwall_packet_to_str(packetbuf, sizeof(packetbuf), ether);
-    log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "packet has invalid SEQ number, state: %s, packet: %s", statebuf, packetbuf);
     //airwall_hash_unlock(local, &ctx);
     return 1;
   }
   if (unlikely(tcp_fin(ippay)) && entry->flag_state != FLAG_STATE_RESETED)
   {
-    if (version == 4 && ip_more_frags(ip)) // FIXME for IPv6 also
+    if (handle_downlink_fin(entry, ip, &seqs, version))
     {
-      log_log(LOG_LEVEL_WARNING, "WORKERDOWNLINK", "FIN with more frags");
+      return 1;
     }
-    if (entry->flag_state & FLAG_STATE_DOWNLINK_FIN)
-    {
-      if (entry->state_data.established.downfin != last_seq)
-      {
-        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "FIN seq changed");
-        //airwall_hash_unlock(local, &ctx);
-        return 1;
-      }
-    }
-    entry->state_data.established.downfin = last_seq;
-    // We may receive downlink SYN on WINDOW_UPDATE_SENT state, move directly
-    // to ESTABLISHED and then add the DOWNLINK_FIN specifier.
-    if (entry->flag_state & FLAG_STATE_WINDOW_UPDATE_SENT)
-    {
-      entry->flag_state &= ~FLAG_STATE_WINDOW_UPDATE_SENT;
-      entry->flag_state |= FLAG_STATE_ESTABLISHED;
-    }
-    entry->flag_state |= FLAG_STATE_DOWNLINK_FIN;
   }
   if (unlikely(entry->flag_state & FLAG_STATE_UPLINK_FIN))
   {
-    uint32_t fin = entry->state_data.established.upfin;
-    if (tcp_ack(ippay) && tcp_ack_number(ippay) == fin + 1)
+    todelete = check_downlink_finack(entry, ip, ippay);
+    if (todelete < 0)
     {
-      if (ip46_hdr_cksum_calc(ip) != 0)
-      {
-        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "invalid IP hdr cksum");
-        //airwall_hash_unlock(local, &ctx);
-        return 1;
-      }
-      if (tcp46_cksum_calc(ip) != 0)
-      {
-        log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "invalid TCP hdr cksum");
-        //airwall_hash_unlock(local, &ctx);
-        return 1;
-      }
-      entry->flag_state |= FLAG_STATE_UPLINK_FIN_ACK;
-      if (entry->flag_state & FLAG_STATE_DOWNLINK_FIN_ACK)
-      {
-        todelete = 1;
-      }
+      return 1;
     }
   }
-  if (tcp_window(ippay) > entry->wan_max_window_unscaled)
+
+  update_side(&entry->statetrack.wan, &seqs, ippay);
+
+  if (entry->flag_state != FLAG_STATE_WINDOW_UPDATE_SENT)
   {
-    entry->wan_max_window_unscaled = tcp_window(ippay);
-    if (entry->wan_max_window_unscaled == 0)
-    {
-      entry->wan_max_window_unscaled = 1;
-    }
+    update_tcp_timeout(entry, local, time64);
   }
-  if (seq_cmp(last_seq, entry->wan_sent) >= 0)
-  {
-    entry->wan_sent = last_seq + 1;
-  }
-  if (likely(tcp_ack(ippay)))
-  {
-    uint32_t ack = tcp_ack_number(ippay);
-    uint16_t window = tcp_window(ippay);
-    if (seq_cmp(ack, entry->wan_acked) >= 0)
-    {
-      entry->wan_acked = ack;
-    }
-    if (seq_cmp(ack + (window << entry->wan_wscale), entry->wan_max) >= 0)
-    {
-      entry->wan_max = ack + (window << entry->wan_wscale);
-    }
-  }
-  uint64_t next64;
-  int omit = 0;
-  if (entry->flag_state == FLAG_STATE_WINDOW_UPDATE_SENT)
-  {
-    omit = 1;
-  }
-  else if (entry->flag_state == FLAG_STATE_RESETED)
-  {
-    next64 = time64 + local->airwall->conf->timeouts.reseted*1000ULL*1000ULL;
-  }
-  else if ((entry->flag_state & FLAG_STATE_UPLINK_FIN) &&
-           (entry->flag_state & FLAG_STATE_DOWNLINK_FIN))
-  {
-    next64 = time64 + local->airwall->conf->timeouts.both_fin*1000ULL*1000ULL;
-  }
-  else if (entry->flag_state & (FLAG_STATE_UPLINK_FIN|FLAG_STATE_DOWNLINK_FIN))
-  {
-    next64 = time64 + local->airwall->conf->timeouts.one_fin*1000ULL*1000ULL;
-  }
-  else
-  {
-    next64 = time64 + local->airwall->conf->timeouts.connected*1000ULL*1000ULL;
-  }
-  if (!omit && abs(next64 - entry->timer.time64) >= 1000*1000)
-  {
-    worker_local_wrlock(local);
-    entry->timer.time64 = next64;
-    timer_linkheap_modify(&local->timers, &entry->timer);
-    worker_local_wrunlock(local);
-  }
+
   if (entry->flag_state == FLAG_STATE_WINDOW_UPDATE_SENT)
   {
     log_log(LOG_LEVEL_NOTICE, "WORKERDOWNLINK", "processing protodetect data");
@@ -4784,6 +5060,646 @@ int downlink(
   - Lookup by wan_port, verify remote_ip:remote_port
  */
 
+static void
+handle_uplink_arp(struct packet *pkt,
+                  struct worker_local *local,
+                  struct airwall *airwall,
+                  struct port *port, struct ll_alloc_st *st,
+                  uint64_t time64)
+{
+  void *ether = pkt->data;
+  const void *arp = ether_payload(ether);
+  size_t ether_len = pkt->sz;
+  if (ether_len < ETHER_HDR_LEN + 28 || !arp_is_valid_reqresp(arp))
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "ARP is not valid");
+    return;
+  }
+  log_log(LOG_LEVEL_NOTICE, "WORKERUPLINK", "ARP packet");
+  if (arp_is_req(arp))
+  {
+    log_log(LOG_LEVEL_NOTICE, "WORKERUPLINK", "ARP req");
+    if (arp_cache_get_accept_invalid(&local->dl_arp_cache, arp_spa(arp)))
+    {
+      uint32_t spa = arp_spa(arp);
+      const unsigned char *sha = arp_const_sha(arp);
+      log_log(LOG_LEVEL_INFO, "WORKERDOWNLINK",
+              "%d.%d.%d.%d is at %.2x:%.2x:%.2x:%.2x:%.2x:%.2x",
+              (spa>>24)&0xFF, (spa>>16)&0xFF, (spa>>8)&0xFF, (spa>>0)&0xFF,
+              sha[0], sha[1], sha[2], sha[3], sha[4], sha[5]);
+      arp_cache_put(&local->dl_arp_cache, port, arp_spa(arp), arp_const_sha(arp), &local->timers, time64);
+    }
+    if (arp_tpa(arp) != airwall->conf->dl_addr)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "ARP is not to us");
+      return;
+    }
+    char etherarp[14+28] = {0};
+    char *arp2 = ether_payload(etherarp);
+    memcpy(ether_src(etherarp), airwall->dl_mac, 6);
+    memcpy(ether_dst(etherarp), arp_const_sha(arp), 6);
+    ether_set_type(etherarp, ETHER_TYPE_ARP);
+    arp_set_ether(arp2);
+    arp_set_resp(arp2);
+    memcpy(arp_sha(arp2), airwall->dl_mac, 6);
+    memcpy(arp_tha(arp2), arp_const_sha(arp), 6);
+    arp_set_spa(arp2, airwall->conf->dl_addr);
+    arp_set_tpa(arp2, arp_spa(arp));
+
+    struct packet *pktstruct = ll_alloc_st(st, packet_size(sizeof(etherarp)));
+    pktstruct->data = packet_calc_data(pktstruct);
+    pktstruct->direction = PACKET_DIRECTION_DOWNLINK;
+    pktstruct->sz = sizeof(etherarp);
+    memcpy(pktstruct->data, etherarp, sizeof(etherarp));
+    port->portfunc(pktstruct, port->userdata);
+    return;
+  }
+  else if (arp_is_resp(arp))
+  {
+    if (arp_cache_get_accept_invalid(&local->dl_arp_cache, arp_spa(arp)))
+    {
+      uint32_t spa = arp_spa(arp);
+      const unsigned char *sha = arp_const_sha(arp);
+      log_log(LOG_LEVEL_INFO, "WORKERUPLINK",
+              "%d.%d.%d.%d is at %.2x:%.2x:%.2x:%.2x:%.2x:%.2x",
+              (spa>>24)&0xFF, (spa>>16)&0xFF, (spa>>8)&0xFF, (spa>>0)&0xFF,
+              sha[0], sha[1], sha[2], sha[3], sha[4], sha[5]);
+      arp_cache_put(&local->dl_arp_cache, port, arp_spa(arp), arp_const_sha(arp), &local->timers, time64);
+    }
+    return;
+  }
+}
+
+static int
+handle_uplink_syn(struct packet *pkt, void *ether, void *ip, void *ippay,
+                  struct worker_local *local, struct airwall *airwall,
+                  struct port *port, struct ll_alloc_st *st,
+                  int version, uint64_t time64,
+                  char *packetbuf, size_t packetbufsiz,
+                  char *statebuf, size_t statebufsiz)
+{
+  struct airwall_hash_entry *entry;
+  uint16_t lan_port = tcp_src_port(ippay);
+  uint16_t remote_port = tcp_dst_port(ippay);
+  const void *lan_ip = ip_src_ptr(ip);
+  const void *remote_ip = ip_dst_ptr(ip);
+  struct airwall_hash_ctx ctx;
+  uint32_t ip_len = ip46_total_len(ip);
+  uint32_t tcp_len = ip46_total_len(ip) - ip46_hdr_len(ip);
+  if (ip46_hdr_cksum_calc(ip) != 0)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "invalid IP hdr cksum");
+    return 1;
+  }
+  if (tcp46_cksum_calc(ip) != 0)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "invalid TCP hdr cksum");
+    return 1;
+  }
+  if (tcp_fin(ippay) || tcp_rst(ippay))
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "SYN packet contains FIN or RST");
+    return 1;
+  }
+  if (!tcp_ack(ippay))
+  {
+    struct tcp_information tcpinfo;
+    //ctx.locked = 0;
+    entry = airwall_hash_get_local(
+      local, version, lan_ip, lan_port, remote_ip, remote_port, &ctx);
+    if (entry != NULL && entry->flag_state == FLAG_STATE_UPLINK_SYN_SENT &&
+        entry->state_data.uplink_syn_sent.isn == tcp_seq_number(ippay))
+    {
+      // retransmit of SYN
+      //airwall_hash_unlock(local, &ctx);
+      //port->portfunc(pkt, port->userdata);
+      tcp_set_src_port_cksum_update(ippay, tcp_len, entry->nat_port);
+      if (version == 4)
+      {
+        ip_set_src_cksum_update(ip, ip_len, 6, ippay, tcp_len,
+                                hdr_get32n(&entry->nat_ip));
+      }
+      else
+      {
+        abort();
+      }
+#ifdef ENABLE_ARP
+      if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
+      {
+        return 1;
+      }
+#endif
+      return 0;
+    }
+    if (entry != NULL)
+    {
+      if (entry->flag_state == FLAG_STATE_RESETED ||
+          entry->flag_state == FLAG_STATE_TIME_WAIT ||
+          ((entry->flag_state & FLAG_STATE_UPLINK_FIN) &&
+           (entry->flag_state & FLAG_STATE_DOWNLINK_FIN)))
+      {
+        delete_closing_already_bucket_locked(airwall, local, entry);
+        entry = NULL;
+      }
+      else
+      {
+        airwall_entry_to_str(statebuf, statebufsiz, entry);
+        airwall_packet_to_str(packetbuf, packetbufsiz, ether);
+        log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "S/SA but entry exists, state: %s, packet: %s", statebuf, packetbuf);
+        //airwall_hash_unlock(local, &ctx);
+        return 1;
+      }
+    }
+#ifdef ENABLE_ARP
+    char ipv4[4];
+    uint16_t tcp_port;
+    if (version == 4)
+    {
+      uint32_t loc = airwall->conf->ul_addr;
+      hdr_set32n(ipv4, loc);
+      tcp_port = get_udp_port(airwall->porter, hdr_get32n(lan_ip), lan_port, 1);
+    }
+    else
+    {
+      abort();
+    }
+    entry = airwall_hash_put(
+      local, version, lan_ip, lan_port, ipv4, tcp_port, remote_ip, remote_port, 0, time64, 1);
+#else
+    allocate_port(lan_port);
+    entry = airwall_hash_put(
+      local, version, lan_ip, lan_port, lan_ip, lan_port, remote_ip, remote_port, 0, time64, 1);
+#endif
+    if (entry == NULL)
+    {
+      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "out of memory or already exists");
+#ifdef ENABLE_ARP
+      deallocate_udp_port(airwall->porter, tcp_port, 1);
+#else
+      deallocate_udp_port(airwall->porter, lan_port, 1);
+#endif
+      //airwall_hash_unlock(local, &ctx);
+      return 1;
+    }
+    if (version == 6)
+    {
+      entry->ulflowlabel = ipv6_flow_label(ip);
+    }
+    tcp_parse_options(ippay, &tcpinfo);
+    if (!tcpinfo.options_valid)
+    {
+      tcpinfo.wscale = 0;
+      tcpinfo.mssoff = 0;
+      tcpinfo.mss = 1460;
+      tcpinfo.sack_permitted = 0;
+    }
+    entry->flag_state = FLAG_STATE_UPLINK_SYN_SENT;
+    entry->state_data.uplink_syn_sent.isn = tcp_seq_number(ippay);
+    entry->statetrack.lan.wscale = tcpinfo.wscale;
+    entry->statetrack.lan.max_window_unscaled = tcp_window(ippay);
+    entry->lan_sack_was_supported = tcpinfo.sack_permitted;
+    if (entry->statetrack.lan.max_window_unscaled == 0)
+    {
+      entry->statetrack.lan.max_window_unscaled = 1;
+    }
+    entry->statetrack.lan.sent = tcp_seq_number(ippay) + 1;
+    if (airwall->conf->mss_clamp_enabled)
+    {
+      uint16_t mss;
+      mss = tcpinfo.mss;
+      if (mss > airwall->conf->mss_clamp)
+      {
+        mss = airwall->conf->mss_clamp;
+      }
+      if (tcpinfo.mssoff)
+      {
+        tcp_set_mss_cksum_update(ippay, &tcpinfo, mss);
+      }
+    }
+    tcp_set_src_port_cksum_update(ippay, tcp_len, entry->nat_port);
+    if (version == 4)
+    {
+      ip_set_src_cksum_update(ip, ip_len, 6, ippay, tcp_len,
+                              hdr_get32n(&entry->nat_ip));
+    }
+    else
+    {
+      abort();
+    }
+    //port->portfunc(pkt, port->userdata);
+    worker_local_wrlock(local);
+    entry->timer.time64 = time64 + local->airwall->conf->timeouts.ul_syn_sent*1000ULL*1000ULL;
+    timer_linkheap_modify(&local->timers, &entry->timer);
+    worker_local_wrunlock(local);
+    //airwall_hash_unlock(local, &ctx);
+#ifdef ENABLE_ARP
+    if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
+    {
+      return 1;
+    }
+#endif
+    return 0;
+  }
+  else
+  {
+    struct tcp_information tcpinfo;
+    //struct sack_hash_data sackdata;
+    //struct threetuplepayload threetuplepayload;
+    uint8_t own_wscale;
+    //ctx.locked = 0;
+    entry = airwall_hash_get_local(
+      local, version, lan_ip, lan_port, remote_ip, remote_port, &ctx);
+    if (entry == NULL)
+    {
+      airwall_packet_to_str(packetbuf, packetbufsiz, ether);
+      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "SA/SA but entry nonexistent, packet: %s", packetbuf);
+      //airwall_hash_unlock(local, &ctx);
+      return 1;
+    }
+    if (entry->flag_state == FLAG_STATE_ESTABLISHED)
+    {
+      // FIXME we should store the ISN permanently...
+      if (tcp_ack_number(ippay) == entry->statetrack.lan.acked &&
+          tcp_seq_number(ippay) + 1 + entry->seqoffset
+          == entry->statetrack.lan.sent)
+      {
+        airwall_entry_to_str(statebuf, statebufsiz, entry);
+        airwall_packet_to_str(packetbuf, packetbufsiz, ether);
+        log_log(LOG_LEVEL_NOTICE, "WORKERUPLINK", "resending ACK, state: %s, packet: %s", statebuf, packetbuf);
+        send_ack_only(ether, entry, port, st);
+        //airwall_hash_unlock(local, &ctx);
+        return 1;
+      }
+    }
+    if (entry->flag_state != FLAG_STATE_DOWNLINK_SYN_SENT)
+    {
+      airwall_entry_to_str(statebuf, statebufsiz, entry);
+      airwall_packet_to_str(packetbuf, packetbufsiz, ether);
+      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "SA/SA, entry != DL_SYN_SENT, state: %s, packet: %s", statebuf, packetbuf);
+      //airwall_hash_unlock(local, &ctx);
+      return 1;
+    }
+    if (tcp_ack_number(ippay) != entry->remote_isn + 1)
+    {
+      airwall_entry_to_str(statebuf, statebufsiz, entry);
+      airwall_packet_to_str(packetbuf, packetbufsiz, ether);
+      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "SA/SA, invalid ACK num, state: %s, packet: %s", statebuf, packetbuf);
+      //airwall_hash_unlock(local, &ctx);
+      return 1;
+    }
+    tcp_parse_options(ippay, &tcpinfo);
+    if (!tcpinfo.options_valid)
+    {
+      tcpinfo.mss = airwall->conf->own_mss;
+      tcpinfo.wscale = 0;
+      tcpinfo.sack_permitted = 0;
+    }
+#if 0
+    sackdata.sack_supported = tcpinfo.sack_permitted;
+    sackdata.mss = tcpinfo.mss;
+    if (sackdata.mss == 0)
+    {
+      sackdata.mss = airwall->conf->own_mss;
+    }
+    if (   airwall->conf->sackmode == HASHMODE_HASHIPPORT
+        || airwall->conf->mssmode == HASHMODE_HASHIPPORT)
+    {
+      if (version == 4)
+      {
+        sack_ip_port_hash_add4(
+          &airwall->autolearn, ip_src(ip), tcp_src_port(ippay), &sackdata);
+      }
+      else
+      {
+        sack_ip_port_hash_add6(
+          &airwall->autolearn, ipv6_src(ip), tcp_src_port(ippay), &sackdata);
+      }
+    }
+    if (   airwall->conf->sackmode == HASHMODE_HASHIP
+        || airwall->conf->mssmode == HASHMODE_HASHIP)
+    {
+      if (version == 4)
+      {
+        sack_ip_port_hash_add4(
+          &airwall->autolearn, ip_src(ip), 0, &sackdata);
+      }
+      else
+      {
+        sack_ip_port_hash_add6(
+          &airwall->autolearn, ipv6_src(ip), 0, &sackdata);
+      }
+    }
+    if (airwall->conf->wscalemode == HASHMODE_COMMANDED)
+    {
+      if (version == 4)
+      {
+        if (threetuplectx_find(&airwall->threetuplectx, ip_src(ip), tcp_src_port(ippay), 6, &threetuplepayload) != 0)
+        {
+          threetuplepayload.wscaleshift = airwall->conf->own_wscale;
+        }
+      }
+      else
+      {
+        if (threetuplectx_find6(&airwall->threetuplectx, ipv6_src(ip), tcp_src_port(ippay), 6, &threetuplepayload) != 0)
+        {
+          threetuplepayload.wscaleshift = airwall->conf->own_wscale;
+        }
+      }
+    }
+    if (airwall->conf->wscalemode == HASHMODE_COMMANDED)
+    {
+      own_wscale = threetuplepayload.wscaleshift;
+    }
+    else
+#endif
+    {
+      own_wscale = airwall->conf->own_wscale;
+    }
+    entry->wscalediff =
+      ((int)own_wscale) - ((int)tcpinfo.wscale);
+    entry->seqoffset =
+      entry->local_isn - tcp_seq_number(ippay);
+    if (tcpinfo.ts_present)
+    {
+      entry->tsoffset =
+        entry->state_data.downlink_syn_sent.local_timestamp - tcpinfo.ts;
+    }
+    else
+    {
+      entry->tsoffset = 0;
+    }
+    entry->statetrack.lan.wscale = tcpinfo.wscale;
+    entry->statetrack.lan.sent = tcp_seq_number(ippay) + 1 + entry->seqoffset;
+    entry->statetrack.lan.acked = tcp_ack_number(ippay);
+    entry->statetrack.lan.max = tcp_ack_number(ippay) + (tcp_window(ippay) << entry->statetrack.lan.wscale);
+    entry->statetrack.lan.max_window_unscaled = tcp_window(ippay);
+    entry->lan_sack_was_supported = tcpinfo.sack_permitted;
+    if (entry->statetrack.lan.max_window_unscaled == 0)
+    {
+      entry->statetrack.lan.max_window_unscaled = 1;
+    }
+    entry->flag_state = FLAG_STATE_ESTABLISHED;
+    worker_local_wrlock(local);
+    entry->timer.time64 = time64 + local->airwall->conf->timeouts.connected*1000ULL*1000ULL;
+    timer_linkheap_modify(&local->timers, &entry->timer);
+    worker_local_wrunlock(local);
+    send_ack_and_window_update(ether, entry, port, st, airwall, local, time64);
+    //airwall_hash_unlock(local, &ctx);
+    return 1;
+  }
+}
+
+static int
+handle_uplink_syn_rcvd(struct packet *pkt, void *ether, void *ip, void *ippay,
+                       struct airwall_hash_entry *entry,
+                       struct airwall *airwall, struct worker_local *local,
+                       struct port *port, struct ll_alloc_st *st,
+                       char *packetbuf, size_t packetbufsiz,
+                       char *statebuf, size_t statebufsiz,
+                       uint64_t time64, int version)
+{
+  uint32_t first_seq, last_seq;
+  int32_t data_len;
+  uint32_t ip_len = ip46_total_len(ip);
+  uint32_t tcp_len = ip_len - ip46_hdr_len(ip);
+  if (ip46_hdr_cksum_calc(ip) != 0)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "invalid IP hdr cksum");
+    //airwall_hash_unlock(local, &ctx);
+    return 1;
+  }
+  if (tcp46_cksum_calc(ip) != 0)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "invalid TCP hdr cksum");
+    //airwall_hash_unlock(local, &ctx);
+    return 1;
+  }
+  if (tcp_rst(ippay))
+  {
+    uint32_t seq = tcp_seq_number(ippay) + entry->seqoffset;
+    if (!rst_is_valid_uplink(seq, &entry->statetrack))
+    {
+      airwall_entry_to_str(statebuf, statebufsiz, entry);
+      airwall_packet_to_str(packetbuf, packetbufsiz, ether);
+      log_log(LOG_LEVEL_ERR, "WORKERUPLINK",
+              "invalid SEQ num in RST, %u/%u/%u, state: %s, packet: %s",
+              seq, entry->statetrack.lan.sent, entry->statetrack.wan.acked,
+              statebuf, packetbuf);
+      //airwall_hash_unlock(local, &ctx);
+      return 1;
+    }
+    entry->flag_state = FLAG_STATE_RESETED;
+    worker_local_wrlock(local);
+    entry->timer.time64 = time64 + local->airwall->conf->timeouts.reseted*1000ULL*1000ULL;
+    timer_linkheap_modify(&local->timers, &entry->timer);
+    worker_local_wrunlock(local);
+    tcp_set_src_port_cksum_update(ippay, tcp_len, entry->nat_port);
+    if (version == 4)
+    {
+      ip_set_src_cksum_update(ip, ip_len, 6, ippay, tcp_len,
+                              hdr_get32n(&entry->nat_ip));
+    }
+    else
+    {
+      abort();
+    }
+    //port->portfunc(pkt, port->userdata);
+    //airwall_hash_unlock(local, &ctx);
+#ifdef ENABLE_ARP
+    if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
+    {
+      return 1;
+    }
+#endif
+    return 0;
+  }
+  if (tcp_ack(ippay))
+  {
+    uint32_t ack = tcp_ack_number(ippay);
+    uint16_t window = tcp_window(ippay);
+    if (tcp_ack_number(ippay) != entry->state_data.uplink_syn_rcvd.isn + 1)
+    {
+      airwall_entry_to_str(statebuf, statebufsiz, entry);
+      airwall_packet_to_str(packetbuf, packetbufsiz, ether);
+      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "invalid ACK number, state: %s, packet: %s", statebuf, packetbuf);
+      //airwall_hash_unlock(local, &ctx);
+      return 1;
+    }
+    first_seq = tcp_seq_number(ippay);
+    data_len =
+      ((int32_t)ip_len) - ((int32_t)ip46_hdr_len(ip)) - ((int32_t)tcp_data_offset(ippay));
+    if (data_len < 0)
+    {
+      // This can occur in fragmented packets. We don't then know the true
+      // data length, and can therefore drop packets that would otherwise be
+      // valid.
+      data_len = 0;
+    }
+    last_seq = first_seq + data_len - 1;
+    if (seq_cmp(last_seq, entry->statetrack.lan.sent) >= 0)
+    {
+      entry->statetrack.lan.sent = last_seq + 1;
+    }
+    entry->statetrack.lan.acked = ack;
+    entry->statetrack.lan.max = ack +
+                                  (window << entry->statetrack.lan.wscale);
+    entry->flag_state = FLAG_STATE_ESTABLISHED;
+    worker_local_wrlock(local);
+    entry->timer.time64 = time64 + local->airwall->conf->timeouts.connected*1000ULL*1000ULL;
+    timer_linkheap_modify(&local->timers, &entry->timer);
+    worker_local_wrunlock(local);
+    tcp_set_src_port_cksum_update(ippay, tcp_len, entry->nat_port);
+    if (version == 4)
+    {
+      ip_set_src_cksum_update(ip, ip_len, 6, ippay, tcp_len,
+                              hdr_get32n(&entry->nat_ip));
+    }
+    else
+    {
+      abort();
+    }
+    //port->portfunc(pkt, port->userdata);
+    //airwall_hash_unlock(local, &ctx);
+#ifdef ENABLE_ARP
+    if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
+    {
+      return 1;
+    }
+#endif
+    return 0;
+  }
+  airwall_entry_to_str(statebuf, statebufsiz, entry);
+  airwall_packet_to_str(packetbuf, packetbufsiz, ether);
+  log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "UPLINK_SYN_RECEIVED w/o ACK, state: %s, packet: %s", statebuf, packetbuf);
+  //airwall_hash_unlock(local, &ctx);
+  return 1;
+}
+
+static int
+handle_uplink_rst(void *ether, void *ip, void *ippay,
+                  struct airwall_hash_entry *entry,
+                  struct worker_local *local,
+                  struct airwall *airwall,
+                  struct port *port,
+                  struct ll_alloc_st *st,
+                  int version,
+                  struct packet *pkt,
+                  uint64_t time64,
+                  char *packetbuf, size_t packetbufsiz,
+                  char *statebuf, size_t statebufsiz)
+{
+  uint32_t ip_len = ip46_total_len(ip);
+  uint32_t tcp_len = ip_len - ip46_hdr_len(ip);
+  if (ip46_hdr_cksum_calc(ip) != 0)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "invalid IP hdr cksum");
+    //airwall_hash_unlock(local, &ctx);
+    return 1;
+  }
+  if (tcp46_cksum_calc(ip) != 0)
+  {
+    log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "invalid TCP hdr cksum");
+    //airwall_hash_unlock(local, &ctx);
+    return 1;
+  }
+  if (entry->flag_state == FLAG_STATE_UPLINK_SYN_SENT)
+  {
+    airwall_entry_to_str(statebuf, statebufsiz, entry);
+    airwall_packet_to_str(packetbuf, packetbufsiz, ether);
+    log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "dropping RST in UPLINK_SYN_SENT, state: %s, packet: %s", statebuf, packetbuf);
+    //airwall_hash_unlock(local, &ctx);
+    return 1;
+  }
+  else if (entry->flag_state == FLAG_STATE_DOWNLINK_SYN_SENT)
+  {
+    if (!tcp_ack(ippay))
+    {
+      airwall_entry_to_str(statebuf, statebufsiz, entry);
+      airwall_packet_to_str(packetbuf, packetbufsiz, ether);
+      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "R/RA in DOWNLINK_SYN_SENT, state: %s, packet: %s", statebuf, packetbuf);
+      //airwall_hash_unlock(local, &ctx);
+      return 1;
+    }
+    if (tcp_ack_number(ippay) != entry->remote_isn + 1)
+    {
+      airwall_entry_to_str(statebuf, statebufsiz, entry);
+      airwall_packet_to_str(packetbuf, packetbufsiz, ether);
+      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "RA/RA in DL_SYN_SENT, bad seq, state: %s, packet: %s", statebuf, packetbuf);
+      //airwall_hash_unlock(local, &ctx);
+      return 1;
+    }
+    tcp_set_seq_number_cksum_update(
+      ippay, tcp_len, entry->local_isn + 1);
+    tcp_set_ack_off_cksum_update(ippay);
+    tcp_set_ack_number_cksum_update(
+      ippay, tcp_len, 0);
+    entry->flag_state = FLAG_STATE_RESETED;
+    worker_local_wrlock(local);
+    entry->timer.time64 = time64 + local->airwall->conf->timeouts.reseted*1000ULL*1000ULL;
+    timer_linkheap_modify(&local->timers, &entry->timer);
+    worker_local_wrunlock(local);
+    tcp_set_src_port_cksum_update(ippay, tcp_len, entry->nat_port);
+    if (version == 4)
+    {
+      ip_set_src_cksum_update(ip, ip_len, 6, ippay, tcp_len,
+                              hdr_get32n(&entry->nat_ip));
+    }
+    else
+    {
+      abort();
+    }
+    //port->portfunc(pkt, port->userdata);
+    //airwall_hash_unlock(local, &ctx);
+#ifdef ENABLE_ARP
+    if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
+    {
+      return 1;
+    }
+#endif
+    return 0;
+  }
+  else
+  {
+    uint32_t seq = tcp_seq_number(ippay) + entry->seqoffset;
+    if (!rst_is_valid_uplink(seq, &entry->statetrack))
+    {
+      airwall_entry_to_str(statebuf, statebufsiz, entry);
+      airwall_packet_to_str(packetbuf, packetbufsiz, ether);
+      log_log(LOG_LEVEL_ERR, "WORKERUPLINK",
+              "invalid SEQ num in RST, %u/%u/%u, state: %s, packet: %s",
+              seq, entry->statetrack.lan.sent, entry->statetrack.wan.acked, statebuf, packetbuf);
+      //airwall_hash_unlock(local, &ctx);
+      return 1;
+    }
+  }
+  tcp_set_seq_number_cksum_update(
+    ippay, tcp_len, tcp_seq_number(ippay)+entry->seqoffset);
+  entry->flag_state = FLAG_STATE_RESETED;
+  worker_local_wrlock(local);
+  entry->timer.time64 = time64 + local->airwall->conf->timeouts.reseted*1000ULL*1000ULL;
+  timer_linkheap_modify(&local->timers, &entry->timer);
+  worker_local_wrunlock(local);
+  tcp_set_src_port_cksum_update(ippay, tcp_len, entry->nat_port);
+  if (version == 4)
+  {
+    ip_set_src_cksum_update(ip, ip_len, 6, ippay, tcp_len,
+                            hdr_get32n(&entry->nat_ip));
+  }
+  else
+  {
+    abort();
+  }
+  //port->portfunc(pkt, port->userdata);
+  //airwall_hash_unlock(local, &ctx);
+#ifdef ENABLE_ARP
+  if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
+  {
+    return 1;
+  }
+#endif
+  return 0;
+}
+
 // return: whether to free (1) or not (0)
 int uplink(
   struct airwall *airwall, struct worker_local *local, struct packet *pkt,
@@ -4804,15 +5720,12 @@ int uplink(
   struct airwall_hash_entry *entry;
   struct airwall_hash_ctx ctx;
   int8_t wscalediff;
-  uint32_t first_seq;
-  uint32_t last_seq;
-  int32_t data_len;
   int todelete = 0;
-  uint32_t lan_min;
   struct sack_ts_headers hdrs;
   char statebuf[8192];
   char packetbuf[8192];
   int version;
+  struct seqs seqs;
 
   if (ether_len < ETHER_HDR_LEN)
   {
@@ -4835,65 +5748,8 @@ int uplink(
 #ifdef ENABLE_ARP
   if (ether_type(ether) == ETHER_TYPE_ARP)
   {
-    const void *arp = ether_payload(ether);
-    if (ether_len < ETHER_HDR_LEN + 28 || !arp_is_valid_reqresp(arp))
-    {
-      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "ARP is not valid");
-      return 1;
-    }
-    log_log(LOG_LEVEL_NOTICE, "WORKERUPLINK", "ARP packet");
-    if (arp_is_req(arp))
-    {
-      log_log(LOG_LEVEL_NOTICE, "WORKERUPLINK", "ARP req");
-      if (arp_cache_get_accept_invalid(&local->dl_arp_cache, arp_spa(arp)))
-      {
-        uint32_t spa = arp_spa(arp);
-        const unsigned char *sha = arp_const_sha(arp);
-        log_log(LOG_LEVEL_INFO, "WORKERDOWNLINK",
-                "%d.%d.%d.%d is at %.2x:%.2x:%.2x:%.2x:%.2x:%.2x",
-                (spa>>24)&0xFF, (spa>>16)&0xFF, (spa>>8)&0xFF, (spa>>0)&0xFF,
-                sha[0], sha[1], sha[2], sha[3], sha[4], sha[5]);
-        arp_cache_put(&local->dl_arp_cache, port, arp_spa(arp), arp_const_sha(arp), &local->timers, time64);
-      }
-      if (arp_tpa(arp) != airwall->conf->dl_addr)
-      {
-        log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "ARP is not to us");
-        return 1;
-      }
-      char etherarp[14+28] = {0};
-      char *arp2 = ether_payload(etherarp);
-      memcpy(ether_src(etherarp), airwall->dl_mac, 6);
-      memcpy(ether_dst(etherarp), arp_const_sha(arp), 6);
-      ether_set_type(etherarp, ETHER_TYPE_ARP);
-      arp_set_ether(arp2);
-      arp_set_resp(arp2);
-      memcpy(arp_sha(arp2), airwall->dl_mac, 6);
-      memcpy(arp_tha(arp2), arp_const_sha(arp), 6);
-      arp_set_spa(arp2, airwall->conf->dl_addr);
-      arp_set_tpa(arp2, arp_spa(arp));
-
-      struct packet *pktstruct = ll_alloc_st(st, packet_size(sizeof(etherarp)));
-      pktstruct->data = packet_calc_data(pktstruct);
-      pktstruct->direction = PACKET_DIRECTION_DOWNLINK;
-      pktstruct->sz = sizeof(etherarp);
-      memcpy(pktstruct->data, etherarp, sizeof(etherarp));
-      port->portfunc(pktstruct, port->userdata);
-      return 1;
-    }
-    else if (arp_is_resp(arp))
-    {
-      if (arp_cache_get_accept_invalid(&local->dl_arp_cache, arp_spa(arp)))
-      {
-        uint32_t spa = arp_spa(arp);
-        const unsigned char *sha = arp_const_sha(arp);
-        log_log(LOG_LEVEL_INFO, "WORKERUPLINK",
-                "%d.%d.%d.%d is at %.2x:%.2x:%.2x:%.2x:%.2x:%.2x",
-                (spa>>24)&0xFF, (spa>>16)&0xFF, (spa>>8)&0xFF, (spa>>0)&0xFF,
-                sha[0], sha[1], sha[2], sha[3], sha[4], sha[5]);
-        arp_cache_put(&local->dl_arp_cache, port, arp_spa(arp), arp_const_sha(arp), &local->timers, time64);
-      }
-      return 1;
-    }
+    handle_uplink_arp(pkt, local, airwall, port, st, time64);
+    return 1;
   }
 #else
   if (ether_type(ether) == ETHER_TYPE_ARP)
@@ -5056,306 +5912,10 @@ int uplink(
   }
   if (unlikely(tcp_syn(ippay)))
   {
-    if (ip46_hdr_cksum_calc(ip) != 0)
-    {
-      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "invalid IP hdr cksum");
-      return 1;
-    }
-    if (tcp46_cksum_calc(ip) != 0)
-    {
-      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "invalid TCP hdr cksum");
-      return 1;
-    }
-    if (tcp_fin(ippay) || tcp_rst(ippay))
-    {
-      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "SYN packet contains FIN or RST");
-      return 1;
-    }
-    if (!tcp_ack(ippay))
-    {
-      struct tcp_information tcpinfo;
-      //ctx.locked = 0;
-      entry = airwall_hash_get_local(
-        local, version, lan_ip, lan_port, remote_ip, remote_port, &ctx);
-      if (entry != NULL && entry->flag_state == FLAG_STATE_UPLINK_SYN_SENT &&
-          entry->state_data.uplink_syn_sent.isn == tcp_seq_number(ippay))
-      {
-        // retransmit of SYN
-        //airwall_hash_unlock(local, &ctx);
-        //port->portfunc(pkt, port->userdata);
-        tcp_set_src_port_cksum_update(ippay, tcp_len, entry->nat_port);
-        if (version == 4)
-        {
-          ip_set_src_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
-                                  hdr_get32n(&entry->nat_ip));
-        }
-        else
-        {
-          abort();
-        }
-#ifdef ENABLE_ARP
-        if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
-        {
-          return 1;
-        }
-#endif
-        return 0;
-      }
-      if (entry != NULL)
-      {
-        if (entry->flag_state == FLAG_STATE_RESETED ||
-            entry->flag_state == FLAG_STATE_TIME_WAIT ||
-            ((entry->flag_state & FLAG_STATE_UPLINK_FIN) &&
-             (entry->flag_state & FLAG_STATE_DOWNLINK_FIN)))
-        {
-          delete_closing_already_bucket_locked(airwall, local, entry);
-          entry = NULL;
-        }
-        else
-        {
-          airwall_entry_to_str(statebuf, sizeof(statebuf), entry);
-          airwall_packet_to_str(packetbuf, sizeof(packetbuf), ether);
-          log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "S/SA but entry exists, state: %s, packet: %s", statebuf, packetbuf);
-          //airwall_hash_unlock(local, &ctx);
-          return 1;
-        }
-      }
-#ifdef ENABLE_ARP
-      char ipv4[4];
-      uint16_t tcp_port;
-      if (version == 4)
-      {
-        uint32_t loc = airwall->conf->ul_addr;
-        hdr_set32n(ipv4, loc);
-        tcp_port = get_udp_port(airwall->porter, hdr_get32n(lan_ip), lan_port, 1);
-      }
-      else
-      {
-        abort();
-      }
-      entry = airwall_hash_put(
-        local, version, lan_ip, lan_port, ipv4, tcp_port, remote_ip, remote_port, 0, time64, 1);
-#else
-      allocate_port(lan_port);
-      entry = airwall_hash_put(
-        local, version, lan_ip, lan_port, lan_ip, lan_port, remote_ip, remote_port, 0, time64, 1);
-#endif
-      if (entry == NULL)
-      {
-        log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "out of memory or already exists");
-#ifdef ENABLE_ARP
-        deallocate_udp_port(airwall->porter, tcp_port, 1);
-#else
-        deallocate_udp_port(airwall->porter, lan_port, 1);
-#endif
-        //airwall_hash_unlock(local, &ctx);
-        return 1;
-      }
-      if (version == 6)
-      {
-        entry->ulflowlabel = ipv6_flow_label(ip);
-      }
-      tcp_parse_options(ippay, &tcpinfo);
-      if (!tcpinfo.options_valid)
-      {
-        tcpinfo.wscale = 0;
-        tcpinfo.mssoff = 0;
-        tcpinfo.mss = 1460;
-        tcpinfo.sack_permitted = 0;
-      }
-      entry->flag_state = FLAG_STATE_UPLINK_SYN_SENT;
-      entry->state_data.uplink_syn_sent.isn = tcp_seq_number(ippay);
-      entry->lan_wscale = tcpinfo.wscale;
-      entry->lan_max_window_unscaled = tcp_window(ippay);
-      entry->lan_sack_was_supported = tcpinfo.sack_permitted;
-      if (entry->lan_max_window_unscaled == 0)
-      {
-        entry->lan_max_window_unscaled = 1;
-      }
-      entry->lan_sent = tcp_seq_number(ippay) + 1;
-      if (airwall->conf->mss_clamp_enabled)
-      {
-        uint16_t mss;
-        mss = tcpinfo.mss;
-        if (mss > airwall->conf->mss_clamp)
-        {
-          mss = airwall->conf->mss_clamp;
-        }
-        if (tcpinfo.mssoff)
-        {
-          tcp_set_mss_cksum_update(ippay, &tcpinfo, mss);
-        }
-      }
-      tcp_set_src_port_cksum_update(ippay, tcp_len, entry->nat_port);
-      if (version == 4)
-      {
-        ip_set_src_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
-                                hdr_get32n(&entry->nat_ip));
-      }
-      else
-      {
-        abort();
-      }
-      //port->portfunc(pkt, port->userdata);
-      worker_local_wrlock(local);
-      entry->timer.time64 = time64 + local->airwall->conf->timeouts.ul_syn_sent*1000ULL*1000ULL;
-      timer_linkheap_modify(&local->timers, &entry->timer);
-      worker_local_wrunlock(local);
-      //airwall_hash_unlock(local, &ctx);
-#ifdef ENABLE_ARP
-      if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
-      {
-        return 1;
-      }
-#endif
-      return 0;
-    }
-    else
-    {
-      struct tcp_information tcpinfo;
-      //struct sack_hash_data sackdata;
-      //struct threetuplepayload threetuplepayload;
-      uint8_t own_wscale;
-      //ctx.locked = 0;
-      entry = airwall_hash_get_local(
-        local, version, lan_ip, lan_port, remote_ip, remote_port, &ctx);
-      if (entry == NULL)
-      {
-        airwall_packet_to_str(packetbuf, sizeof(packetbuf), ether);
-        log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "SA/SA but entry nonexistent, packet: %s", packetbuf);
-        //airwall_hash_unlock(local, &ctx);
-        return 1;
-      }
-      if (entry->flag_state == FLAG_STATE_ESTABLISHED)
-      {
-        // FIXME we should store the ISN permanently...
-        if (tcp_ack_number(ippay) == entry->lan_acked &&
-            tcp_seq_number(ippay) + 1 + entry->seqoffset == entry->lan_sent)
-        {
-          airwall_entry_to_str(statebuf, sizeof(statebuf), entry);
-          airwall_packet_to_str(packetbuf, sizeof(packetbuf), ether);
-          log_log(LOG_LEVEL_NOTICE, "WORKERUPLINK", "resending ACK, state: %s, packet: %s", statebuf, packetbuf);
-          send_ack_only(ether, entry, port, st);
-          //airwall_hash_unlock(local, &ctx);
-          return 1;
-        }
-      }
-      if (entry->flag_state != FLAG_STATE_DOWNLINK_SYN_SENT)
-      {
-        airwall_entry_to_str(statebuf, sizeof(statebuf), entry);
-        airwall_packet_to_str(packetbuf, sizeof(packetbuf), ether);
-        log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "SA/SA, entry != DL_SYN_SENT, state: %s, packet: %s", statebuf, packetbuf);
-        //airwall_hash_unlock(local, &ctx);
-        return 1;
-      }
-      if (tcp_ack_number(ippay) != entry->remote_isn + 1)
-      {
-        airwall_entry_to_str(statebuf, sizeof(statebuf), entry);
-        airwall_packet_to_str(packetbuf, sizeof(packetbuf), ether);
-        log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "SA/SA, invalid ACK num, state: %s, packet: %s", statebuf, packetbuf);
-        //airwall_hash_unlock(local, &ctx);
-        return 1;
-      }
-      tcp_parse_options(ippay, &tcpinfo);
-      if (!tcpinfo.options_valid)
-      {
-        tcpinfo.mss = airwall->conf->own_mss;
-        tcpinfo.wscale = 0;
-        tcpinfo.sack_permitted = 0;
-      }
-#if 0
-      sackdata.sack_supported = tcpinfo.sack_permitted;
-      sackdata.mss = tcpinfo.mss;
-      if (sackdata.mss == 0)
-      {
-        sackdata.mss = airwall->conf->own_mss;
-      }
-      if (   airwall->conf->sackmode == HASHMODE_HASHIPPORT
-          || airwall->conf->mssmode == HASHMODE_HASHIPPORT)
-      {
-        if (version == 4)
-        {
-          sack_ip_port_hash_add4(
-            &airwall->autolearn, ip_src(ip), tcp_src_port(ippay), &sackdata);
-        }
-        else
-        {
-          sack_ip_port_hash_add6(
-            &airwall->autolearn, ipv6_src(ip), tcp_src_port(ippay), &sackdata);
-        }
-      }
-      if (   airwall->conf->sackmode == HASHMODE_HASHIP
-          || airwall->conf->mssmode == HASHMODE_HASHIP)
-      {
-        if (version == 4)
-        {
-          sack_ip_port_hash_add4(
-            &airwall->autolearn, ip_src(ip), 0, &sackdata);
-        }
-        else
-        {
-          sack_ip_port_hash_add6(
-            &airwall->autolearn, ipv6_src(ip), 0, &sackdata);
-        }
-      }
-      if (airwall->conf->wscalemode == HASHMODE_COMMANDED)
-      {
-        if (version == 4)
-        {
-          if (threetuplectx_find(&airwall->threetuplectx, ip_src(ip), tcp_src_port(ippay), 6, &threetuplepayload) != 0)
-          {
-            threetuplepayload.wscaleshift = airwall->conf->own_wscale;
-          }
-        }
-        else
-        {
-          if (threetuplectx_find6(&airwall->threetuplectx, ipv6_src(ip), tcp_src_port(ippay), 6, &threetuplepayload) != 0)
-          {
-            threetuplepayload.wscaleshift = airwall->conf->own_wscale;
-          }
-        }
-      }
-      if (airwall->conf->wscalemode == HASHMODE_COMMANDED)
-      {
-        own_wscale = threetuplepayload.wscaleshift;
-      }
-      else
-#endif
-      {
-        own_wscale = airwall->conf->own_wscale;
-      }
-      entry->wscalediff =
-        ((int)own_wscale) - ((int)tcpinfo.wscale);
-      entry->seqoffset =
-        entry->local_isn - tcp_seq_number(ippay);
-      if (tcpinfo.ts_present)
-      {
-        entry->tsoffset =
-          entry->state_data.downlink_syn_sent.local_timestamp - tcpinfo.ts;
-      }
-      else
-      {
-        entry->tsoffset = 0;
-      }
-      entry->lan_wscale = tcpinfo.wscale;
-      entry->lan_sent = tcp_seq_number(ippay) + 1 + entry->seqoffset;
-      entry->lan_acked = tcp_ack_number(ippay);
-      entry->lan_max = tcp_ack_number(ippay) + (tcp_window(ippay) << entry->lan_wscale);
-      entry->lan_max_window_unscaled = tcp_window(ippay);
-      entry->lan_sack_was_supported = tcpinfo.sack_permitted;
-      if (entry->lan_max_window_unscaled == 0)
-      {
-        entry->lan_max_window_unscaled = 1;
-      }
-      entry->flag_state = FLAG_STATE_ESTABLISHED;
-      worker_local_wrlock(local);
-      entry->timer.time64 = time64 + local->airwall->conf->timeouts.connected*1000ULL*1000ULL;
-      timer_linkheap_modify(&local->timers, &entry->timer);
-      worker_local_wrunlock(local);
-      send_ack_and_window_update(ether, entry, port, st, airwall, local, time64);
-      //airwall_hash_unlock(local, &ctx);
-      return 1;
-    }
+    return handle_uplink_syn(pkt, ether, ip, ippay,
+                             local, airwall, port, st, version, time64,
+                             packetbuf, sizeof(packetbuf),
+                             statebuf, sizeof(statebuf));
   }
   entry = airwall_hash_get_local(
     local, version, lan_ip, lan_port, remote_ip, remote_port, &ctx);
@@ -5368,229 +5928,24 @@ int uplink(
   }
   if (unlikely(entry->flag_state == FLAG_STATE_UPLINK_SYN_RCVD))
   {
-    if (ip46_hdr_cksum_calc(ip) != 0)
-    {
-      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "invalid IP hdr cksum");
-      //airwall_hash_unlock(local, &ctx);
-      return 1;
-    }
-    if (tcp46_cksum_calc(ip) != 0)
-    {
-      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "invalid TCP hdr cksum");
-      //airwall_hash_unlock(local, &ctx);
-      return 1;
-    }
-    if (tcp_rst(ippay))
-    {
-      uint32_t seq = tcp_seq_number(ippay) + entry->seqoffset;
-      if (!rst_is_valid(seq, entry->lan_sent) &&
-          !rst_is_valid(seq, entry->wan_acked))
-      {
-        airwall_entry_to_str(statebuf, sizeof(statebuf), entry);
-        airwall_packet_to_str(packetbuf, sizeof(packetbuf), ether);
-        log_log(LOG_LEVEL_ERR, "WORKERUPLINK",
-                "invalid SEQ num in RST, %u/%u/%u, state: %s, packet: %s",
-                seq, entry->lan_sent, entry->wan_acked,
-                statebuf, packetbuf);
-        //airwall_hash_unlock(local, &ctx);
-        return 1;
-      }
-      entry->flag_state = FLAG_STATE_RESETED;
-      worker_local_wrlock(local);
-      entry->timer.time64 = time64 + local->airwall->conf->timeouts.reseted*1000ULL*1000ULL;
-      timer_linkheap_modify(&local->timers, &entry->timer);
-      worker_local_wrunlock(local);
-      tcp_set_src_port_cksum_update(ippay, tcp_len, entry->nat_port);
-      if (version == 4)
-      {
-        ip_set_src_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
-                                hdr_get32n(&entry->nat_ip));
-      }
-      else
-      {
-        abort();
-      }
-      //port->portfunc(pkt, port->userdata);
-      //airwall_hash_unlock(local, &ctx);
-#ifdef ENABLE_ARP
-      if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
-      {
-        return 1;
-      }
-#endif
-      return 0;
-    }
-    if (tcp_ack(ippay))
-    {
-      uint32_t ack = tcp_ack_number(ippay);
-      uint16_t window = tcp_window(ippay);
-      if (tcp_ack_number(ippay) != entry->state_data.uplink_syn_rcvd.isn + 1)
-      {
-        airwall_entry_to_str(statebuf, sizeof(statebuf), entry);
-        airwall_packet_to_str(packetbuf, sizeof(packetbuf), ether);
-        log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "invalid ACK number, state: %s, packet: %s", statebuf, packetbuf);
-        //airwall_hash_unlock(local, &ctx);
-        return 1;
-      }
-      first_seq = tcp_seq_number(ippay);
-      data_len =
-        ((int32_t)ip_len) - ((int32_t)ihl) - ((int32_t)tcp_data_offset(ippay));
-      if (data_len < 0)
-      {
-        // This can occur in fragmented packets. We don't then know the true
-        // data length, and can therefore drop packets that would otherwise be
-        // valid.
-        data_len = 0;
-      }
-      last_seq = first_seq + data_len - 1;
-      if (seq_cmp(last_seq, entry->lan_sent) >= 0)
-      {
-        entry->lan_sent = last_seq + 1;
-      }
-      entry->lan_acked = ack;
-      entry->lan_max = ack + (window << entry->lan_wscale);
-      entry->flag_state = FLAG_STATE_ESTABLISHED;
-      worker_local_wrlock(local);
-      entry->timer.time64 = time64 + local->airwall->conf->timeouts.connected*1000ULL*1000ULL;
-      timer_linkheap_modify(&local->timers, &entry->timer);
-      worker_local_wrunlock(local);
-      tcp_set_src_port_cksum_update(ippay, tcp_len, entry->nat_port);
-      if (version == 4)
-      {
-        ip_set_src_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
-                                hdr_get32n(&entry->nat_ip));
-      }
-      else
-      {
-        abort();
-      }
-      //port->portfunc(pkt, port->userdata);
-      //airwall_hash_unlock(local, &ctx);
-#ifdef ENABLE_ARP
-      if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
-      {
-        return 1;
-      }
-#endif
-      return 0;
-    }
-    airwall_entry_to_str(statebuf, sizeof(statebuf), entry);
-    airwall_packet_to_str(packetbuf, sizeof(packetbuf), ether);
-    log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "UPLINK_SYN_RECEIVED w/o ACK, state: %s, packet: %s", statebuf, packetbuf);
+    int ret;
+    ret = handle_uplink_syn_rcvd(pkt, ether, ip, ippay,
+                                 entry, airwall, local, port, st,
+                                 packetbuf, sizeof(packetbuf),
+                                 statebuf, sizeof(statebuf),
+                                 time64, version);
     //airwall_hash_unlock(local, &ctx);
-    return 1;
+    return ret;
   }
   if (unlikely(tcp_rst(ippay)))
   {
-    if (ip46_hdr_cksum_calc(ip) != 0)
-    {
-      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "invalid IP hdr cksum");
-      //airwall_hash_unlock(local, &ctx);
-      return 1;
-    }
-    if (tcp46_cksum_calc(ip) != 0)
-    {
-      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "invalid TCP hdr cksum");
-      //airwall_hash_unlock(local, &ctx);
-      return 1;
-    }
-    if (entry->flag_state == FLAG_STATE_UPLINK_SYN_SENT)
-    {
-      airwall_entry_to_str(statebuf, sizeof(statebuf), entry);
-      airwall_packet_to_str(packetbuf, sizeof(packetbuf), ether);
-      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "dropping RST in UPLINK_SYN_SENT, state: %s, packet: %s", statebuf, packetbuf);
-      //airwall_hash_unlock(local, &ctx);
-      return 1;
-    }
-    else if (entry->flag_state == FLAG_STATE_DOWNLINK_SYN_SENT)
-    {
-      if (!tcp_ack(ippay))
-      {
-        airwall_entry_to_str(statebuf, sizeof(statebuf), entry);
-        airwall_packet_to_str(packetbuf, sizeof(packetbuf), ether);
-        log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "R/RA in DOWNLINK_SYN_SENT, state: %s, packet: %s", statebuf, packetbuf);
-        //airwall_hash_unlock(local, &ctx);
-        return 1;
-      }
-      if (tcp_ack_number(ippay) != entry->remote_isn + 1)
-      {
-        airwall_entry_to_str(statebuf, sizeof(statebuf), entry);
-        airwall_packet_to_str(packetbuf, sizeof(packetbuf), ether);
-        log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "RA/RA in DL_SYN_SENT, bad seq, state: %s, packet: %s", statebuf, packetbuf);
-        //airwall_hash_unlock(local, &ctx);
-        return 1;
-      }
-      tcp_set_seq_number_cksum_update(
-        ippay, tcp_len, entry->local_isn + 1);
-      tcp_set_ack_off_cksum_update(ippay);
-      tcp_set_ack_number_cksum_update(
-        ippay, tcp_len, 0);
-      entry->flag_state = FLAG_STATE_RESETED;
-      worker_local_wrlock(local);
-      entry->timer.time64 = time64 + local->airwall->conf->timeouts.reseted*1000ULL*1000ULL;
-      timer_linkheap_modify(&local->timers, &entry->timer);
-      worker_local_wrunlock(local);
-      tcp_set_src_port_cksum_update(ippay, tcp_len, entry->nat_port);
-      if (version == 4)
-      {
-        ip_set_src_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
-                                hdr_get32n(&entry->nat_ip));
-      }
-      else
-      {
-        abort();
-      }
-      //port->portfunc(pkt, port->userdata);
-      //airwall_hash_unlock(local, &ctx);
-#ifdef ENABLE_ARP
-      if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
-      {
-        return 1;
-      }
-#endif
-      return 0;
-    }
-    else
-    {
-      uint32_t seq = tcp_seq_number(ippay) + entry->seqoffset;
-      if (!rst_is_valid(seq, entry->lan_sent) &&
-          !rst_is_valid(seq, entry->wan_acked))
-      {
-        airwall_entry_to_str(statebuf, sizeof(statebuf), entry);
-        airwall_packet_to_str(packetbuf, sizeof(packetbuf), ether);
-        log_log(LOG_LEVEL_ERR, "WORKERUPLINK",
-                "invalid SEQ num in RST, %u/%u/%u, state: %s, packet: %s",
-                seq, entry->lan_sent, entry->wan_acked, statebuf, packetbuf);
-        //airwall_hash_unlock(local, &ctx);
-        return 1;
-      }
-    }
-    tcp_set_seq_number_cksum_update(
-      ippay, tcp_len, tcp_seq_number(ippay)+entry->seqoffset);
-    entry->flag_state = FLAG_STATE_RESETED;
-    worker_local_wrlock(local);
-    entry->timer.time64 = time64 + local->airwall->conf->timeouts.reseted*1000ULL*1000ULL;
-    timer_linkheap_modify(&local->timers, &entry->timer);
-    worker_local_wrunlock(local);
-    tcp_set_src_port_cksum_update(ippay, tcp_len, entry->nat_port);
-    if (version == 4)
-    {
-      ip_set_src_cksum_update(ip, ip_len, protocol, ippay, tcp_len,
-                              hdr_get32n(&entry->nat_ip));
-    }
-    else
-    {
-      abort();
-    }
-    //port->portfunc(pkt, port->userdata);
+    int ret;
+    ret = handle_uplink_rst(ether, ip, ippay, entry,
+                            local, airwall, port, st, version, pkt, time64,
+                            packetbuf, sizeof(packetbuf),
+                            statebuf, sizeof(statebuf));
     //airwall_hash_unlock(local, &ctx);
-#ifdef ENABLE_ARP
-    if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
-    {
-      return 1;
-    }
-#endif
-    return 0;
+    return ret;
   }
   if (!airwall_is_connected(entry) && entry->flag_state != FLAG_STATE_RESETED)
   {
@@ -5608,128 +5963,36 @@ int uplink(
     //airwall_hash_unlock(local, &ctx);
     return 1;
   }
-  if (!between(
-    entry->lan_acked - (entry->lan_max_window_unscaled<<entry->lan_wscale),
-    tcp_ack_number(ippay),
-    entry->wan_sent + 1))
+
+  calc_seqs(&seqs, ip, ippay, entry->seqoffset);
+
+  if (!seqs_valid_uplink(entry, &seqs, ether, ip, ippay, 1,
+                         statebuf, sizeof(statebuf),
+                         packetbuf, sizeof(packetbuf)))
   {
-    airwall_entry_to_str(statebuf, sizeof(statebuf), entry);
-    airwall_packet_to_str(packetbuf, sizeof(packetbuf), ether);
-    log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "packet has invalid ACK number, state: %s, packet: %s", statebuf, packetbuf);
     //airwall_hash_unlock(local, &ctx);
     return 1;
-  }
-  first_seq = tcp_seq_number(ippay);
-  data_len =
-    ((int32_t)ip_len) - ((int32_t)ihl) - ((int32_t)tcp_data_offset(ippay));
-  if (data_len < 0)
-  {
-    // This can occur in fragmented packets. We don't then know the true
-    // data length, and can therefore drop packets that would otherwise be
-    // valid.
-    data_len = 0;
-  }
-  last_seq = first_seq + data_len - 1;
-  if (unlikely(tcp_fin(ippay)))
-  {
-    if (ip46_hdr_cksum_calc(ip) != 0)
-    {
-      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "invalid IP hdr cksum");
-      //airwall_hash_unlock(local, &ctx);
-      return 1;
-    }
-    if (tcp46_cksum_calc(ip) != 0)
-    {
-      log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "invalid TCP hdr cksum");
-      //airwall_hash_unlock(local, &ctx);
-      return 1;
-    }
-    last_seq += 1;
-  }
-  lan_min =
-    entry->lan_sent - (entry->wan_max_window_unscaled<<entry->wan_wscale);
-  first_seq += entry->seqoffset;
-  last_seq += entry->seqoffset;
-  if (
-    !between(
-      lan_min, first_seq, entry->wan_max+1)
-    &&
-    !between(
-      lan_min, last_seq, entry->wan_max+1)
-    )
-  {
-    airwall_entry_to_str(statebuf, sizeof(statebuf), entry);
-    airwall_packet_to_str(packetbuf, sizeof(packetbuf), ether);
-    log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "packet has invalid SEQ number, state: %s, packet: %s", statebuf, packetbuf);
-    //airwall_hash_unlock(local, &ctx);
-    return 1;
-  }
-  if (tcp_window(ippay) > entry->lan_max_window_unscaled)
-  {
-    entry->lan_max_window_unscaled = tcp_window(ippay);
-    if (entry->lan_max_window_unscaled == 0)
-    {
-      entry->lan_max_window_unscaled = 1;
-    }
   }
   if (unlikely(tcp_fin(ippay)) && entry->flag_state != FLAG_STATE_RESETED)
   {
-    if (version == 4 && ip_more_frags(ip)) // FIXME for IPv6
+    if (handle_uplink_fin(entry, ip, &seqs, version))
     {
-      log_log(LOG_LEVEL_WARNING, "WORKERUPLINK", "FIN with more frags");
+      return 1;
     }
-    if (entry->flag_state & FLAG_STATE_UPLINK_FIN)
-    {
-      if (entry->state_data.established.upfin != last_seq)
-      {
-        log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "FIN seq changed");
-        //airwall_hash_unlock(local, &ctx);
-        return 1;
-      }
-    }
-    entry->state_data.established.upfin = last_seq;
-    entry->flag_state |= FLAG_STATE_UPLINK_FIN;
   }
   if (unlikely(entry->flag_state & FLAG_STATE_DOWNLINK_FIN))
   {
-    uint32_t fin = entry->state_data.established.downfin;
-    if (tcp_ack(ippay) && tcp_ack_number(ippay) == fin + 1)
+    todelete = check_uplink_finack(entry, ip, ippay);
+    if (todelete < 0)
     {
-      if (ip46_hdr_cksum_calc(ip) != 0)
-      {
-        log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "invalid IP hdr cksum");
-        //airwall_hash_unlock(local, &ctx);
-        return 1;
-      }
-      if (tcp46_cksum_calc(ip) != 0)
-      {
-        log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "invalid TCP hdr cksum");
-        //airwall_hash_unlock(local, &ctx);
-        return 1;
-      }
-      entry->flag_state |= FLAG_STATE_DOWNLINK_FIN_ACK;
-      if (entry->flag_state & FLAG_STATE_UPLINK_FIN_ACK)
-      {
-        todelete = 1;
-      }
+      return 1;
     }
   }
-  if (seq_cmp(last_seq, entry->lan_sent) >= 0)
-  {
-    entry->lan_sent = last_seq + 1;
-  }
+
+  update_side(&entry->statetrack.lan, &seqs, ippay);
+
   if (likely(tcp_ack(ippay)))
   {
-    uint32_t ack = tcp_ack_number(ippay);
-    uint16_t window = tcp_window(ippay);
-    if (seq_cmp(ack, entry->lan_acked) >= 0)
-    {
-      entry->lan_acked = ack;
-    }
-    if (seq_cmp(ack + (window << entry->lan_wscale), entry->lan_max) >= 0)
-    {
-      entry->lan_max = ack + (window << entry->lan_wscale);
-    }
     if (entry->detect) 
     {
       uint32_t acked_seq = entry->detect->acked + 1 + entry->remote_isn;
@@ -5752,31 +6015,9 @@ int uplink(
       }
     }
   }
-  uint64_t next64;
-  if (entry->flag_state == FLAG_STATE_RESETED)
-  {
-    next64 = time64 + local->airwall->conf->timeouts.reseted*1000ULL*1000ULL;
-  }
-  else if ((entry->flag_state & FLAG_STATE_UPLINK_FIN) &&
-           (entry->flag_state & FLAG_STATE_DOWNLINK_FIN))
-  {
-    next64 = time64 + local->airwall->conf->timeouts.both_fin*1000ULL*1000ULL;
-  }
-  else if (entry->flag_state & (FLAG_STATE_UPLINK_FIN|FLAG_STATE_DOWNLINK_FIN))
-  {
-    next64 = time64 + local->airwall->conf->timeouts.one_fin*1000ULL*1000ULL;
-  }
-  else
-  {
-    next64 = time64 + local->airwall->conf->timeouts.connected*1000ULL*1000ULL;
-  }
-  if (abs(next64 - entry->timer.time64) >= 1000*1000)
-  {
-    worker_local_wrlock(local);
-    entry->timer.time64 = next64;
-    timer_linkheap_modify(&local->timers, &entry->timer);
-    worker_local_wrunlock(local);
-  }
+
+  update_tcp_timeout(entry, local, time64);
+
   tcp_set_seq_number_cksum_update(
     ippay, tcp_len, tcp_seq_number(ippay)+entry->seqoffset);
   if (version == 6)
