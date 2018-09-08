@@ -25,6 +25,11 @@ void reasshlctx_expiry_fn(
       free(e);
       e = NULL;
     }
+    else
+    {
+      // The entries are sorted, so if no match now, there won't be another
+      break;
+    }
   }
   hl->timer.time64 += hl->timer_secs*1000ULL*1000ULL;
   timer_linkheap_add(hl->heap, &hl->timer);
