@@ -18,7 +18,7 @@ void reasshlctx_expiry_fn(
     struct reasshlentry *e = CONTAINER_OF(node, struct reasshlentry, listnode);
     if (time64 > e->time64 + hl->timeout_secs*1000ULL*1000ULL)
     {
-      comboctx_free(loc, &e->combo);
+      rbcomboctx_free(loc, &e->combo);
       hash_table_delete(&hl->hash, &e->node, reasshlhash(e));
       linked_list_delete(&e->listnode);
       hl->mem_cur -= e->mem_cur;
@@ -40,7 +40,7 @@ static void drop_oldest(struct reasshlctx *hl, struct allocif *loc)
     {
       break;
     }
-    comboctx_free(loc, &e->combo);
+    rbcomboctx_free(loc, &e->combo);
     hash_table_delete(&hl->hash, &e->node, reasshlhash(e));
     linked_list_delete(&e->listnode);
     hl->mem_cur -= e->mem_cur;
@@ -87,11 +87,11 @@ struct packet *reasshlctx_add(struct reasshlctx *hl, struct allocif *loc,
     {
       uint32_t old_mem = e->mem_cur;
       uint32_t new_mem;
-      comboctx_add(loc, &e->combo, pkt);
+      rbcomboctx_add(loc, &e->combo, pkt);
       pkt = NULL;
       if (e->combo.rfc_active)
       {
-        new_mem = sizeof(struct rfc815ctx) + sizeof(struct reasshlentry) + 32; 
+        new_mem = sizeof(struct rb815ctx) + sizeof(struct reasshlentry) + 32; 
       }
       else
       {
@@ -100,10 +100,10 @@ struct packet *reasshlctx_add(struct reasshlctx *hl, struct allocif *loc,
       e->mem_cur = new_mem;
       hl->mem_cur += (new_mem - old_mem);
       drop_oldest(hl, loc);
-      if (comboctx_complete(&e->combo))
+      if (rbcomboctx_complete(&e->combo))
       {
-        pkt = comboctx_reassemble(loc, &e->combo);
-        comboctx_free(loc, &e->combo);
+        pkt = rbcomboctx_reassemble(loc, &e->combo);
+        rbcomboctx_free(loc, &e->combo);
         hash_table_delete(&hl->hash, &e->node, hashval);
         linked_list_delete(&e->listnode);
         hl->mem_cur -= e->mem_cur;
@@ -121,16 +121,16 @@ struct packet *reasshlctx_add(struct reasshlctx *hl, struct allocif *loc,
   e->proto = proto;
   e->mem_cur = sizeof(struct reasshlentry) + packet_size(pktsz) + 32;
   e->time64 = time64;
-  comboctx_add(loc, &e->combo, pkt);
+  rbcomboctx_add(loc, &e->combo, pkt);
   linked_list_add_tail(&e->listnode, &hl->list);
   pkt = NULL;
   hl->mem_cur += e->mem_cur;
   hash_table_add_nogrow(&hl->hash, &e->node, hashval);
   drop_oldest(hl, loc);
-  if (comboctx_complete(&e->combo))
+  if (rbcomboctx_complete(&e->combo))
   {
-    pkt = comboctx_reassemble(loc, &e->combo);
-    comboctx_free(loc, &e->combo);
+    pkt = rbcomboctx_reassemble(loc, &e->combo);
+    rbcomboctx_free(loc, &e->combo);
     hash_table_delete(&hl->hash, &e->node, hashval);
     linked_list_delete(&e->listnode);
     hl->mem_cur -= e->mem_cur;

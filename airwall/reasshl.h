@@ -2,7 +2,7 @@
 #define _REASSHL_H_
 
 #include <stdint.h>
-#include "combo.h"
+#include "rbcombo.h"
 #include "hashtable.h"
 #include "siphash.h"
 #include "hashseed.h"
@@ -16,7 +16,7 @@ struct reasshlentry {
   uint8_t proto;
   struct hash_list_node node;
   struct linked_list_node listnode;
-  struct comboctx combo;
+  struct rbcomboctx combo;
   uint32_t mem_cur;
   uint64_t time64;
 };
@@ -24,13 +24,13 @@ struct reasshlentry {
 static inline void
 reasshlentry_init(struct reasshlentry *e)
 {
-  comboctx_init(&e->combo);
+  rbcomboctx_init(&e->combo);
 }
 
 static inline void
 reasshlentry_free(struct reasshlentry *e, struct allocif *loc)
 {
-  comboctx_free(loc, &e->combo);
+  rbcomboctx_free(loc, &e->combo);
 }
 
 static inline uint32_t
