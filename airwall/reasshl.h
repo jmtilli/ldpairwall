@@ -9,9 +9,6 @@
 #include "timerlink.h"
 #include "time64.h"
 
-#define REASS_TIMEOUT_SECS 60
-#define REASS_TIMER_SECS 1
-
 struct reasshlentry {
   uint32_t src_ip;
   uint32_t dst_ip;
@@ -63,6 +60,8 @@ struct reasshlctx {
   size_t mem_cur;
   struct timer_link timer;
   struct timer_linkheap *heap;
+  uint32_t timeout_secs;
+  uint32_t timer_secs;
 };
 
 struct packet *reasshlctx_add(struct reasshlctx *hl, struct allocif *loc,
@@ -72,17 +71,20 @@ void reasshlctx_expiry_fn(
   struct timer_link *timer, struct timer_linkheap *heap, void *ud, void *td);
 
 static inline void reasshlctx_init(struct reasshlctx *hl, size_t limit,
-                                   struct timer_linkheap *heap, struct allocif *loc)
+                                   struct timer_linkheap *heap, struct allocif *loc,
+                                   uint32_t timeout_secs, uint32_t timer_secs)
 {
   if (hash_table_init(&hl->hash, 8192, reasshlhash_fn, NULL) != 0)
   {
     abort();
   }
   linked_list_head_init(&hl->list);
+  hl->timeout_secs = timeout_secs;
+  hl->timer_secs = timer_secs;
   hl->mem_cur = 0;
   hl->mem_limit = limit;
   hl->heap = heap;
-  hl->timer.time64 = gettime64() + REASS_TIMER_SECS*1000ULL*1000ULL;
+  hl->timer.time64 = gettime64() + timer_secs*1000ULL*1000ULL;
   hl->timer.fn = reasshlctx_expiry_fn;
   hl->timer.userdata = loc;
   timer_linkheap_add(heap, &hl->timer);

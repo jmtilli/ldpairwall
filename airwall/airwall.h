@@ -462,9 +462,13 @@ static inline void worker_local_init(
   local->mallocif.ops = &direct_allocif_ops;
   local->mallocif.userdata = NULL;
   reasshlctx_init(&local->reass_ul, airwall->conf->reass_memory_max,
-                  &local->timers, &local->mallocif);
+                  &local->timers, &local->mallocif,
+                  airwall->conf->timeouts.reass_timeout,
+                  airwall->conf->timeouts.reass_timer);
   reasshlctx_init(&local->reass_dl, airwall->conf->reass_memory_max,
-                  &local->timers, &local->mallocif);
+                  &local->timers, &local->mallocif,
+                  airwall->conf->timeouts.reass_timeout,
+                  airwall->conf->timeouts.reass_timer);
 
   for (i = 0; i < DYNARR_SIZE(&airwall->conf->static_mappings); i++)
   {

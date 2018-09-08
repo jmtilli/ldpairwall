@@ -41,6 +41,8 @@ airwallconf = {
     retx = 1;
     udp = 300;
     icmp = 60;
+    reass_timeout = 60;
+    reass_timer = 1;
   };
   hosts = {
     {"www1.example.com", 10.150.1.101, norgw, 0},

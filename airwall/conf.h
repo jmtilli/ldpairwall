@@ -59,6 +59,8 @@ struct timeouts {
   uint32_t retx;
   uint32_t udp;
   uint32_t icmp;
+  uint32_t reass_timeout;
+  uint32_t reass_timer;
 };
 
 static inline uint32_t ul_addr_hash_separate(uint32_t addr)
@@ -167,6 +169,8 @@ static inline void conf_init(struct conf *conf)
   conf->timeouts.retx = 1;
   conf->timeouts.udp = 300;
   conf->timeouts.icmp = 60;
+  conf->timeouts.reass_timeout = 60;
+  conf->timeouts.reass_timer = 1;
   conf->msslist_present = 0;
   conf->wscalelist_present = 0;
   conf->own_mss = 1460;

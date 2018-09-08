@@ -34,6 +34,8 @@ time_wait return TIME_WAIT;
 reseted return RESETED;
 window_update_sent return WINDOW_UPDATE_SENT;
 retx return RETX;
+reass_timeout return REASS_TIMEOUT;
+reass_timer return REASS_TIMER;
 
 
 airwallconf  return AIRWALLCONF;
