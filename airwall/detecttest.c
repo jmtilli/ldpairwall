@@ -15,7 +15,7 @@ static void gen_1b_fragment(const void *hldata, int i, char fragment[6])
   fragment[2] = 0x01;
   fragment[3] = 0;
   fragment[4] = 1;
-  fragment[5] = hludata[i];
+  fragment[5] = (char)hludata[i];
 }
 
 static void http_connect_test(void)
@@ -44,7 +44,7 @@ static void http_connect_test(void)
     printf("host err\n");
     abort();
   }
-  if (nam.is_http_connect_num_bytes != (int)strlen(str0))
+  if (nam.is_http_connect_num_bytes != strlen(str0))
   {
     printf("num err %d %d\n", nam.is_http_connect_num_bytes, (int)strlen(str0));
     abort();
@@ -65,7 +65,7 @@ static void http_connect_test(void)
     printf("host err\n");
     abort();
   }
-  if (nam.is_http_connect_num_bytes != (int)strlen(str1))
+  if (nam.is_http_connect_num_bytes != strlen(str1))
   {
     printf("num err %d %d\n", nam.is_http_connect_num_bytes, (int)strlen(str1));
     abort();
@@ -84,7 +84,7 @@ static void http_connect_test(void)
   {
     abort();
   }
-  if (nam.is_http_connect_num_bytes != (int)strlen(str2))
+  if (nam.is_http_connect_num_bytes != strlen(str2))
   {
     abort();
   }
@@ -102,7 +102,7 @@ static void http_connect_test(void)
   {
     abort();
   }
-  if (nam.is_http_connect_num_bytes != (int)strlen(str3_reqonly))
+  if (nam.is_http_connect_num_bytes != strlen(str3_reqonly))
   {
     abort();
   }

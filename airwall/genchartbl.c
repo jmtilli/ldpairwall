@@ -29,7 +29,7 @@ static inline int isurichar(char ch)
 
 static inline int isuricharfast(char ch)
 {
-  uint8_t i = ch;
+  uint8_t i = (uint8_t)ch;
   if (i >= 128)
   {
     return 0;
@@ -38,7 +38,7 @@ static inline int isuricharfast(char ch)
 }
 static inline int istokenfast(char ch)
 {
-  uint8_t i = ch;
+  uint8_t i = (uint8_t)ch;
   if (i >= 128)
   {
     return 0;
@@ -51,23 +51,23 @@ static void gentbls(void)
   uint8_t i;
   for (i = 0; i < 128; i++)
   {
-    if (isurichar(i))
+    if (isurichar((char)i))
     {
       uribitmaskloc[i/64] |= 1ULL<<(i%64);
     }
-    if (istoken(i))
+    if (istoken((char)i))
     {
       tokenbitmaskloc[i/64] |= 1ULL<<(i%64);
     }
   }
   for (i = 0; i < 128; i++)
   {
-    if ((!!isurichar(i)) != isuricharfast(i))
+    if ((!!isurichar((char)i)) != isuricharfast((char)i))
     {
       printf("err uri %d\n", i);
       abort();
     }
-    if ((!!istoken(i)) != istokenfast(i))
+    if ((!!istoken((char)i)) != istokenfast((char)i))
     {
       printf("err tok %d\n", i);
       abort();

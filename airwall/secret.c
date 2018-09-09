@@ -85,10 +85,10 @@ static int verify_cookie46(
   struct conf *conf = airwall->conf;
   int total_bits = 1 + conf->msslist_bits + conf->wscalelist_bits + 1;
   struct secret secret1;
-  uint16_t additional_bits = (isn>>(32-total_bits))&((1<<(total_bits-1))-1);
-  uint32_t bitmask = ((1<<(32-total_bits))-1);
-  uint32_t mssmask = ((1<<(conf->msslist_bits))-1);
-  uint32_t wsmask = ((1<<(conf->wscalelist_bits))-1);
+  uint32_t additional_bits = (isn>>(32-total_bits))&((1U<<(total_bits-1))-1);
+  uint32_t bitmask = ((1U<<(32-total_bits))-1);
+  uint32_t mssmask = ((1U<<(conf->msslist_bits))-1);
+  uint32_t wsmask = ((1U<<(conf->wscalelist_bits))-1);
   struct siphash_ctx ctx;
   uint32_t hash;
   uint16_t *msstab = &DYNARR_GET(&conf->msslist, 0);
@@ -183,16 +183,16 @@ static uint32_t form_cookie46(
   uint32_t wsbits;
   uint32_t mssbits;
   uint32_t additional_bits;
-  int i;
-  int current_secret;
+  size_t i;
+  uint32_t current_secret;
   struct secret secret1;
   struct siphash_ctx ctx;
   uint32_t hash;
-  int wscnt = DYNARR_SIZE(&airwall->conf->wscalelist);
-  int msscnt = DYNARR_SIZE(&airwall->conf->msslist);
+  size_t wscnt = DYNARR_SIZE(&airwall->conf->wscalelist);
+  size_t msscnt = DYNARR_SIZE(&airwall->conf->msslist);
   uint16_t *msstab = &DYNARR_GET(&conf->msslist, 0);
   uint8_t *wstab = &DYNARR_GET(&conf->wscalelist, 0);
-  uint32_t bitmask = ((1<<(32-total_bits))-1);
+  uint32_t bitmask = ((1U<<(32-total_bits))-1);
   for (i = 0; i < wscnt; i++)
   {
     if (wstab[i] > wscale)
@@ -216,14 +216,14 @@ static uint32_t form_cookie46(
   mssbits = i;
   sack_permitted = !!sack_permitted;
   additional_bits =
-      (sack_permitted<<(conf->wscalelist_bits+conf->msslist_bits))
+      (((uint32_t)sack_permitted)<<(conf->wscalelist_bits+conf->msslist_bits))
     | (mssbits<<conf->wscalelist_bits)
     | wsbits;
   if (pthread_rwlock_rdlock(&info->lock) != 0)
   {
     abort();
   }
-  current_secret = info->current_secret_index;
+  current_secret = (uint32_t)info->current_secret_index;
   secret1 = info->secrets[current_secret];
   siphash_init(&ctx, secret1.data);
   if (pthread_rwlock_unlock(&info->lock) != 0)
@@ -293,10 +293,10 @@ static int verify_timestamp46(
   int total_bits =
     conf->ts_bits + conf->tsmsslist_bits + conf->tswscalelist_bits + 1;
   struct secret secret1;
-  uint16_t additional_bits = (isn>>(32-total_bits))&((1<<(total_bits-1))-1);
-  uint32_t bitmask = ((1<<(32-total_bits))-1);
-  uint32_t mssmask = ((1<<(conf->msslist_bits))-1);
-  uint32_t wsmask = ((1<<(conf->wscalelist_bits))-1);
+  uint32_t additional_bits = (isn>>(32-total_bits))&((1U<<(total_bits-1))-1);
+  uint32_t bitmask = ((1U<<(32-total_bits))-1);
+  uint32_t mssmask = ((1U<<(conf->msslist_bits))-1);
+  uint32_t wsmask = ((1U<<(conf->wscalelist_bits))-1);
   struct siphash_ctx ctx;
   uint32_t hash;
   uint16_t *msstab = &DYNARR_GET(&conf->tsmsslist, 0);
@@ -381,17 +381,17 @@ static uint32_t form_timestamp46(
   uint32_t wsbits;
   uint32_t mssbits;
   uint32_t additional_bits;
-  int i;
-  int current_secret;
+  size_t i;
+  uint32_t current_secret;
   struct secret secret1;
   struct siphash_ctx ctx;
   uint32_t hash;
-  int wscnt = DYNARR_SIZE(&airwall->conf->tswscalelist);
-  int msscnt = DYNARR_SIZE(&airwall->conf->tsmsslist);
+  size_t wscnt = DYNARR_SIZE(&airwall->conf->tswscalelist);
+  size_t msscnt = DYNARR_SIZE(&airwall->conf->tsmsslist);
   uint16_t *msstab = &DYNARR_GET(&conf->tsmsslist, 0);
   uint8_t *wstab = &DYNARR_GET(&conf->tswscalelist, 0);
-  uint32_t bitmask = ((1<<(32-total_bits))-1);
-  uint32_t ts = (gettime64() % 32000000)*(1<<conf->ts_bits) / 32000000;
+  uint32_t bitmask = ((1U<<(32-total_bits))-1);
+  uint32_t ts = (gettime64() % 32000000)*(1U<<conf->ts_bits) / 32000000;
   for (i = 0; i < wscnt; i++)
   {
     if (wstab[i] > wscale)
@@ -421,7 +421,7 @@ static uint32_t form_timestamp46(
   {
     abort();
   }
-  current_secret = info->current_secret_index;
+  current_secret = (uint32_t)info->current_secret_index;
   secret1 = info->secrets[current_secret];
   siphash_init(&ctx, secret1.data);
   if (pthread_rwlock_unlock(&info->lock) != 0)
