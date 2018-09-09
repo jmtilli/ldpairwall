@@ -609,7 +609,7 @@ static inline struct airwall_hash_entry *airwall_hash_get_local(
   const void *local_ip, uint16_t local_port, const void *remote_ip, uint16_t remote_port, struct airwall_hash_ctx *ctx)
 {
   struct hash_list_node *node;
-  int len;
+  size_t len;
   if (version == 4)
   {
     ctx->hashval = airwall_hash_separate4(hdr_get32n(local_ip), local_port, hdr_get32n(remote_ip), remote_port);
@@ -642,7 +642,7 @@ static inline struct airwall_udp_entry *airwall_hash_get_local_udp(
   const void *local_ip, uint16_t local_port, const void *remote_ip, uint16_t remote_port, struct airwall_hash_ctx *ctx)
 {
   struct hash_list_node *node;
-  int len;
+  size_t len;
   if (version == 4)
   {
     ctx->hashval = airwall_hash_separate4(hdr_get32n(local_ip), local_port, hdr_get32n(remote_ip), remote_port);
@@ -675,7 +675,7 @@ static inline struct airwall_icmp_entry *airwall_hash_get_local_icmp(
   const void *local_ip, const void *remote_ip, uint16_t identifier, struct airwall_hash_ctx *ctx)
 {
   struct hash_list_node *node;
-  int len;
+  size_t len;
   if (version == 4)
   {
     ctx->hashval = airwall_hash_icmp_separate4(hdr_get32n(local_ip), hdr_get32n(remote_ip), identifier);
@@ -707,7 +707,7 @@ static inline struct airwall_hash_entry *airwall_hash_get_nat(
   const void *nat_ip, uint16_t nat_port, const void *remote_ip, uint16_t remote_port, struct airwall_hash_ctx *ctx)
 {
   struct hash_list_node *node;
-  int len;
+  size_t len;
   if (version == 4)
   {
     ctx->hashval = airwall_hash_separate4(hdr_get32n(nat_ip), nat_port, hdr_get32n(remote_ip), remote_port);
@@ -740,7 +740,7 @@ static inline struct airwall_udp_entry *airwall_hash_get_nat_udp(
   const void *nat_ip, uint16_t nat_port, const void *remote_ip, uint16_t remote_port, struct airwall_hash_ctx *ctx)
 {
   struct hash_list_node *node;
-  int len;
+  size_t len;
   if (version == 4)
   {
     ctx->hashval = airwall_hash_separate4(hdr_get32n(nat_ip), nat_port, hdr_get32n(remote_ip), remote_port);
@@ -773,7 +773,7 @@ static inline struct airwall_icmp_entry *airwall_hash_get_nat_icmp(
   const void *nat_ip, const void *remote_ip, uint16_t identifier, struct airwall_hash_ctx *ctx)
 {
   struct hash_list_node *node;
-  int len;
+  size_t len;
   if (version == 4)
   {
     ctx->hashval = airwall_hash_icmp_separate4(hdr_get32n(nat_ip), hdr_get32n(remote_ip), identifier);

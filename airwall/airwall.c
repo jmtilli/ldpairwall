@@ -12,7 +12,7 @@ const char http_connect_revdatabuf[19] = {
   '\r', '\n',
 };
 
-#define INITIAL_WINDOW (1<<14)
+#define INITIAL_WINDOW (1U<<14)
 #define IPV6_FRAG_CUTOFF 512
 
 #define ENABLE_ARP
@@ -71,7 +71,7 @@ static int send_via_arp(struct packet *pkt,
       int version = ip_version(ip);
       int proto = ip_proto(ip);
       size_t ip_len = pkt->sz - ETHER_HDR_LEN;
-      size_t tcp_len = ip46_total_len(ip) - ip46_hdr_len(ip);
+      size_t tcp_len = (size_t)ip46_total_len(ip) - (size_t)ip46_hdr_len(ip);
       char *ippay = ip_payload(ip);
       //pkt->direction = PACKET_DIRECTION_DOWNLINK;
       memcpy(ether_dst(ether), airwall->ul_mac, 6);
@@ -196,6 +196,14 @@ static inline uint32_t gen_flowlabel(const void *local_ip, uint16_t local_port,
   return siphash_get(&ctx) & ((1U<<20) - 1);
 }
 
+static void add_off(size_t *off, ssize_t val)
+{
+  if (val > 0)
+  {
+    (*off) += (size_t)val;
+  }
+}
+
 static inline uint32_t gen_flowlabel_entry(struct airwall_hash_entry *e)
 {
   if (e->version != 6)
@@ -210,116 +218,116 @@ static size_t airwall_state_to_str(
 {
   size_t off = 0;
   int already = 0;
-  off += snprintf(str + off, bufsiz - off, "<");
+  add_off(&off, snprintf(str + off, bufsiz - off, "<"));
   if (e->flag_state & FLAG_STATE_UPLINK_SYN_SENT)
   {
     if (already)
     {
-      off += snprintf(str + off, bufsiz - off, ",");
+      add_off(&off, snprintf(str + off, bufsiz - off, ","));
     }
     already = 1;
-    off += snprintf(str + off, bufsiz - off, "UPLINK_SYN_SENT");
+    add_off(&off, snprintf(str + off, bufsiz - off, "UPLINK_SYN_SENT"));
   }
   if (e->flag_state & FLAG_STATE_UPLINK_SYN_RCVD)
   {
     if (already)
     {
-      off += snprintf(str + off, bufsiz - off, ",");
+      add_off(&off, snprintf(str + off, bufsiz - off, ","));
     }
     already = 1;
-    off += snprintf(str + off, bufsiz - off, "UPLINK_SYN_RCVD");
+    add_off(&off, snprintf(str + off, bufsiz - off, "UPLINK_SYN_RCVD"));
   }
   if (e->flag_state & FLAG_STATE_WINDOW_UPDATE_SENT)
   {
     if (already)
     {
-      off += snprintf(str + off, bufsiz - off, ",");
+      add_off(&off, snprintf(str + off, bufsiz - off, ","));
     }
     already = 1;
-    off += snprintf(str + off, bufsiz - off, "WINDOW_UPDATE_SENT");
+    add_off(&off, snprintf(str + off, bufsiz - off, "WINDOW_UPDATE_SENT"));
   }
   if (e->flag_state & FLAG_STATE_DOWNLINK_SYN_SENT)
   {
     if (already)
     {
-      off += snprintf(str + off, bufsiz - off, ",");
+      add_off(&off, snprintf(str + off, bufsiz - off, ","));
     }
     already = 1;
-    off += snprintf(str + off, bufsiz - off, "DOWNLINK_SYN_SENT");
+    add_off(&off, snprintf(str + off, bufsiz - off, "DOWNLINK_SYN_SENT"));
   }
   if (e->flag_state & FLAG_STATE_ESTABLISHED)
   {
     if (already)
     {
-      off += snprintf(str + off, bufsiz - off, ",");
+      add_off(&off, snprintf(str + off, bufsiz - off, ","));
     }
     already = 1;
-    off += snprintf(str + off, bufsiz - off, "ESTABLISHED");
+    add_off(&off, snprintf(str + off, bufsiz - off, "ESTABLISHED"));
   }
   if (e->flag_state & FLAG_STATE_UPLINK_FIN)
   {
     if (already)
     {
-      off += snprintf(str + off, bufsiz - off, ",");
+      add_off(&off, snprintf(str + off, bufsiz - off, ","));
     }
     already = 1;
-    off += snprintf(str + off, bufsiz - off, "UPLINK_FIN");
+    add_off(&off, snprintf(str + off, bufsiz - off, "UPLINK_FIN"));
   }
   if (e->flag_state & FLAG_STATE_UPLINK_FIN_ACK)
   {
     if (already)
     {
-      off += snprintf(str + off, bufsiz - off, ",");
+      add_off(&off, snprintf(str + off, bufsiz - off, ","));
     }
     already = 1;
-    off += snprintf(str + off, bufsiz - off, "UPLINK_FIN_ACK");
+    add_off(&off, snprintf(str + off, bufsiz - off, "UPLINK_FIN_ACK"));
   }
   if (e->flag_state & FLAG_STATE_DOWNLINK_FIN)
   {
     if (already)
     {
-      off += snprintf(str + off, bufsiz - off, ",");
+      add_off(&off, snprintf(str + off, bufsiz - off, ","));
     }
     already = 1;
-    off += snprintf(str + off, bufsiz - off, "DOWNLINK_FIN");
+    add_off(&off, snprintf(str + off, bufsiz - off, "DOWNLINK_FIN"));
   }
   if (e->flag_state & FLAG_STATE_DOWNLINK_FIN_ACK)
   {
     if (already)
     {
-      off += snprintf(str + off, bufsiz - off, ",");
+      add_off(&off, snprintf(str + off, bufsiz - off, ","));
     }
     already = 1;
-    off += snprintf(str + off, bufsiz - off, "DOWNLINK_FIN_ACK");
+    add_off(&off, snprintf(str + off, bufsiz - off, "DOWNLINK_FIN_ACK"));
   }
   if (e->flag_state & FLAG_STATE_TIME_WAIT)
   {
     if (already)
     {
-      off += snprintf(str + off, bufsiz - off, ",");
+      add_off(&off, snprintf(str + off, bufsiz - off, ","));
     }
     already = 1;
-    off += snprintf(str + off, bufsiz - off, "TIME_WAIT");
+    add_off(&off, snprintf(str + off, bufsiz - off, "TIME_WAIT"));
   }
   if (e->flag_state & FLAG_STATE_DOWNLINK_HALF_OPEN)
   {
     if (already)
     {
-      off += snprintf(str + off, bufsiz - off, ",");
+      add_off(&off, snprintf(str + off, bufsiz - off, ","));
     }
     already = 1;
-    off += snprintf(str + off, bufsiz - off, "DOWNLINK_HALF_OPEN");
+    add_off(&off, snprintf(str + off, bufsiz - off, "DOWNLINK_HALF_OPEN"));
   }
   if (e->flag_state & FLAG_STATE_RESETED)
   {
     if (already)
     {
-      off += snprintf(str + off, bufsiz - off, ",");
+      add_off(&off, snprintf(str + off, bufsiz - off, ","));
     }
     already = 1;
-    off += snprintf(str + off, bufsiz - off, "RESETED");
+    add_off(&off, snprintf(str + off, bufsiz - off, "RESETED"));
   }
-  off += snprintf(str + off, bufsiz - off, ">");
+  add_off(&off, snprintf(str + off, bufsiz - off, ">"));
   return off;
 }
 
@@ -328,22 +336,22 @@ static size_t airwall_entry_to_str(
 {
   size_t off = 0;
   off += airwall_state_to_str(str + off, bufsiz - off, e);
-  off += snprintf(str + off, bufsiz - off, ", ");
+  add_off(&off, snprintf(str + off, bufsiz - off, ", "));
   if (e->version == 4)
   {
-    off += snprintf(str + off, bufsiz - off, "local_end=%d.%d.%d.%d:%d",
+    add_off(&off, snprintf(str + off, bufsiz - off, "local_end=%d.%d.%d.%d:%d",
                     (ntohl(e->local_ip.ipv4)>>24)&0xFF,
                     (ntohl(e->local_ip.ipv4)>>16)&0xFF,
                     (ntohl(e->local_ip.ipv4)>>8)&0xFF,
                     (ntohl(e->local_ip.ipv4)>>0)&0xFF,
-                    e->local_port);
-    off += snprintf(str + off, bufsiz - off, ", ");
-    off += snprintf(str + off, bufsiz - off, "remote_end=%d.%d.%d.%d:%d",
+                    e->local_port));
+    add_off(&off, snprintf(str + off, bufsiz - off, ", "));
+    add_off(&off, snprintf(str + off, bufsiz - off, "remote_end=%d.%d.%d.%d:%d",
                     (ntohl(e->remote_ip.ipv4)>>24)&0xFF,
                     (ntohl(e->remote_ip.ipv4)>>16)&0xFF,
                     (ntohl(e->remote_ip.ipv4)>>8)&0xFF,
                     (ntohl(e->remote_ip.ipv4)>>0)&0xFF,
-                    e->remote_port);
+                    e->remote_port));
   }
   else
   {
@@ -360,42 +368,42 @@ static size_t airwall_entry_to_str(
     {
       strncpy(str6rem, "UNKNOWN", sizeof(str6rem));
     }
-    off += snprintf(str + off, bufsiz - off, "local_end=[%s]:%d",
-                    str6loc, e->local_port);
-    off += snprintf(str + off, bufsiz - off, ", ");
-    off += snprintf(str + off, bufsiz - off, "remote_end=[%s]:%d",
-                    str6rem, e->remote_port);
+    add_off(&off, snprintf(str + off, bufsiz - off, "local_end=[%s]:%d",
+                    str6loc, e->local_port));
+    add_off(&off, snprintf(str + off, bufsiz - off, ", "));
+    add_off(&off, snprintf(str + off, bufsiz - off, "remote_end=[%s]:%d",
+                    str6rem, e->remote_port));
   }
-  off += snprintf(str + off, bufsiz - off, ", ");
-  off += snprintf(str + off, bufsiz - off, "wscalediff=%d", e->wscalediff);
-  off += snprintf(str + off, bufsiz - off, ", ");
-  off += snprintf(str + off, bufsiz - off, "lan_wscale=%d", e->statetrack.lan.wscale);
-  off += snprintf(str + off, bufsiz - off, ", ");
-  off += snprintf(str + off, bufsiz - off, "wan_wscale=%d", e->statetrack.wan.wscale);
-  off += snprintf(str + off, bufsiz - off, ", ");
-  off += snprintf(str + off, bufsiz - off, "was_synproxied=%d", e->was_synproxied);
-  off += snprintf(str + off, bufsiz - off, ", ");
-  off += snprintf(str + off, bufsiz - off, "lan_sack_was_supported=%d", e->lan_sack_was_supported);
-  off += snprintf(str + off, bufsiz - off, ", ");
-  off += snprintf(str + off, bufsiz - off, "seqoffset=%u", e->seqoffset);
-  off += snprintf(str + off, bufsiz - off, ", ");
-  off += snprintf(str + off, bufsiz - off, "tsoffset=%u", e->tsoffset);
-  off += snprintf(str + off, bufsiz - off, ", ");
-  off += snprintf(str + off, bufsiz - off, "lan_sent=%u", e->statetrack.lan.sent);
-  off += snprintf(str + off, bufsiz - off, ", ");
-  off += snprintf(str + off, bufsiz - off, "wan_sent=%u", e->statetrack.wan.sent);
-  off += snprintf(str + off, bufsiz - off, ", ");
-  off += snprintf(str + off, bufsiz - off, "lan_acked=%u", e->statetrack.lan.acked);
-  off += snprintf(str + off, bufsiz - off, ", ");
-  off += snprintf(str + off, bufsiz - off, "wan_acked=%u", e->statetrack.wan.acked);
-  off += snprintf(str + off, bufsiz - off, ", ");
-  off += snprintf(str + off, bufsiz - off, "lan_max=%u", e->statetrack.lan.max);
-  off += snprintf(str + off, bufsiz - off, ", ");
-  off += snprintf(str + off, bufsiz - off, "wan_max=%u", e->statetrack.wan.max);
-  off += snprintf(str + off, bufsiz - off, ", ");
-  off += snprintf(str + off, bufsiz - off, "lan_max_window_unscaled=%u", e->statetrack.lan.max_window_unscaled);
-  off += snprintf(str + off, bufsiz - off, ", ");
-  off += snprintf(str + off, bufsiz - off, "wan_max_window_unscaled=%u", e->statetrack.wan.max_window_unscaled);
+  add_off(&off, snprintf(str + off, bufsiz - off, ", "));
+  add_off(&off, snprintf(str + off, bufsiz - off, "wscalediff=%d", e->wscalediff));
+  add_off(&off, snprintf(str + off, bufsiz - off, ", "));
+  add_off(&off, snprintf(str + off, bufsiz - off, "lan_wscale=%d", e->statetrack.lan.wscale));
+  add_off(&off, snprintf(str + off, bufsiz - off, ", "));
+  add_off(&off, snprintf(str + off, bufsiz - off, "wan_wscale=%d", e->statetrack.wan.wscale));
+  add_off(&off, snprintf(str + off, bufsiz - off, ", "));
+  add_off(&off, snprintf(str + off, bufsiz - off, "was_synproxied=%d", e->was_synproxied));
+  add_off(&off, snprintf(str + off, bufsiz - off, ", "));
+  add_off(&off, snprintf(str + off, bufsiz - off, "lan_sack_was_supported=%d", e->lan_sack_was_supported));
+  add_off(&off, snprintf(str + off, bufsiz - off, ", "));
+  add_off(&off, snprintf(str + off, bufsiz - off, "seqoffset=%u", e->seqoffset));
+  add_off(&off, snprintf(str + off, bufsiz - off, ", "));
+  add_off(&off, snprintf(str + off, bufsiz - off, "tsoffset=%u", e->tsoffset));
+  add_off(&off, snprintf(str + off, bufsiz - off, ", "));
+  add_off(&off, snprintf(str + off, bufsiz - off, "lan_sent=%u", e->statetrack.lan.sent));
+  add_off(&off, snprintf(str + off, bufsiz - off, ", "));
+  add_off(&off, snprintf(str + off, bufsiz - off, "wan_sent=%u", e->statetrack.wan.sent));
+  add_off(&off, snprintf(str + off, bufsiz - off, ", "));
+  add_off(&off, snprintf(str + off, bufsiz - off, "lan_acked=%u", e->statetrack.lan.acked));
+  add_off(&off, snprintf(str + off, bufsiz - off, ", "));
+  add_off(&off, snprintf(str + off, bufsiz - off, "wan_acked=%u", e->statetrack.wan.acked));
+  add_off(&off, snprintf(str + off, bufsiz - off, ", "));
+  add_off(&off, snprintf(str + off, bufsiz - off, "lan_max=%u", e->statetrack.lan.max));
+  add_off(&off, snprintf(str + off, bufsiz - off, ", "));
+  add_off(&off, snprintf(str + off, bufsiz - off, "wan_max=%u", e->statetrack.wan.max));
+  add_off(&off, snprintf(str + off, bufsiz - off, ", "));
+  add_off(&off, snprintf(str + off, bufsiz - off, "lan_max_window_unscaled=%u", e->statetrack.lan.max_window_unscaled));
+  add_off(&off, snprintf(str + off, bufsiz - off, ", "));
+  add_off(&off, snprintf(str + off, bufsiz - off, "wan_max_window_unscaled=%u", e->statetrack.wan.max_window_unscaled));
   return off;
 }
 
@@ -417,40 +425,40 @@ static size_t airwall_packet_to_str(
     dst_ip = ip_dst(ip);
     src_port = tcp_src_port(ippay);
     dst_port = tcp_dst_port(ippay);
-    off += snprintf(str + off, bufsiz - off, "src_end=%d.%d.%d.%d:%d",
+    add_off(&off, snprintf(str + off, bufsiz - off, "src_end=%d.%d.%d.%d:%d",
                     (src_ip>>24)&0xFF,
                     (src_ip>>16)&0xFF,
                     (src_ip>>8)&0xFF,
                     (src_ip>>0)&0xFF,
-                    src_port);
-    off += snprintf(str + off, bufsiz - off, ", ");
-    off += snprintf(str + off, bufsiz - off, "dst_end=%d.%d.%d.%d:%d",
+                    src_port));
+    add_off(&off, snprintf(str + off, bufsiz - off, ", "));
+    add_off(&off, snprintf(str + off, bufsiz - off, "dst_end=%d.%d.%d.%d:%d",
                     (dst_ip>>24)&0xFF,
                     (dst_ip>>16)&0xFF,
                     (dst_ip>>8)&0xFF,
                     (dst_ip>>0)&0xFF,
-                    dst_port);
-    off += snprintf(str + off, bufsiz - off, ", flags=");
+                    dst_port));
+    add_off(&off, snprintf(str + off, bufsiz - off, ", flags="));
     if (tcp_syn(ippay))
     {
-      off += snprintf(str + off, bufsiz - off, "S");
+      add_off(&off, snprintf(str + off, bufsiz - off, "S"));
     }
     if (tcp_ack(ippay))
     {
-      off += snprintf(str + off, bufsiz - off, "A");
+      add_off(&off, snprintf(str + off, bufsiz - off, "A"));
     }
     if (tcp_fin(ippay))
     {
-      off += snprintf(str + off, bufsiz - off, "F");
+      add_off(&off, snprintf(str + off, bufsiz - off, "F"));
     }
     if (tcp_rst(ippay))
     {
-      off += snprintf(str + off, bufsiz - off, "R");
+      add_off(&off, snprintf(str + off, bufsiz - off, "R"));
     }
-    off += snprintf(str + off, bufsiz - off, ", ");
-    off += snprintf(str + off, bufsiz - off, "seq=%u", tcp_seq_number(ippay));
-    off += snprintf(str + off, bufsiz - off, ", ");
-    off += snprintf(str + off, bufsiz - off, "ack=%u", tcp_ack_number(ippay));
+    add_off(&off, snprintf(str + off, bufsiz - off, ", "));
+    add_off(&off, snprintf(str + off, bufsiz - off, "seq=%u", tcp_seq_number(ippay)));
+    add_off(&off, snprintf(str + off, bufsiz - off, ", "));
+    add_off(&off, snprintf(str + off, bufsiz - off, "ack=%u", tcp_ack_number(ippay)));
     return off;
   }
   else if (ip_version(ip) == 6)
@@ -462,7 +470,7 @@ static size_t airwall_packet_to_str(
     ippay = ipv6_const_proto_hdr(ip, &proto);
     if (ippay == NULL || proto != 6)
     {
-      off += snprintf(str + off, bufsiz - off, "unknown protocol");
+      add_off(&off, snprintf(str + off, bufsiz - off, "unknown protocol"));
       return off;
     }
     memcpy(in6src.s6_addr, ipv6_const_src(ip), 16);
@@ -477,42 +485,42 @@ static size_t airwall_packet_to_str(
     }
     src_port = tcp_src_port(ippay);
     dst_port = tcp_dst_port(ippay);
-    off += snprintf(str + off, bufsiz - off, "src_end=[%s]", str6src);
-    off += snprintf(str + off, bufsiz - off, ", ");
-    off += snprintf(str + off, bufsiz - off, "dst_end=[%s]", str6dst);
-    off += snprintf(str + off, bufsiz - off, ", flags=");
+    add_off(&off, snprintf(str + off, bufsiz - off, "src_end=[%s]", str6src));
+    add_off(&off, snprintf(str + off, bufsiz - off, ", "));
+    add_off(&off, snprintf(str + off, bufsiz - off, "dst_end=[%s]", str6dst));
+    add_off(&off, snprintf(str + off, bufsiz - off, ", flags="));
     if (tcp_syn(ippay))
     {
-      off += snprintf(str + off, bufsiz - off, "S");
+      add_off(&off, snprintf(str + off, bufsiz - off, "S"));
     }
     if (tcp_ack(ippay))
     {
-      off += snprintf(str + off, bufsiz - off, "A");
+      add_off(&off, snprintf(str + off, bufsiz - off, "A"));
     }
     if (tcp_fin(ippay))
     {
-      off += snprintf(str + off, bufsiz - off, "F");
+      add_off(&off, snprintf(str + off, bufsiz - off, "F"));
     }
     if (tcp_rst(ippay))
     {
-      off += snprintf(str + off, bufsiz - off, "R");
+      add_off(&off, snprintf(str + off, bufsiz - off, "R"));
     }
-    off += snprintf(str + off, bufsiz - off, ", ");
-    off += snprintf(str + off, bufsiz - off, "seq=%u", tcp_seq_number(ippay));
-    off += snprintf(str + off, bufsiz - off, ", ");
-    off += snprintf(str + off, bufsiz - off, "ack=%u", tcp_ack_number(ippay));
+    add_off(&off, snprintf(str + off, bufsiz - off, ", "));
+    add_off(&off, snprintf(str + off, bufsiz - off, "seq=%u", tcp_seq_number(ippay)));
+    add_off(&off, snprintf(str + off, bufsiz - off, ", "));
+    add_off(&off, snprintf(str + off, bufsiz - off, "ack=%u", tcp_ack_number(ippay)));
     return off;
   }
   else
   {
-    off += snprintf(str + off, bufsiz - off, "unknown protocol");
+    add_off(&off, snprintf(str + off, bufsiz - off, "unknown protocol"));
     return off;
   }
 }
 
 static inline int rst_is_valid(uint32_t rst_seq, uint32_t ref_seq)
 {
-  int32_t diff = rst_seq - ref_seq;
+  int32_t diff = (int32_t)(rst_seq - ref_seq);
   if (diff >= 0)
   {
     if (diff > 512*1024*1024)
@@ -549,7 +557,7 @@ rst_is_valid_uplink(uint32_t seq, struct tcp_statetrack_entry *statetrack)
 static inline int resend_request_is_valid_win(uint32_t seq, uint32_t ref_seq,
                                               uint32_t window)
 {
-  int32_t diff = seq - ref_seq;
+  int32_t diff = (int32_t)(seq - ref_seq);
   if (diff >= 0)
   {
     if (diff > 512*1024*1024)
@@ -570,7 +578,7 @@ static inline int resend_request_is_valid_win(uint32_t seq, uint32_t ref_seq,
 
 static inline int resend_request_is_valid(uint32_t seq, uint32_t ref_seq)
 {
-  int32_t diff = seq - ref_seq;
+  int32_t diff = (int32_t)(seq - ref_seq);
   if (diff >= 0)
   {
     if (diff > 512*1024*1024)
@@ -708,7 +716,7 @@ static void airwall_icmp_expiry_fn(
 
 static inline int seq_cmp(uint32_t x, uint32_t y)
 {
-  int32_t result = x-y;
+  int32_t result = (int32_t)(x-y);
   if (result > 512*1024*1024 || result < -512*1024*1024)
   {
     log_log(LOG_LEVEL_EMERG, "WORKER",
@@ -759,7 +767,7 @@ seqs_valid_downlink(struct airwall_hash_entry *entry,
 
   if (!between(
     entry->statetrack.wan.acked -
-      (entry->statetrack.wan.max_window_unscaled<<entry->statetrack.wan.wscale),
+      (((uint32_t)entry->statetrack.wan.max_window_unscaled)<<entry->statetrack.wan.wscale),
     tcp_ack_number(ippay),
     entry->statetrack.lan.sent + 1))
   {
@@ -792,7 +800,7 @@ seqs_valid_downlink(struct airwall_hash_entry *entry,
   }
   wan_min =
     entry->statetrack.wan.sent -
-      (entry->statetrack.lan.max_window_unscaled<<entry->statetrack.lan.wscale);
+      (((uint32_t)entry->statetrack.lan.max_window_unscaled)<<entry->statetrack.lan.wscale);
   if (
     !between(
       wan_min, seqs->first_seq, entry->statetrack.lan.max+1)
@@ -824,7 +832,7 @@ seqs_valid_uplink(struct airwall_hash_entry *entry,
 
   if (!between(
     entry->statetrack.lan.acked -
-      (entry->statetrack.lan.max_window_unscaled<<entry->statetrack.lan.wscale),
+      (((uint32_t)entry->statetrack.lan.max_window_unscaled)<<entry->statetrack.lan.wscale),
     tcp_ack_number(ippay),
     entry->statetrack.wan.sent + 1))
   {
@@ -857,7 +865,7 @@ seqs_valid_uplink(struct airwall_hash_entry *entry,
   }
   lan_min =
     entry->statetrack.lan.sent -
-      (entry->statetrack.wan.max_window_unscaled<<entry->statetrack.wan.wscale);
+      (((uint32_t)entry->statetrack.wan.max_window_unscaled)<<entry->statetrack.wan.wscale);
   if (
     !between(
       lan_min, seqs->first_seq, entry->statetrack.wan.max+1)
@@ -894,7 +902,7 @@ calc_seqs(struct seqs *seqs, const char *ip, const char *ippay, uint32_t offset)
     // valid.
     data_len = 0;
   }
-  seqs->last_seq = seqs->first_seq + data_len - 1;
+  seqs->last_seq = seqs->first_seq + (uint32_t)data_len - 1;
 
   seqs->first_seq += offset;
   seqs->last_seq += offset;
@@ -931,9 +939,9 @@ update_side(struct tcp_statetrackside_entry *side,
     {
       side->acked = ack;
     }
-    if (seq_cmp(ack + (window << side->wscale), side->max) >= 0)
+    if (seq_cmp(ack + (((uint32_t)window) << side->wscale), side->max) >= 0)
     {
-      side->max = ack + (window << side->wscale);
+      side->max = ack + (((uint32_t)window) << side->wscale);
     }
   }
 }
@@ -1301,7 +1309,7 @@ static void ack_data(
   tcp_set_seq_number(tcp, entry->local_isn + 1);
   tcp_set_ack_number(tcp, seqack);
 
-  sh = (1<<airwall->conf->own_wscale) - 1;
+  sh = (1U<<airwall->conf->own_wscale) - 1;
   tcp_set_window(tcp, (INITIAL_WINDOW - acked + sh)>>airwall->conf->own_wscale);
   tcpopts = &((unsigned char*)tcp)[20];
   if (info.options_valid && info.ts_present)
@@ -2116,13 +2124,13 @@ static void send_or_resend_syn(
 static inline uint32_t get_wan_min(struct tcp_statetrack_entry *statetrack)
 {
   return statetrack->wan.sent -
-    (statetrack->lan.max_window_unscaled<<statetrack->lan.wscale);
+    (((uint32_t)statetrack->lan.max_window_unscaled)<<statetrack->lan.wscale);
 }
 
 static inline uint32_t get_lan_min(struct tcp_statetrack_entry *statetrack)
 {
   return statetrack->lan.sent -
-    (statetrack->wan.max_window_unscaled<<statetrack->wan.wscale);
+    (((uint32_t)statetrack->wan.max_window_unscaled)<<statetrack->wan.wscale);
 }
 
 static void resend_syn(
@@ -2222,7 +2230,7 @@ static void send_data_only(
     }
     if (curpay > ((uint32_t)tcp_window(origtcp)) << entry->statetrack.lan.wscale)
     {
-      curpay = tcp_window(origtcp) << entry->statetrack.lan.wscale;
+      curpay = ((uint32_t)tcp_window(origtcp)) << entry->statetrack.lan.wscale;
     }
   
     memcpy(ether_src(data), ether_dst(orig), 6);
@@ -2425,14 +2433,14 @@ static void send_window_update(
 
   entry->statetrack.wan.wscale = wscale;
   entry->statetrack.wan.sent = tcp_seq_number(origtcp) + (!!was_keepalive);
-  sh = (1<<airwall->conf->own_wscale) - 1;
+  sh = (1U<<airwall->conf->own_wscale) - 1;
   entry->statetrack.lan.max_window_unscaled = (INITIAL_WINDOW + sh) >> airwall->conf->own_wscale;
   entry->statetrack.wan.acked = tcp_ack_number(origtcp);
   entry->statetrack.wan.max =
     tcp_ack_number(origtcp) +
-      (tcp_window(origtcp) << entry->statetrack.wan.wscale);
+      (((uint32_t)tcp_window(origtcp)) << entry->statetrack.wan.wscale);
   entry->statetrack.lan.max = tcp_seq_number(origtcp) +
-    (entry->statetrack.lan.max_window_unscaled << airwall->conf->own_wscale);
+    (((uint32_t)entry->statetrack.lan.max_window_unscaled) << airwall->conf->own_wscale);
   entry->statetrack.lan.sent = tcp_ack_number(origtcp);
 
   entry->statetrack.wan.max_window_unscaled = tcp_window(origtcp);
@@ -2542,7 +2550,7 @@ static void send_window_update(
 #endif
   tcp_set_seq_number(tcp, tcp_ack_number(origtcp));
   tcp_set_ack_number(tcp, tcp_seq_number(origtcp));
-  sh = (1<<airwall->conf->own_wscale) - 1;
+  sh = (1U<<airwall->conf->own_wscale) - 1;
   tcp_set_window(tcp, (INITIAL_WINDOW+sh)>>airwall->conf->own_wscale);
   tcpopts = &((unsigned char*)tcp)[20];
   if (info.options_valid && info.ts_present)
@@ -2742,7 +2750,7 @@ static void send_ack_and_window_update(
   }
   else
   {
-    uint64_t win64 = tcp_window(origtcp)<<entry->wscalediff;
+    uint64_t win64 = ((uint32_t)tcp_window(origtcp))<<(-entry->wscalediff);
     if (win64 > 0xFFFF)
     {
       win64 = 0xFFFF;
@@ -3093,11 +3101,11 @@ static int uplink_pcp(
   ip46_set_payload_len(ip, 8 + outudppay);
   ip46_set_hdr_cksum_calc(ip);
 
-  pktstruct = ll_alloc_st(st, packet_size(14+20+8+outudppay));
+  pktstruct = ll_alloc_st(st, packet_size(14U+20U+8U+outudppay));
   pktstruct->data = packet_calc_data(pktstruct);
   pktstruct->direction = PACKET_DIRECTION_DOWNLINK;
-  pktstruct->sz = 14+20+8+outudppay;
-  memcpy(pktstruct->data, dnspkt, 14+20+8+outudppay);
+  pktstruct->sz = 14U+20U+8U+outudppay;
+  memcpy(pktstruct->data, dnspkt, 14U+20U+8U+outudppay);
 #ifdef ENABLE_ARP
   if (send_via_arp(pktstruct, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
   {
@@ -3749,11 +3757,11 @@ static int downlink_dns(
     return 1;
   }
 
-  pktstruct = ll_alloc_st(st, packet_size(14+20+8+aoff));
+  pktstruct = ll_alloc_st(st, packet_size(14U+20U+8U+aoff));
   pktstruct->data = packet_calc_data(pktstruct);
   pktstruct->direction = PACKET_DIRECTION_UPLINK;
-  pktstruct->sz = 14+20+8+aoff;
-  memcpy(pktstruct->data, dnspkt, 14+20+8+aoff);
+  pktstruct->sz = 14U+20U+8U+aoff;
+  memcpy(pktstruct->data, dnspkt, 14U+20U+8U+aoff);
 #ifdef ENABLE_ARP
   if (send_via_arp(pktstruct, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
   {
@@ -4143,7 +4151,7 @@ handle_downlink_rst(void *ip, void *ippay,
                     uint64_t time64)
 {
   uint32_t tcp_len;
-  tcp_len = ip46_total_len(ip) - ip46_hdr_len(ip);
+  tcp_len = ((uint32_t)ip46_total_len(ip)) - ((uint32_t)ip46_hdr_len(ip));
   if (ip46_hdr_cksum_calc(ip) != 0)
   {
     log_log(LOG_LEVEL_ERR, "WORKERDOWNLINK", "invalid IP hdr cksum");
@@ -4538,7 +4546,7 @@ handle_downlink_syn(struct packet *pkt, void *ether, void *ip, void *ippay,
     entry->statetrack.wan.acked = tcp_ack_number(ippay);
     entry->statetrack.wan.max =
       entry->statetrack.wan.acked +
-        (tcp_window(ippay) << entry->statetrack.wan.wscale);
+        (((uint32_t)tcp_window(ippay)) << entry->statetrack.wan.wscale);
     entry->flag_state = FLAG_STATE_UPLINK_SYN_RCVD;
     worker_local_wrlock(local);
     entry->timer.time64 = time64 + local->airwall->conf->timeouts.ul_syn_rcvd*1000ULL*1000ULL;
@@ -4928,7 +4936,7 @@ int downlink(
       && resend_request_is_valid_win(tcp_seq_number(ippay),
                                      entry->statetrack.wan.sent,
                                      INITIAL_WINDOW +
-                                       (1<<airwall->conf->own_wscale) - 1)
+                                       (1U<<airwall->conf->own_wscale) - 1)
       && resend_request_is_valid(tcp_ack_number(ippay),
                                  entry->statetrack.wan.acked))
   {
@@ -5145,7 +5153,7 @@ handle_uplink_syn(struct packet *pkt, void *ether, void *ip, void *ippay,
   const void *remote_ip = ip_dst_ptr(ip);
   struct airwall_hash_ctx ctx;
   uint32_t ip_len = ip46_total_len(ip);
-  uint32_t tcp_len = ip46_total_len(ip) - ip46_hdr_len(ip);
+  uint32_t tcp_len = ((uint32_t)ip46_total_len(ip)) - ((uint32_t)ip46_hdr_len(ip));
   if (ip46_hdr_cksum_calc(ip) != 0)
   {
     log_log(LOG_LEVEL_ERR, "WORKERUPLINK", "invalid IP hdr cksum");
@@ -5431,7 +5439,7 @@ handle_uplink_syn(struct packet *pkt, void *ether, void *ip, void *ippay,
     entry->statetrack.lan.wscale = tcpinfo.wscale;
     entry->statetrack.lan.sent = tcp_seq_number(ippay) + 1 + entry->seqoffset;
     entry->statetrack.lan.acked = tcp_ack_number(ippay);
-    entry->statetrack.lan.max = tcp_ack_number(ippay) + (tcp_window(ippay) << entry->statetrack.lan.wscale);
+    entry->statetrack.lan.max = tcp_ack_number(ippay) + (((uint32_t)tcp_window(ippay)) << entry->statetrack.lan.wscale);
     entry->statetrack.lan.max_window_unscaled = tcp_window(ippay);
     entry->lan_sack_was_supported = tcpinfo.sack_permitted;
     if (entry->statetrack.lan.max_window_unscaled == 0)
@@ -5535,14 +5543,14 @@ handle_uplink_syn_rcvd(struct packet *pkt, void *ether, void *ip, void *ippay,
       // valid.
       data_len = 0;
     }
-    last_seq = first_seq + data_len - 1;
+    last_seq = first_seq + ((uint32_t)data_len) - 1;
     if (seq_cmp(last_seq, entry->statetrack.lan.sent) >= 0)
     {
       entry->statetrack.lan.sent = last_seq + 1;
     }
     entry->statetrack.lan.acked = ack;
-    entry->statetrack.lan.max = ack +
-                                  (window << entry->statetrack.lan.wscale);
+    entry->statetrack.lan.max =
+      ack + (((uint32_t)window) << entry->statetrack.lan.wscale);
     entry->flag_state = FLAG_STATE_ESTABLISHED;
     worker_local_wrlock(local);
     entry->timer.time64 = time64 + local->airwall->conf->timeouts.connected*1000ULL*1000ULL;
@@ -6096,7 +6104,7 @@ void send_announce(struct worker_local *local, struct port *port,
   ip46_set_ttl(ip, 1);
   ip46_set_proto(ip, 17);
   ip_set_src(ip, local->airwall->conf->dl_addr);
-  ip_set_dst(ip, (224<<24)|1);
+  ip_set_dst(ip, (224U<<24)|1);
   udp = ip46_payload(ip);
   udp_set_src_port(udp, 5351);
   udp_set_dst_port(udp, 5350);

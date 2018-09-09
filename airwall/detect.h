@@ -9,10 +9,10 @@
 #include <ctype.h>
 
 struct hostname_ctx {
-  int len;
-  int truncated;
+  int len; // FIXME unsigned? less?
+  int truncated; // FIXME unsigned? less?
   char hostname[256];
-  int is_http_connect_num_bytes;
+  uint32_t is_http_connect_num_bytes; // FIXME less?
 };
 
 void hostname_ctx_init(struct hostname_ctx *nam);
@@ -34,7 +34,7 @@ struct http_ctx {
   //int hostname_truncated;
   //char hostname[256];
   int crlfcrlf_lfcnt;
-  int total_num;
+  uint32_t total_num;
 };
 
 void http_ctx_init(struct http_ctx *ctx);

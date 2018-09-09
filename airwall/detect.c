@@ -41,7 +41,7 @@ const uint64_t tokenbitmask[4] = {0x3ff6cfa00000000ULL,0x57ffffffc7fffffeULL,0,0
 
 static inline int isuricharfast(char ch)
 {
-  uint8_t i = ch;
+  uint8_t i = (uint8_t)ch;
 #if 0
   if (i >= 128)
   {
@@ -53,7 +53,7 @@ static inline int isuricharfast(char ch)
 
 static inline int istokenfast(char ch)
 {
-  uint8_t i = ch;
+  uint8_t i = (uint8_t)ch;
 #if 0
   if (i >= 128)
   {
@@ -104,7 +104,7 @@ int http_ctx_feed(struct http_ctx *ctx, const void *data, size_t sz,
       ctx->total_num++;
       udata++;
     }
-    else if (istokenfast(uch))
+    else if (istokenfast((char)uch))
     {
       ctx->request_method_is_connect = 0;
       ctx->request_method_len++;
@@ -138,13 +138,13 @@ int http_ctx_feed(struct http_ctx *ctx, const void *data, size_t sz,
       return ctx->verdict;
     }
     uch = udata[0];
-    if (isuricharfast(uch))
+    if (isuricharfast((char)uch))
     {
       if (ctx->request_method_is_connect)
       {
         if (ctx->uri_len < (int)(sizeof(nam->hostname) - 1))
         {
-          nam->hostname[ctx->uri_len] = uch;
+          nam->hostname[ctx->uri_len] = (char)uch;
         }
       }
       ctx->uri_len++;
@@ -318,7 +318,7 @@ int http_ctx_feed(struct http_ctx *ctx, const void *data, size_t sz,
         ctx->total_num++;
         udata++;
       }
-      else if (!istokenfast(uch) && uch != '\r' && uch != '\n')
+      else if (!istokenfast((char)uch) && uch != '\r' && uch != '\n')
       {
         ctx->verdict = -ENOTSUP;
         return ctx->verdict;
@@ -372,7 +372,7 @@ int http_ctx_feed(struct http_ctx *ctx, const void *data, size_t sz,
       }
       else if (uch != '\r' && uch != '\n')
       {
-        nam->hostname[ctx->hostname_seen] = uch;
+        nam->hostname[ctx->hostname_seen] = (char)uch;
         ctx->hostname_seen++;
         sz--;
         ctx->total_num++;
@@ -438,7 +438,7 @@ ssize_t ssl_name_ctx_feed(struct ssl_name_ctx *ctx, const void *data, size_t sz,
   {
     if (sz == 0)
     {
-      return orig_sz - sz;
+      return (ssize_t)(orig_sz - sz);
     }
     ctx->type <<= 8;
     ctx->type |= udata[0];
@@ -450,7 +450,7 @@ ssize_t ssl_name_ctx_feed(struct ssl_name_ctx *ctx, const void *data, size_t sz,
   {
     if (sz == 0)
     {
-      return orig_sz - sz;
+      return (ssize_t)(orig_sz - sz);
     }
     ctx->name_len <<= 8;
     ctx->name_len |= udata[0];
@@ -465,27 +465,27 @@ ssize_t ssl_name_ctx_feed(struct ssl_name_ctx *ctx, const void *data, size_t sz,
       sz -= ctx->name_len;
       ctx->processed += ctx->name_len;
       udata += ctx->name_len;
-      return orig_sz - sz;
+      return (ssize_t)(orig_sz - sz);
     }
     ctx->processed += sz;
     udata += sz;
     sz = 0;
-    return orig_sz - sz;
+    return (ssize_t)(orig_sz - sz);
   }
-  if (ctx->processed - 3 + sz >= ctx->name_len)
+  if (ctx->processed - 3U + sz >= ctx->name_len)
   {
     if (ctx->name_len < sizeof(nam->hostname))
     {
-      uint32_t tocopy = ctx->name_len - (ctx->processed-3);
+      uint32_t tocopy = (uint32_t)ctx->name_len - (ctx->processed-3U);
       memcpy(&nam->hostname[ctx->processed - 3], udata, tocopy);
-      nam->hostname[ctx->processed - 3 + tocopy] = '\0';
+      nam->hostname[ctx->processed - 3U + tocopy] = '\0';
       nam->truncated = 0;
       nam->len = ctx->name_len;
     }
     else if ((int)(sizeof(nam->hostname)-1) > (ctx->processed-3))
     {
       memcpy(&nam->hostname[ctx->processed - 3], udata,
-             sizeof(nam->hostname)-1-(ctx->processed-3));
+             sizeof(nam->hostname)-1-(ctx->processed-3U));
       nam->hostname[sizeof(nam->hostname)-1] = '\0';
       nam->truncated = 1;
       nam->len = ctx->name_len;
@@ -499,21 +499,21 @@ ssize_t ssl_name_ctx_feed(struct ssl_name_ctx *ctx, const void *data, size_t sz,
     ctx->processed += ctx->name_len;
     sz -= ctx->name_len;
     udata += ctx->name_len;
-    return orig_sz - sz;
+    return (ssize_t)(orig_sz - sz);
   }
-  if (ctx->processed - 3 + sz < sizeof(nam->hostname))
+  if (ctx->processed - 3U + sz < sizeof(nam->hostname))
   {
     memcpy(&nam->hostname[ctx->processed - 3], udata, sz);
   }
   else if ((int)(sizeof(nam->hostname)-1) > (ctx->processed-3))
   {
     memcpy(&nam->hostname[ctx->processed - 3], udata,
-           sizeof(nam->hostname)-1-(ctx->processed-3));
+           sizeof(nam->hostname)-1U-(ctx->processed-3U));
   }
   ctx->processed += sz;
   udata += sz;
   sz = 0;
-  return orig_sz - sz;
+  return (ssize_t)(orig_sz - sz);
 }
 
 void ssl_ext_ctx_init(struct ssl_ext_ctx *ctx)
@@ -544,7 +544,7 @@ ssize_t ssl_ext_ctx_feed(struct ssl_ext_ctx *ctx, const void *data, size_t sz,
   {
     if (sz == 0)
     {
-      return orig_sz - sz;
+      return (ssize_t)(orig_sz - sz);
     }
     ctx->type <<= 8;
     ctx->type |= udata[0]; // FIXME type or ext_len first?
@@ -556,7 +556,7 @@ ssize_t ssl_ext_ctx_feed(struct ssl_ext_ctx *ctx, const void *data, size_t sz,
   {
     if (sz == 0)
     {
-      return orig_sz - sz;
+      return (ssize_t)(orig_sz - sz);
     }
     ctx->ext_len <<= 8;
     ctx->ext_len |= udata[0];
@@ -571,18 +571,18 @@ ssize_t ssl_ext_ctx_feed(struct ssl_ext_ctx *ctx, const void *data, size_t sz,
       sz -= ctx->ext_len;
       ctx->processed += ctx->ext_len;
       udata += ctx->ext_len;
-      return orig_sz - sz;
+      return (ssize_t)(orig_sz - sz);
     }
     ctx->processed += sz;
     udata += sz;
     sz = 0;
-    return orig_sz - sz;
+    return (ssize_t)(orig_sz - sz);
   }
   while (ctx->processed < 6)
   {
     if (sz == 0)
     {
-      return orig_sz - sz;
+      return (ssize_t)(orig_sz - sz);
     }
     ctx->name_list_len <<= 8;
     ctx->name_list_len |= udata[0];
@@ -603,10 +603,10 @@ ssize_t ssl_ext_ctx_feed(struct ssl_ext_ctx *ctx, const void *data, size_t sz,
     thismax = sz;
     if ((int)(thismax) > toprocess - ctx->processed)
     {
-      thismax = toprocess - ctx->processed;
+      thismax = ((size_t)toprocess) - ctx->processed;
     }
     ret = ssl_name_ctx_feed(&ctx->nam, udata, thismax, nam);
-    sz -= ret;
+    sz = (size_t)(sz - (size_t)ret);
     udata += ret;
     ctx->processed += ret;
     if (sz > 0)
@@ -614,7 +614,7 @@ ssize_t ssl_ext_ctx_feed(struct ssl_ext_ctx *ctx, const void *data, size_t sz,
       ssl_name_ctx_reinit(&ctx->nam);
     }
   }
-  return orig_sz - sz;
+  return (ssize_t)(orig_sz - sz);
 }
 
 void ssl_ctx_init(struct ssl_ctx *ctx)
@@ -846,7 +846,7 @@ int ssl_ctx_feed(struct ssl_ctx *ctx, uint16_t exp_vers,
     udata++;
     sz--;
   }
-  uint32_t sofar = 6+32+1+ctx->sid_len+2+ctx->cs_len+1+ctx->cm_len+2+ctx->ext_len;
+  uint32_t sofar = 6U+32U+1U+ctx->sid_len+2U+ctx->cs_len+1U+ctx->cm_len+2U+ctx->ext_len;
   while (sz > 0 && ctx->bytesFed < sofar) // FIXME condition incorrect
   {
     ssize_t ret;
@@ -872,8 +872,8 @@ int ssl_ctx_feed(struct ssl_ctx *ctx, uint16_t exp_vers,
     }
     nam->len = 0;
     ret = ssl_ext_ctx_feed(&ctx->ext, udata, tofeed, nam);
-    ctx->bytesFed += ret;
-    sz -= ret;
+    ctx->bytesFed = (size_t)(ctx->bytesFed + (size_t)ret);
+    sz = (size_t)(sz - (size_t)ret);
     udata += ret;
     if (sz > 0)
     {
@@ -1019,7 +1019,7 @@ static inline void set_bit_range(uint64_t *bitmask, size_t start, size_t end)
     bitmask[i/64] |= (1<<(i%64));
   }
 #endif
-  bitmask[start/64] |= (1<<(start2%64)) - (1<<(start%64));
+  bitmask[start/64] |= (1ULL<<(start2%64)) - (1ULL<<(start%64));
   for (i = start2/64; i < end2/64; i++)
   {
     bitmask[i] = 0xFFFFFFFFFFFFFFFFLLU;
@@ -1030,7 +1030,7 @@ static inline void set_bit_range(uint64_t *bitmask, size_t start, size_t end)
     bitmask[i/64] |= (1<<(i%64));
   }
 #endif
-  bitmask[end2/64] |= (1<<(end%64)) - (1<<(end2%64));
+  bitmask[end2/64] |= (1ULL<<(end%64)) - (1ULL<<(end2%64));
 }
 
 int proto_detect_feed(struct proto_detect_ctx *ctx,
@@ -1058,7 +1058,7 @@ int proto_detect_feed(struct proto_detect_ctx *ctx,
     {
       break; // FIXME is this required at all?
     }
-    if (ctx->init_bitmask[off/64] & (1<<(off%64)))
+    if (ctx->init_bitmask[off/64] & (1ULL<<(off%64)))
     {
       if (ctx->init_data[off] != tcppay[off])
       {
@@ -1109,7 +1109,7 @@ int proto_detect_feed(struct proto_detect_ctx *ctx,
     {
       break;
     }
-    else if (ctx->init_bitmask[i/64] & (1<<(i%64)))
+    else if (ctx->init_bitmask[i/64] & (1ULL<<(i%64)))
     {
       toprocess++;
     }

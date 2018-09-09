@@ -210,11 +210,11 @@ static void uplink_impl(
     tcp_set_ack_number(tcp, ctx->seq);
     tcp46_set_cksum_calc(ip);
 
-    pktstruct = ll_alloc_st(loc, packet_size(14 + ip46_total_len(ip)));
+    pktstruct = ll_alloc_st(loc, packet_size(14U + ip46_total_len(ip)));
     pktstruct->data = packet_calc_data(pktstruct);
     pktstruct->direction = PACKET_DIRECTION_DOWNLINK;
-    pktstruct->sz = 14 + ip46_total_len(ip);
-    memcpy(pktstruct->data, pktsmall, 14 + ip46_total_len(ip));
+    pktstruct->sz = 14U + ip46_total_len(ip);
+    memcpy(pktstruct->data, pktsmall, 14U + ip46_total_len(ip));
     if (downlink(airwall, local, pktstruct, &outport, time64, loc))
     {
       ll_free_st(loc, pktstruct);
@@ -230,7 +230,7 @@ static void uplink_impl(
       log_log(LOG_LEVEL_ERR, "UNIT", "no packet out");
       exit(1);
     }
-    if (pktstruct->sz != 14 + (ctx->version == 4 ? 20 : 40) + 20)
+    if (pktstruct->sz != 14U + (ctx->version == 4 ? 20 : 40) + 20)
     {
       log_log(LOG_LEVEL_ERR, "UNIT", "output packet size doesn't agree");
       exit(1);
@@ -455,11 +455,11 @@ static void downlink_impl(
     tcp_set_ack_number(tcp, ctx->seq2);
     tcp46_set_cksum_calc(ip);
 
-    pktstruct = ll_alloc_st(loc, packet_size(14 + ip46_total_len(ip)));
+    pktstruct = ll_alloc_st(loc, packet_size(14U + ip46_total_len(ip)));
     pktstruct->data = packet_calc_data(pktstruct);
     pktstruct->direction = PACKET_DIRECTION_UPLINK;
-    pktstruct->sz = 14 + ip46_total_len(ip);
-    memcpy(pktstruct->data, pktsmall, 14 + ip46_total_len(ip));
+    pktstruct->sz = 14U + ip46_total_len(ip);
+    memcpy(pktstruct->data, pktsmall, 14U + ip46_total_len(ip));
     if (uplink(airwall, local, pktstruct, &outport, time64, loc))
     {
       ll_free_st(loc, pktstruct);
