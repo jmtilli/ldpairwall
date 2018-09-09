@@ -13,4 +13,3 @@ test packet loss
 decrement TTL
 porter for multiple IPs?
 support for storing connection tracking tables and reloading them
-proper don't fragment handling with ICMP packet too big

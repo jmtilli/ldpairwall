@@ -46,6 +46,9 @@ static void send_arp(
 }
 
 static int send_via_arp(struct packet *pkt,
+                        struct airwall_hash_entry *tcpe,
+                        struct airwall_udp_entry *udpe,
+                        struct airwall_icmp_entry *icmpe,
                         struct worker_local *local,
                         struct airwall *airwall,
                         struct ll_alloc_st *st,
@@ -59,6 +62,8 @@ static int send_via_arp(struct packet *pkt,
   uint32_t addr;
   const void *mac;
   uint32_t dst = ip_dst(ether_payload(ether));
+  const size_t mtu = 1500; // FIXME make configurable
+  //const size_t mtu = 1000; // Use this for testing
   if (dir == PACKET_DIRECTION_UPLINK)
   {
     memcpy(ether_src(ether), airwall->ul_mac, 6);
@@ -108,13 +113,114 @@ static int send_via_arp(struct packet *pkt,
   {
     abort();
   }
-  if (pkt->sz > 1514) // FIXME make MTU configurable
+  if (pkt->sz > mtu+14)
   {
     struct fragment frags[64];
     size_t i, count;
     char *ip = ether_payload(ether);
+    char *ippay = ip_payload(ip);
     size_t ihl = ip46_hdr_len(ip);
     i = 0;
+    if (ip_version(ip) != 4)
+    {
+      // FIXME ICMP PTB
+      log_log(LOG_LEVEL_ERR, "WORKER", "can't fragment v6 packet");
+      return 1;
+    }
+    if (ip_version(ip) == 4 && ip_dont_frag(ip))
+    {
+      char *ether2, *ip2, *icmp2, *icmppay;
+      size_t origbytes = 8;
+      if (origbytes > ip46_payload_len(ip))
+      {
+        origbytes = ip46_payload_len(ip);
+      }
+      struct packet *pktstruct = ll_alloc_st(st, packet_size(14+20+8+ihl+origbytes));
+      pktstruct->data = packet_calc_data(pktstruct);
+      if (pkt->direction == PACKET_DIRECTION_UPLINK)
+      {
+        uint8_t proto = ip46_proto(ip);
+        uint16_t pay_len = ip46_total_len(ip) - ip46_hdr_len(ip);
+        if (proto == 1 && icmpe != NULL)
+        {
+          ip_set_src_cksum_update(ip, ip46_total_len(ip), proto, ip46_payload(ip), pay_len, ntohl(icmpe->local_ip.ipv4)); // Doesn't work for IPv6...
+          // FIXME: modify ICMP header
+        }
+        else if (proto == 6 && tcpe != NULL)
+        {
+          ip_set_src_cksum_update(ip, ip46_total_len(ip), proto, ip46_payload(ip), pay_len, ntohl(tcpe->local_ip.ipv4)); // Doesn't work for IPv6...
+          tcp_set_src_port_cksum_update(ip46_payload(ip), pay_len, tcpe->local_port);
+          tcp_set_seq_number_cksum_update(
+            ippay, pay_len, tcp_seq_number(ippay)-tcpe->seqoffset);
+        }
+        else if (proto == 17 && udpe != NULL)
+        {
+          ip_set_src_cksum_update(ip, ip46_total_len(ip), proto, ip46_payload(ip), pay_len, ntohl(udpe->local_ip.ipv4)); // Doesn't work for IPv6...
+          udp_set_src_port_cksum_update(ip46_payload(ip), pay_len, udpe->local_port);
+        }
+        pktstruct->direction = PACKET_DIRECTION_DOWNLINK;
+      }
+      else if (pkt->direction == PACKET_DIRECTION_DOWNLINK)
+      {
+        uint8_t proto = ip46_proto(ip);
+        uint16_t pay_len = ip46_total_len(ip) - ip46_hdr_len(ip);
+        if (proto == 1 && icmpe != NULL)
+        {
+          ip_set_dst_cksum_update(ip, ip46_total_len(ip), proto, ip46_payload(ip), pay_len, ntohl(icmpe->nat_ip.ipv4)); // Doesn't work for IPv6...
+          // FIXME: modify ICMP header
+        }
+        else if (proto == 6 && tcpe != NULL)
+        {
+          ip_set_dst_cksum_update(ip, ip46_total_len(ip), proto, ip46_payload(ip), pay_len, ntohl(tcpe->nat_ip.ipv4)); // Doesn't work for IPv6...
+          tcp_set_dst_port_cksum_update(ip46_payload(ip), pay_len, tcpe->nat_port);
+        }
+        else if (proto == 17 && udpe != NULL)
+        {
+          ip_set_dst_cksum_update(ip, ip46_total_len(ip), proto, ip46_payload(ip), pay_len, ntohl(udpe->nat_ip.ipv4)); // Doesn't work for IPv6...
+          udp_set_dst_port_cksum_update(ip46_payload(ip), pay_len, udpe->nat_port);
+        }
+        pktstruct->direction = PACKET_DIRECTION_UPLINK;
+      }
+      pktstruct->sz = 14+20+8+ihl+origbytes;
+      ether2 = pktstruct->data;
+      memset(ether2, 0, pktstruct->sz);
+      ether_set_type(ether2, ETHER_TYPE_IP);
+      ip2 = ether_payload(ether2);
+      ip_set_version(ip2, 4);
+      ip46_set_min_hdr_len(ip2);
+      ip46_set_payload_len(ip2, 8+ihl+origbytes);
+      ip46_set_dont_frag(ip2, 1);
+      ip46_set_id(ip2, 0); // XXX
+      ip46_set_ttl(ip2, 64);
+      ip46_set_proto(ip2, 1);
+      ip_set_src(ip2, airwall->conf->ul_addr); // Doesn't work for IPv6...
+      ip46_set_dst(ip2, ip46_src(ip));
+      ip46_set_hdr_cksum_calc(ip2);
+      icmp2 = ip46_payload(ip2);
+      icmp_set_type(icmp2, 3); // unreach
+      icmp_set_code(icmp2, 4); // PTB
+      icmp_set_header_data(icmp2, mtu);
+      icmppay = icmp_payload(icmp2);
+      memcpy(icmppay, ip, ihl+origbytes);
+      icmp_set_checksum(icmp2, 0);
+      struct ip_cksum_ctx ctx = IP_CKSUM_CTX_INITER;
+      ip_cksum_feed(&ctx, icmp2, 8 + ihl + origbytes);
+      icmp_set_checksum(icmp2, ip_cksum_postprocess(&ctx));
+      log_log(LOG_LEVEL_ERR, "WORKER", "can't fragment packet");
+      if (pktstruct->sz > mtu+14)
+      {
+        pktstruct->sz = mtu+14;
+      }
+      if (send_via_arp(pktstruct, NULL, NULL, NULL, local, airwall, st, port, pktstruct->direction, time64))
+      {
+        ll_free_st(st, pktstruct);
+      }
+      else
+      {
+        port->portfunc(pktstruct, port->userdata);
+      }
+      return 1;
+    }
     for (;;)
     {
       if (i >= 64)
@@ -122,8 +228,8 @@ static int send_via_arp(struct packet *pkt,
         abort();
       }
       frags[i].pkt = NULL;
-      frags[i].datastart = (1500-ihl)*i;
-      frags[i].datalen = (1500-ihl);
+      frags[i].datastart = (mtu-ihl)*i;
+      frags[i].datalen = (mtu-ihl);
       if (frags[i].datastart + frags[i].datalen >= (pkt->sz-14-ihl))
       {
         frags[i].datalen = (pkt->sz-14-ihl) - frags[i].datastart;
@@ -141,7 +247,7 @@ static int send_via_arp(struct packet *pkt,
       pktstruct->direction = pkt->direction;
       pktstruct->sz = frags[i].pkt->sz;
       memcpy(pktstruct->data, frags[i].pkt->data, frags[i].pkt->sz);
-      if (send_via_arp(pktstruct, local, airwall, st, port, dir, time64))
+      if (send_via_arp(pktstruct, NULL, NULL, NULL, local, airwall, st, port, dir, time64))
       {
         ll_free_st(st, pktstruct);
       }
@@ -1876,7 +1982,7 @@ static void send_synack(
   pktstruct->sz = sz;
   memcpy(pktstruct->data, synack, sz);
 #ifdef ENABLE_ARP
-  if (send_via_arp(pktstruct, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
+  if (send_via_arp(pktstruct, NULL, NULL, NULL, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
   {
     ll_free_st(st, pktstruct);
     return;
@@ -2112,7 +2218,7 @@ static void send_or_resend_syn(
   pktstruct->sz = sz;
   memcpy(pktstruct->data, syn, sz);
 #ifdef ENABLE_ARP
-  if (send_via_arp(pktstruct, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
+  if (send_via_arp(pktstruct, entry, NULL, NULL, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
   {
     ll_free_st(st, pktstruct);
     return;
@@ -2290,7 +2396,7 @@ static void send_data_only(
     pktstruct->sz = sz;
     memcpy(pktstruct->data, data, sz);
 #ifdef ENABLE_ARP
-    if (send_via_arp(pktstruct, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
+    if (send_via_arp(pktstruct, entry, NULL, NULL, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
     {
       ll_free_st(st, pktstruct);
       return;
@@ -2654,7 +2760,7 @@ static void retx_http_connect_response(
   pktstruct->sz = sz;
   memcpy(pktstruct->data, windowupdate, sz);
 #ifdef ENABLE_ARP
-  if (send_via_arp(pktstruct, local, airwall, st, port, PACKET_DIRECTION_UPLINK, gettime64()))
+  if (send_via_arp(pktstruct, entry, NULL, NULL, local, airwall, st, port, PACKET_DIRECTION_UPLINK, gettime64()))
   {
     ll_free_st(st, pktstruct);
     return;
@@ -2801,7 +2907,7 @@ static void send_ack_and_window_update(
   pktstruct->sz = sz;
   memcpy(pktstruct->data, windowupdate, sz);
 #ifdef ENABLE_ARP
-  if (send_via_arp(pktstruct, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
+  if (send_via_arp(pktstruct, entry, NULL, NULL, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
   {
     ll_free_st(st, pktstruct);
     return;
@@ -3107,7 +3213,7 @@ static int uplink_pcp(
   pktstruct->sz = 14U+20U+8U+outudppay;
   memcpy(pktstruct->data, dnspkt, 14U+20U+8U+outudppay);
 #ifdef ENABLE_ARP
-  if (send_via_arp(pktstruct, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
+  if (send_via_arp(pktstruct, NULL, NULL, NULL, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
   {
     ll_free_st(st, pktstruct);
     return 1;
@@ -3198,7 +3304,7 @@ static int uplink_udp(
     worker_local_wrunlock(local);
   }
 
-  if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
+  if (send_via_arp(pkt, NULL, ue, NULL, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
   {
     return 1;
   }
@@ -3252,7 +3358,7 @@ static int downlink_icmp(
     ie->timer.time64 = time64 + local->airwall->conf->timeouts.icmp*1000ULL*1000ULL;
     timer_linkheap_modify(&local->timers, &ie->timer);
     ip_set_dst_cksum_update(ip, ip46_total_len(ip), 0, NULL, 0, hdr_get32n(&ie->local_ip));
-    if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
+    if (send_via_arp(pkt, NULL, NULL, ie, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
     {
       return 1;
     }
@@ -3354,7 +3460,7 @@ static int downlink_icmp(
     }
   }
 
-  if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
+  if (send_via_arp(pkt, NULL, NULL, NULL, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
   {
     return 1;
   }
@@ -3425,7 +3531,7 @@ static int uplink_icmp(
     ip_set_src_cksum_update(ip, ip46_total_len(ip), 0, NULL, 0, hdr_get32n(&ie->nat_ip));
     ie->timer.time64 = time64 + local->airwall->conf->timeouts.icmp*1000ULL*1000ULL;
     timer_linkheap_modify(&local->timers, &ie->timer);
-    if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
+    if (send_via_arp(pkt, NULL, NULL, ie, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
     {
       return 1;
     }
@@ -3527,7 +3633,7 @@ static int uplink_icmp(
     }
   }
 
-  if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
+  if (send_via_arp(pkt, NULL, NULL, NULL, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
   {
     return 1;
   }
@@ -3763,7 +3869,7 @@ static int downlink_dns(
   pktstruct->sz = 14U+20U+8U+aoff;
   memcpy(pktstruct->data, dnspkt, 14U+20U+8U+aoff);
 #ifdef ENABLE_ARP
-  if (send_via_arp(pktstruct, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
+  if (send_via_arp(pktstruct, NULL, NULL, NULL, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
   {
     ll_free_st(st, pktstruct);
     return 1;
@@ -3885,7 +3991,7 @@ static int downlink_udp(
     worker_local_wrunlock(local);
   }
 
-  if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
+  if (send_via_arp(pkt, NULL, ue, NULL, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
   {
     return 1;
   }
@@ -4226,7 +4332,7 @@ handle_downlink_rst(void *ip, void *ippay,
     abort();
   }
 #ifdef ENABLE_ARP
-  if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
+  if (send_via_arp(pkt, entry, NULL, NULL, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
   {
     return 1;
   }
@@ -4467,7 +4573,7 @@ handle_downlink_syn(struct packet *pkt, void *ether, void *ip, void *ippay,
         abort();
       }
 #ifdef ENABLE_ARP
-      if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
+      if (send_via_arp(pkt, entry, NULL, NULL, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
       {
         return 1;
       }
@@ -4509,7 +4615,7 @@ handle_downlink_syn(struct packet *pkt, void *ether, void *ip, void *ippay,
         abort();
       }
 #ifdef ENABLE_ARP
-      if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
+      if (send_via_arp(pkt, entry, NULL, NULL, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
       {
         return 1;
       }
@@ -4578,7 +4684,7 @@ handle_downlink_syn(struct packet *pkt, void *ether, void *ip, void *ippay,
       abort();
     }
 #ifdef ENABLE_ARP
-    if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
+    if (send_via_arp(pkt, entry, NULL, NULL, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
     {
       return 1;
     }
@@ -4825,7 +4931,7 @@ int downlink(
     {
       //port->portfunc(pkt, port->userdata);
 #ifdef ENABLE_ARP
-      if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
+      if (send_via_arp(pkt, NULL, NULL, NULL, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
       {
         return 1;
       }
@@ -5043,7 +5149,7 @@ int downlink(
     abort();
   }
 #ifdef ENABLE_ARP
-  if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
+  if (send_via_arp(pkt, entry, NULL, NULL, local, airwall, st, port, PACKET_DIRECTION_DOWNLINK, time64))
   {
     return 1;
   }
@@ -5192,7 +5298,7 @@ handle_uplink_syn(struct packet *pkt, void *ether, void *ip, void *ippay,
         abort();
       }
 #ifdef ENABLE_ARP
-      if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
+      if (send_via_arp(pkt, entry, NULL, NULL, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
       {
         return 1;
       }
@@ -5301,7 +5407,7 @@ handle_uplink_syn(struct packet *pkt, void *ether, void *ip, void *ippay,
     worker_local_wrunlock(local);
     //airwall_hash_unlock(local, &ctx);
 #ifdef ENABLE_ARP
-    if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
+    if (send_via_arp(pkt, entry, NULL, NULL, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
     {
       return 1;
     }
@@ -5514,7 +5620,7 @@ handle_uplink_syn_rcvd(struct packet *pkt, void *ether, void *ip, void *ippay,
     //port->portfunc(pkt, port->userdata);
     //airwall_hash_unlock(local, &ctx);
 #ifdef ENABLE_ARP
-    if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
+    if (send_via_arp(pkt, entry, NULL, NULL, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
     {
       return 1;
     }
@@ -5569,7 +5675,7 @@ handle_uplink_syn_rcvd(struct packet *pkt, void *ether, void *ip, void *ippay,
     //port->portfunc(pkt, port->userdata);
     //airwall_hash_unlock(local, &ctx);
 #ifdef ENABLE_ARP
-    if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
+    if (send_via_arp(pkt, entry, NULL, NULL, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
     {
       return 1;
     }
@@ -5659,7 +5765,7 @@ handle_uplink_rst(void *ether, void *ip, void *ippay,
     //port->portfunc(pkt, port->userdata);
     //airwall_hash_unlock(local, &ctx);
 #ifdef ENABLE_ARP
-    if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
+    if (send_via_arp(pkt, entry, NULL, NULL, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
     {
       return 1;
     }
@@ -5700,7 +5806,7 @@ handle_uplink_rst(void *ether, void *ip, void *ippay,
   //port->portfunc(pkt, port->userdata);
   //airwall_hash_unlock(local, &ctx);
 #ifdef ENABLE_ARP
-  if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
+  if (send_via_arp(pkt, entry, NULL, NULL, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
   {
     return 1;
   }
@@ -5875,7 +5981,7 @@ int uplink(
     {
       //port->portfunc(pkt, port->userdata);
 #ifdef ENABLE_ARP
-      if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
+      if (send_via_arp(pkt, NULL, NULL, NULL, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
       {
         return 1;
       }
@@ -6060,7 +6166,7 @@ int uplink(
     abort();
   }
 #ifdef ENABLE_ARP
-  if (send_via_arp(pkt, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
+  if (send_via_arp(pkt, entry, NULL, NULL, local, airwall, st, port, PACKET_DIRECTION_UPLINK, time64))
   {
     return 1;
   }
