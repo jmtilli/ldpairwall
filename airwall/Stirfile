@@ -1,0 +1,45 @@
+@subfile
+@strict
+
+# You can modify these
+$LEX_LIB = ["conf.l"]
+$SRC_LIB = ["airwall.c", "detect.c", "yyutils.c", "secret.c", "hosthash.c", \
+            "porter.c", "udpporter.c", "reasshl.c", "conf.c", \
+            @@sufsuball($LEX_LIB, ".l", ".lex.c"), \
+            @@sufsuball($LEX_LIB, ".l", ".tab.c")]
+$SRC_PROG = ["ldpairwall.c", "detecttest.c", "detectperf.c", \
+             "genchartbl.c", "unittest.c", "sz.c", "portertest.c", \
+             "udpportertest.c", "pcpclient.c"]
+$LIB = "libairwall.a"
+# FIXME fix += operator
+# FIXME way to specify LDFLAGS
+# FIXME way to specify different CFLAGS for generated files
+$EXTRACFLAGS = ["-I../pptk/packet", "-I../pptk/linkedlist", "-I../pptk/iphdr", \
+                "-I../pptk/misc", "-I../pptk/log", "-I../pptk/hashtable", \
+                "-I../pptk/hashlist", "-I../pptk/ports", "-I../pptk/alloc", \
+                "-I../pptk/timerlinkheap", "-I../pptk/mypcap", \
+                "-I../pptk/dynarr", "-I../pptk/iphash", "-I../threetuple2", \
+                "-I../pptk/databuf", "-I../pptk/netmap", \
+                "-I../pptk/ldp", "-I../pptk/arp", "-I../pptk/ipfrag", \
+                "-I../pptk/rbtree", "-I.", \
+                "-Wno-sign-compare", "-Wno-missing-prototypes", \
+                "-Wno-sign-conversion", "-L../pptk/libpptk"]
+$CFLAGS = [@$CFLAGS, @$EXTRACFLAGS]
+$LIBS = ["../threetuple2/libthreetuple2.a", "../pptk/libpptk/libpptk.a"]
+$UNITDEPS = ["detecttest", "detectperf", "unittest"]
+$UNITCMDS = [["./detecttest"], ["./detectperf"], ["./unittest"]]
+
+# You won't want to modify anything below this line
+@call $MODULE($LIB, $SRC_LIB, $SRC_PROG, $LIBS, $UNITDEPS, $UNITCMDS)
+
+'conf.lex.c' 'conf.lex.h': 'conf.l'
+@	["flex", "--outfile=conf.lex.c", '--header-file=conf.lex.h', $<]
+
+'conf.tab.c' 'conf.tab.h': 'conf.y'
+@	["bison", "--output=conf.tab.c", '--defines=conf.tab.h', $<]
+
+@deponly: 'conf.lex.d' 'conf.lex.o' 'conf.tab.d' 'conf.tab.o': \
+          'conf.tab.h' 'conf.lex.h'
+
+@cdepincludes @autophony @autotarget @ignore \
+  @sufsuball([@$SRC_PROG, @$SRC_LIB], ".c", ".d")
