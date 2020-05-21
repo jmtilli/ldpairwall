@@ -3740,7 +3740,7 @@ static int downlink_dns(
     }
     if (qclass == 1 && qtype == 16 && host != NULL && strncmp(nambuf, "_cgtp.", 6) == 0)
     {
-      char answbuf[1514] = {0};
+      char answbuf[1513] = {0};
       char answbuffin[1514] = {0};
       char locipv4[4] = {0};
       char ipv4[4] = {0};
