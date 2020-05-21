@@ -63,6 +63,7 @@ static inline int istokenfast(char ch)
   return !!(tokenbitmask[i/64] & (1ULL<<(i%64)));
 }
 
+#if 0
 static inline int istoken(char ch)
 {
   return ch == '!' || ch == '#' || ch == '$' || ch == '%' || ch == '&' ||
@@ -79,6 +80,7 @@ static inline int isurichar(char ch)
          ch == ',' || ch == ';' || ch == '=' || isdigit(ch) || isalpha(ch) ||
          ch == '-' || ch == '.' || ch == '_' || ch == '~' || ch == '%';
 }
+#endif
 
 int http_ctx_feed(struct http_ctx *ctx, const void *data, size_t sz,
                   struct hostname_ctx *nam)
