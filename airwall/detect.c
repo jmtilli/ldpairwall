@@ -442,7 +442,11 @@ ssize_t ssl_name_ctx_feed(struct ssl_name_ctx *ctx, const void *data, size_t sz,
     {
       return (ssize_t)(orig_sz - sz);
     }
-    ctx->type <<= 8;
+#if 0
+    ctx->type <<= 8; // Shift count >= width of type
+#else
+    ctx->type = 0;
+#endif
     ctx->type |= udata[0];
     sz--;
     udata++;
