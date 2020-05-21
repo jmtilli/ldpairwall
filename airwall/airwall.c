@@ -2227,6 +2227,7 @@ static void send_or_resend_syn(
   port->portfunc(pktstruct, port->userdata);
 }
 
+#if 0
 static inline uint32_t get_wan_min(struct tcp_statetrack_entry *statetrack)
 {
   return statetrack->wan.sent -
@@ -2238,6 +2239,7 @@ static inline uint32_t get_lan_min(struct tcp_statetrack_entry *statetrack)
   return statetrack->lan.sent -
     (((uint32_t)statetrack->wan.max_window_unscaled)<<statetrack->wan.wscale);
 }
+#endif
 
 static void resend_syn(
   void *orig, struct worker_local *local, struct port *port,
